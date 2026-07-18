@@ -1,10 +1,79 @@
+import { NodeType } from "./fs/core/ast.js";
+const LAYER_STYLE_MAX_DEPTH = 5;
 export class SyntaxHighlighter {
+    dummytokens = [];
     highlight(tokens) {
-        return tokens.map(tok => {
-            const cls = 'token-' + tok.type;
+        const quantStack = [];
+        let layerDepth = 0;
+        this.dummytokens.length = 0;
+        return tokens.map((tok, tidx) => {
+            const boundedTokens = this.highLightQuants(quantStack, tokens, tok, tidx);
+            let cls = 'token-' + tok.type;
+            if (tok.type === "layer") {
+                if ("([{".includes(tok.text)) {
+                    layerDepth++;
+                    cls += "-" + (layerDepth % LAYER_STYLE_MAX_DEPTH);
+                }
+                else if (")}]".includes(tok.text)) {
+                    cls += "-" + (layerDepth % LAYER_STYLE_MAX_DEPTH);
+                    layerDepth--;
+                }
+            }
             const escaped = this.escapeHtml(tok.displayText);
-            return `<span class="${cls}" data-start="${tok.start}" data-end="${tok.end}">${escaped}</span>`;
+            let attrs = `class="${cls}" data-start="${tok.start}" data-end="${tok.end}"`;
+            if (tok.parentAST && typeof tok.parentAST.start === 'number' && typeof tok.parentAST.end === 'number') {
+                attrs += ` data-parent-start="${tok.parentAST.start}" data-parent-end="${tok.parentAST.end}"`;
+            }
+            if (boundedTokens) {
+                this.dummytokens[tok.start] = boundedTokens;
+            }
+            return `<span ${attrs}>${escaped}</span>`;
         }).join('');
+    }
+    highLightQuants(quantStack, tokens, tok, tidx) {
+        while (quantStack.length > 0 && tok.start >= quantStack[quantStack.length - 1].end) {
+            quantStack.pop();
+        }
+        if (tok.parentAST && ((tok.text === "{" && (tok.parentAST.type === NodeType.CLASS || tok.parentAST.type === NodeType.RPL || tok.parentAST.type === NodeType.SEP)) || (tok.text === "(" && tok.parentAST.name === "\\p") || ["\\a", "\\e", "\\e!", "\\l", "\\p", "\\w", "\\s"].includes(tok.text))) {
+            const quant = tok.parentAST;
+            if (quant) {
+                const varAST = quant.nodes[tok.parentAST.type === NodeType.RPL ? 1 : 0]; // 变量 AST
+                let varToken;
+                for (let j = tidx + 1; j < tokens.length; j++) {
+                    if (tokens[j].start === varAST.start && tokens[j].end === varAST.end) {
+                        varToken = tokens[j];
+                        break;
+                    }
+                }
+                if (varToken) {
+                    const body = quant.nodes[tok.parentAST.type === NodeType.RPL ? 0 : tok.parentAST.type === NodeType.CLASS || tok.parentAST.type === NodeType.QUANT ? 1 : 2];
+                    varToken.dummyTokens = [];
+                    quantStack.push({
+                        start: body.start, end: body.end,
+                        varName: varToken.text, varToken: varToken,
+                        dummyvars: varToken.dummyTokens
+                    });
+                }
+            }
+        }
+        if (tok.type.includes('atom') || tok.type.includes('var')) {
+            const skip = (tok.type.includes("replvar") || tok.type.includes("fn") || tok.type.includes("wff") || tok.type.includes("pred") || tok.type.includes("locvar"));
+            if (tok.dummyTokens) {
+                if (!skip)
+                    tok.type = "atom-var";
+                return tok.dummyTokens;
+            }
+            for (let k = quantStack.length - 1; k >= 0; k--) {
+                const scope = quantStack[k];
+                if (scope.varName === tok.text && scope.start <= tok.start) {
+                    scope.dummyvars.push(tok);
+                    if (!skip)
+                        tok.type = "atom-var";
+                    return [scope.varToken];
+                }
+            }
+        }
+        return undefined;
     }
     escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 }
@@ -15,7 +84,6 @@ export class SyntaxEditor {
     code;
     parser;
     highlighter;
-    currentAst = null;
     parserArgs;
     constructor(mount, parser, initialValue, ...parserArgs) {
         this.parser = parser;
@@ -43,16 +111,10 @@ export class SyntaxEditor {
         this.textarea.addEventListener('input', this.onInput);
         this.textarea.addEventListener('scroll', this.syncScroll);
         this.textarea.addEventListener('paste', this.onPaste);
-        this.pre.addEventListener('mouseover', this.onPreMouseOver);
-        this.pre.addEventListener('mouseout', this.onPreMouseOut);
+        this.textarea.addEventListener('mousemove', this.onTextareaMouseMove);
+        this.textarea.addEventListener('mouseleave', this.onTextareaMouseLeave);
         // 初始内容
         this.setValue(initialValue);
-    }
-    onPreMouseOut = () => {
-        this.clearASTHighlight();
-    };
-    clearASTHighlight() {
-        this.code.querySelectorAll('.ast-highlight').forEach(el => el.classList.remove('ast-highlight'));
     }
     syncScroll = () => {
         this.pre.scrollTop = this.textarea.scrollTop;
@@ -112,46 +174,65 @@ export class SyntaxEditor {
     render() {
         const unicodeText = this.textarea.value;
         try {
-            this.currentAst = this.parser.parse(unicodeText, ...this.parserArgs);
+            this.parser.parse(unicodeText, ...this.parserArgs);
         }
-        catch {
-            this.currentAst = null;
-        }
+        catch { }
         const html = this.highlighter.highlight(this.parser.getTokens());
         this.code.innerHTML = html + '\n';
     }
-    // 悬停高亮：遍历 currentAst 找到包含 offset 的最内层节点
-    onPreMouseOver = (e) => {
-        const span = e.target.closest('.token');
-        if (!span || !this.currentAst)
+    // 实现方法
+    onTextareaMouseMove = (e) => {
+        // 临时穿透 textarea，获取下方 pre 中的元素
+        this.textarea.style.pointerEvents = 'none';
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        this.textarea.style.pointerEvents = ''; // 立即恢复
+        const span = target?.closest?.('span');
+        window["s"] = span;
+        if (!span) {
+            this.clearHighlight();
             return;
-        const start = parseInt(span.dataset.start, 10);
-        const node = this.findNode(this.currentAst, start);
-        if (node)
-            this.highlightASTNode(node);
-    };
-    findNode(root, offset) {
-        // 递归搜索，优先返回子节点
-        for (const child of root.nodes) {
-            const found = this.findNode(child, offset);
-            if (found)
-                return found;
         }
-        if (offset >= root.start && offset < root.end)
-            return root;
-        return null;
-    }
-    highlightASTNode(node) {
-        this.clearASTHighlight();
-        if (typeof node.start === "number" && typeof node.end === "number")
-            this.code.querySelectorAll('.token').forEach((elem) => {
-                const el = elem;
-                const s = parseInt(el.dataset.start, 10);
-                const e = parseInt(el.dataset.end, 10);
-                if (s < node.end && e > node.start) {
+        const parentStart = span.dataset.parentStart;
+        const parentEnd = span.dataset.parentEnd;
+        const bound = this.highlighter.dummytokens[Number(span.dataset.start)]?.map(e => e.start);
+        if (!bound && parentStart !== undefined && parentEnd !== undefined) {
+            this.highlightRange(parseInt(parentStart), parseInt(parentEnd));
+        }
+        else if (span.dataset.start !== undefined && span.dataset.end !== undefined) {
+            this.highlightRange(parseInt(span.dataset.start), parseInt(span.dataset.end));
+        }
+        else {
+            this.clearHighlight();
+        }
+        if (bound) {
+            const allTokens = this.code.querySelectorAll('span');
+            allTokens.forEach(el => {
+                const s = Number(el.dataset.start);
+                if (bound.includes(s)) {
                     el.classList.add('ast-highlight');
                 }
             });
+        }
+    };
+    onTextareaMouseLeave = () => {
+        this.clearHighlight();
+    };
+    /** 高亮所有与 [start, end) 有交集的 token */
+    highlightRange(start, end) {
+        const allTokens = this.code.querySelectorAll('span');
+        allTokens.forEach(el => {
+            const s = parseInt(el.dataset.start);
+            const e = parseInt(el.dataset.end);
+            if (s < end && e > start) {
+                el.classList.add('ast-highlight');
+            }
+            else {
+                el.classList.remove('ast-highlight');
+            }
+        });
+    }
+    clearHighlight() {
+        this.code.querySelectorAll('.ast-highlight').forEach(el => el.classList.remove('ast-highlight'));
     }
 }
 //# sourceMappingURL=ast.js.map

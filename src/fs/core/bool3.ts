@@ -18,14 +18,3 @@ export function or3(a: Bool3, b: Bool3) {
     return U;
 }
 
-export function isReplvar(n: string) {
-    return n.startsWith("$");
-}
-export function isLocalvar(n: string) {
-    return n.startsWith("#");
-}
-export function nameEq(a: string, b: string) {
-    if (a === b) return T;
-    if (isLocalvar(a) || isLocalvar(b)) return F;
-    if (isReplvar(a) || isReplvar(b)) return U;
-}

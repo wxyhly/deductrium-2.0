@@ -24,18 +24,4 @@ export function or3(a, b) {
         return F;
     return U;
 }
-export function isReplvar(n) {
-    return n.startsWith("$");
-}
-export function isLocalvar(n) {
-    return n.startsWith("#");
-}
-export function nameEq(a, b) {
-    if (a === b)
-        return T;
-    if (isLocalvar(a) || isLocalvar(b))
-        return F;
-    if (isReplvar(a) || isReplvar(b))
-        return U;
-}
 //# sourceMappingURL=bool3.js.map

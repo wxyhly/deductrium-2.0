@@ -4,7 +4,9 @@
 // fn:item[]->item
 // pred:item[]->wff
 // sep:{var@item|wff}->item
+// class:{var|wff}->item
 // rpl:{item|var@item}->item
+import { FSError } from "./error.js";
 // sub: #sb(wff|item,var,item;...var)
 export var NodeType;
 (function (NodeType) {
@@ -17,19 +19,13 @@ export var NodeType;
     NodeType[NodeType["PRED"] = 6] = "PRED";
     NodeType[NodeType["SEP"] = 7] = "SEP";
     NodeType[NodeType["RPL"] = 8] = "RPL";
-    NodeType[NodeType["SB"] = 9] = "SB";
+    NodeType[NodeType["CLASS"] = 9] = "CLASS";
+    NodeType[NodeType["SB"] = 10] = "SB";
 })(NodeType || (NodeType = {}));
-export var AstType;
-(function (AstType) {
-    AstType[AstType["WFF"] = 0] = "WFF";
-    AstType[AstType["ITEM"] = 1] = "ITEM";
-    AstType[AstType["VAR"] = 2] = "VAR"; // var is special item
-})(AstType || (AstType = {}));
 export class AST {
     type;
     nodes;
     name;
-    astType;
     start;
     end;
     constructor(type, name, ...nodes) {
@@ -42,33 +38,143 @@ export class AST {
         const nodes = this.nodes.map(e => e.clone());
         return new AST(this.type, this.name, ...nodes);
     }
-    static atom(n) { return new AST(NodeType.ATOM, n); }
-    isAtom() { return this.type === NodeType.ATOM ? this.name : null; }
-    isLogic() { return this.type === NodeType.LOGIC; }
-    isFn() { return this.type === NodeType.FN; }
-    isPred() { return this.type === NodeType.PRED; }
-    isSep() { return this.type === NodeType.SEP; }
-    isRpl() { return this.type === NodeType.RPL; }
-    isSb() { return this.type === NodeType.SB; }
-    isQuant() { return this.type === NodeType.QUANT ? [this.name, ...this.nodes] : null; }
-    calcType(astType) {
-        this.astType ??= astType;
-        if (this.astType !== astType)
-            return { ast: this, expect: astType, got: this.astType };
-        let n;
-        if (n = this.isAtom()) {
-        }
+    copyFrom(ast) {
+        this.type = ast.type;
+        this.name = ast.name;
+        this.nodes = ast.nodes.map(e => e.clone());
     }
-    getVars(res = new Set) {
+    isAtom() { return this.type === NodeType.ATOM_ITEM || this.type === NodeType.ATOM_WFF ? this.name : undefined; }
+    isReplvar() {
         const n = this.isAtom();
-        if (n) {
-            res.add(n);
+        return n && n.startsWith("$") ? n : undefined;
+    }
+    getReplvars(res = new Map()) {
+        if (this.isReplvar()) {
+            const isItem = this.type === NodeType.ATOM_ITEM || this.type === NodeType.VAR;
+            const oldIsItem = res.get(this.name);
+            if (oldIsItem !== undefined && oldIsItem !== isItem) {
+                throw new Error(`Replvar ${this.name} has conflicting types: ${oldIsItem ? "item" : "wff"} vs ${isItem ? "item" : "wff"}`);
+            }
+            res.set(this.name, this.type === NodeType.ATOM_ITEM || this.type === NodeType.VAR);
             return res;
         }
-        for (const n of this.nodes) {
-            n.getVars(res);
+        for (const node of this.nodes) {
+            node.getReplvars(res);
         }
         return res;
+    }
+    equal(ast) {
+        if (this === ast)
+            return true;
+        if (this.name !== ast.name)
+            return false;
+        if (this.type !== ast.type)
+            return false;
+        if (this.nodes?.length !== ast.nodes?.length)
+            return false;
+        if (this.nodes?.length) {
+            for (let i = 0; i < ast.nodes.length; i++) {
+                if (!this.nodes[i].equal(ast.nodes[i]))
+                    return false;
+            }
+        }
+        return true;
+    }
+    match(pattern, res = {}) {
+        if (pattern.isReplvar()) {
+            if (res[pattern.name]) {
+                if (!this.equal(res[pattern.name]))
+                    throw FSError.matchFail(this, res[pattern.name], pattern.name);
+            }
+            else
+                res[pattern.name] = this.clone();
+            return res;
+        }
+        if (this.name !== pattern.name || this.type !== pattern.type || this.nodes?.length !== pattern.nodes?.length) {
+            throw FSError.matchFail(this, res[pattern.name]);
+        }
+        if (this.nodes?.length) {
+            for (let i = 0; i < this.nodes.length; i++) {
+                this.nodes[i].match(pattern.nodes?.[i], res);
+            }
+        }
+        return res;
+    }
+    mut_replaceByMatchTable(mt) {
+        if (this.isAtom()) {
+            const replacement = mt[this.name];
+            if (replacement)
+                this.copyFrom(replacement);
+            return this;
+        }
+        this.nodes.forEach(node => node.mut_replaceByMatchTable(mt));
+        return this;
+    }
+    checkVAR() {
+        if (this.type !== NodeType.VAR)
+            throw FSError.isNotVar(this);
+    }
+    checkITEM() {
+        if (this.type === NodeType.ATOM_ITEM || this.type === NodeType.VAR)
+            return;
+        if (this.type === NodeType.FN) {
+            for (let i = 0; i < this.nodes.length; i++) {
+                this.nodes[i].checkITEM();
+            }
+            return;
+        }
+        if (this.type === NodeType.CLASS) {
+            this.nodes[0].checkVAR();
+            this.nodes[1].checkWFF();
+            return;
+        }
+        if (this.type === NodeType.RPL) {
+            this.nodes[0].checkITEM();
+            this.nodes[1].checkVAR();
+            this.nodes[2].checkITEM();
+            return;
+        }
+        if (this.type === NodeType.SEP) {
+            this.nodes[0].checkVAR();
+            this.nodes[1].checkITEM();
+            this.nodes[2].checkWFF();
+            return;
+        }
+        if (this.type === NodeType.SB) {
+            this.nodes[0].checkITEM();
+            this.nodes[1].checkVAR();
+            this.nodes[2].checkITEM();
+            return;
+        }
+        throw FSError.isNotItem(this);
+    }
+    checkWFF() {
+        if (this.type === NodeType.ATOM_WFF)
+            return;
+        if (this.type === NodeType.LOGIC) {
+            for (let i = 0; i < this.nodes.length; i++) {
+                this.nodes[i].checkWFF();
+            }
+            return;
+        }
+        if (this.type === NodeType.QUANT) {
+            this.nodes[0].checkVAR();
+            this.nodes[1].checkWFF();
+            return;
+        }
+        if (this.type === NodeType.PRED) {
+            for (let i = 0; i < this.nodes.length; i++) {
+                this.nodes[i].checkITEM();
+            }
+            return;
+        }
+        if (this.type === NodeType.SB) {
+            this.nodes[0].checkWFF();
+            this.nodes[1].checkVAR();
+            this.nodes[2].checkITEM();
+            return;
+        }
+        throw FSError.isNotWFF(this);
     }
 }
 //# sourceMappingURL=ast.js.map

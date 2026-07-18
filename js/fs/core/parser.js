@@ -1,24 +1,43 @@
-import { AST, AstType, NodeType } from "./ast.js";
+import { AST, NodeType } from "./ast.js";
+import { F, T, U } from "./bool3.js";
 // ========== 符号映射 ==========
 const symbolMap = {
-    "∀": "\\A", "∃": "\\E", "∃!": "\\E!", "∈": "@", "¬": "~",
-    "→": ">", "↔": "<>", "⊢": "|-",
-    "⊂": "\\<", "∪": "\\U", "∩": "\\I",
-    "∧": "\\&", "∨": "\\|", "ω": "\\omega",
-    "≤": "<=", "≥": "→=", "∣": "\\div",
-    "ℕ": "\\N", "ℤ": "\\Z", "ℚ": "\\Q", "ℝ": "\\R", "×": "\\x"
+    "∀": "\\a", "∀ₛ": "\\a@", "∃ₛ": "\\e@", "∃!ₛ": "\\e!@", "∃": "\\e", "∃!": "\\e!", "∈": "@", "¬": "~",
+    "→": ">", "↔": "<>", "⊢": "|-", "＼": "\\\\",
+    "⊂": "\\c", "＜": "\\<", "＞": "\\>", "∪": "\\u", "∩": "\\i",
+    "∧": "/\\", "∨": "\\/",
+    "≤": "\\<=", "≥": "\\>=", "∣": "\\d", "×": "\\x"
 };
-// 反向映射（用于输入替换）
-export const asciiToUnicode = Object.fromEntries(Object.entries(symbolMap).map(([uni, asc]) => [asc, uni]));
-const charSeps = '()[]{},;|:=+* \t\n';
-const predSyms = ["=", "@", "\\<", "<=", ">=", "\\div"];
-// ========== ASTParser ==========
+const constMap = {
+    "ℕ": "\\N", "ℤ": "\\Z", "ℚ": "\\Q", "ℝ": "\\R",
+    "ω": "\\o", "Ω": "\\O", "ℵ": "\\Al", "δ": "\\del", "ε": "\\ep", "ξ": "\\ksi", "π": "\\pi", "φ": "\\ph", "ψ": "\\ps", "θ": "\\th", "λ": "\\l", "μ": "\\m", "σ": "\\si", "τ": "\\t"
+};
+const strMap = Object.assign(Object.assign({}, symbolMap), constMap);
+const symbolsUnicode = Object.keys(symbolMap).sort((a, b) => b.length - a.length);
+const ascii2unicode = genAscii2unicodeTable(strMap);
+function genAscii2unicodeTable(strMap) {
+    const arr = Array.from(Object.entries(strMap)).sort((a, b) => a[1].length - b[1].length);
+    const res = {};
+    for (let i = 0; i < arr.length; i++) {
+        const [u, a] = arr[i];
+        res[a] = u;
+        for (let j = 0; j < i; j++) {
+            const na = a.replace(arr[j][1], arr[j][0]);
+            if (na !== a && na !== u)
+                res[na] = u;
+        }
+    }
+    return Array.from(Object.entries(res)).sort((a, b) => b[0].length - a[0].length);
+}
+const charSeps = '()[]{},;|:=+*! \t\n';
+const predSyms = ["=", "@", "\\<", "\\>", "\\<=", "\\>=", "\\d"];
+const setSyms = ["\\u", "\\i", "+", "-", "\\\\"];
 export class FSParser {
     tokens = [];
     cursor = 0;
     token;
-    inputReplacements = Object.entries(symbolMap).sort((a, b) => b[1].length - a[1].length);
-    // ---- 词法分析 ----
+    inputReplacements = ascii2unicode;
+    // ---- 词法分析（保持原有，但注意空格 token） ----
     tokenize(unicodeText) {
         const tokens = [];
         let pos = 0;
@@ -26,17 +45,17 @@ export class FSParser {
             if (unicodeText[pos] === ' ' || unicodeText[pos] === '\t' || unicodeText[pos] === '\n') {
                 tokens.push({
                     type: 'space',
-                    text: unicodeText[pos], // 原样保留（一个空格、\t 或 \n）
-                    displayText: unicodeText[pos], // 显示也原样
+                    text: unicodeText[pos],
+                    displayText: unicodeText[pos],
                     start: pos,
                     end: pos + 1
                 });
                 pos++;
                 continue;
             }
-            // 1. Unicode 符号（symbolMap 的键）
+            // 1. Unicode 符号
             let matchedUni = null;
-            for (const uni of Object.keys(symbolMap)) {
+            for (const uni of symbolsUnicode) {
                 if (unicodeText.startsWith(uni, pos)) {
                     matchedUni = uni;
                     break;
@@ -44,7 +63,7 @@ export class FSParser {
             }
             if (matchedUni) {
                 tokens.push({
-                    type: 'keyword',
+                    type: 'sym',
                     text: symbolMap[matchedUni],
                     displayText: matchedUni,
                     start: pos,
@@ -53,15 +72,15 @@ export class FSParser {
                 pos += matchedUni.length;
                 continue;
             }
-            // 2. 特殊关键字 {}
+            // 2. {}
             if (unicodeText.startsWith('{}', pos)) {
-                tokens.push({ type: 'const', text: '{}', displayText: '{}', start: pos, end: pos + 2 });
+                tokens.push({ type: 'atom', text: '{}', displayText: '{}', start: pos, end: pos + 2 });
                 pos += 2;
                 continue;
             }
             // 3. 单字符分隔符
             if (charSeps.includes(unicodeText[pos])) {
-                tokens.push({ type: ":=".includes(unicodeText[pos]) ? 'keyword' : 'operator', text: unicodeText[pos], displayText: unicodeText[pos], start: pos, end: pos + 1 });
+                tokens.push({ type: "(){}|[]".includes(unicodeText[pos]) ? 'layer' : 'sym', text: unicodeText[pos], displayText: unicodeText[pos], start: pos, end: pos + 1 });
                 pos++;
                 continue;
             }
@@ -74,7 +93,7 @@ export class FSParser {
             }
             const word = unicodeText.slice(start, pos);
             tokens.push({
-                type: /^\$.*$/.test(word) ? 'replvar' : /^\#.*$/.test(word) ? 'locvar' : /^[a-z].*$/.test(word) ? 'variable' : /^[A-Z].*$/.test(word) ? 'wff' : 'const',
+                type: "atom",
                 text: word,
                 displayText: word,
                 start,
@@ -84,22 +103,48 @@ export class FSParser {
         return tokens;
     }
     getTokens() {
+        for (const t of this.tokens) {
+            const word = t.text;
+            if (t.type === "atom" && /^\$.*$/.test(word)) {
+                t.type = 'replvar';
+            }
+            else if (t.type === "atom-item") {
+                t.type = /^\$.*$/.test(word) ? 'replvar-item' : /^\#.*$/.test(word) ? 'atom-locvar' : /^[a-z].*$/.test(word) ? 'atom-free-var' : /^[A-Z].*$/.test(word) ? 'atom' : 'atom-const';
+            }
+            else if (t.type === "atom-wff") {
+                t.type = /^\$.*$/.test(word) ? 'replvar-wff' : /^\#.*$/.test(word) || /^[a-z].*$/.test(word) ? 'atom' : /^[A-Z].*$/.test(word) ? 'atom-wff' : 'atom';
+            }
+            else if (t.type === "atom-free-var") {
+                t.type = /^\$.*$/.test(word) ? 'replvar-var' : /^\#.*$/.test(word) ? 'atom-locvar' : /^[a-z].*$/.test(word) ? 'atom-free-var' : /^[A-Z].*$/.test(word) ? 'atom' : 'atom';
+            }
+            else if (t.type === "pred" && t.text === "#sb") {
+                t.type = 'sb';
+            }
+        }
         return this.tokens;
     }
     // ---- 解析入口 ----
-    parse(unicodeText, rootType) {
+    parse(unicodeText, isItem) {
         this.tokens = this.tokenize(unicodeText);
+        const tokensWithSpaces = this.tokens;
+        this.tokens = this.tokens.filter(e => e.type !== "space");
         this.cursor = 0;
         this.nextSym();
-        if (rootType === AstType.WFF) {
-            return this.parseWFF();
+        let res;
+        try {
+            if (isItem === T) {
+                res = this.parseITEM(T);
+            }
+            else {
+                res = this.parseWFF(isItem);
+            }
         }
-        else {
-            return this.parseITEM();
-        }
+        catch (e) { }
+        this.tokens = tokensWithSpaces;
+        return res;
     }
-    // ---- 内部辅助 ----
     nextSym() { this.token = this.tokens[this.cursor++]; }
+    prevSym() { this.token = this.tokens[this.cursor - 2]; this.cursor--; }
     acceptSym(s) {
         if (this.token && this.token.text === s) {
             this.nextSym();
@@ -111,268 +156,342 @@ export class FSParser {
         if (!this.acceptSym(s))
             throw new Error(`Expected "${s}" but got "${this.token?.text}"`);
     }
-    save() { return this.cursor; }
-    restore(pos) { this.cursor = pos; this.token = this.tokens[this.cursor - 1]; }
-    // ---- WFF 递归下降 ----
-    parseWFF() {
-        return this.parseImplies();
+    parseWFF(isItem) {
+        return this.parseImplies(isItem);
     }
-    parseImplies() {
-        let left = this.parseOr();
+    parseImplies(isItem) {
+        let left = this.parseOr(isItem);
         if (this.token && (this.token.text === '>' || this.token.text === '<>')) {
             const op = this.token.text;
+            const opToken = this.token;
+            const start = left.start;
             this.nextSym();
-            const right = this.parseImplies(); // 右结合
-            return new AST(NodeType.LOGIC, op, left, right).range(left.start, right.end);
+            const right = this.parseImplies(F);
+            const ast = new AST(NodeType.LOGIC, op, left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            return ast;
         }
         return left;
     }
-    parseOr() {
-        let left = this.parseAnd();
-        while (this.token && this.token.text === '|') {
+    parseOr(isItem) {
+        let left = this.parseAnd(isItem);
+        while (this.token && this.token.text === '\\/') {
+            const opToken = this.token; // 操作符 token
+            const start = left.start;
             this.nextSym();
-            const right = this.parseAnd();
-            left = new AST(NodeType.LOGIC, '|', left, right).range(left.start, right.end);
+            const right = this.parseAnd(F);
+            const ast = new AST(NodeType.LOGIC, '|', left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            left = ast;
         }
         return left;
     }
-    parseAnd() {
-        let left = this.parseNot();
-        while (this.token && this.token.text === '&') {
+    parseAnd(isItem) {
+        let left = this.parseNot(isItem);
+        while (this.token && this.token.text === '/\\') {
+            const opToken = this.token;
+            const start = left.start;
             this.nextSym();
-            const right = this.parseNot();
-            left = new AST(NodeType.LOGIC, '&', left, right).range(left.start, right.end);
+            const right = this.parseNot(F);
+            const ast = new AST(NodeType.LOGIC, '&', left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            left = ast;
         }
         return left;
     }
-    parseNot() {
+    parseNot(isItem) {
         if (this.token && this.token.text === '~') {
-            const left = this.token.start;
+            const opToken = this.token;
+            const start = opToken.start;
             this.nextSym();
-            const right = this.parseNot();
-            return new AST(NodeType.LOGIC, '~').range(left, right.end);
+            const right = this.parseNot(F);
+            const ast = new AST(NodeType.LOGIC, '~', right).range(start, right.end);
+            opToken.parentAST = ast;
+            return ast;
         }
-        return this.parseQuant();
+        return this.parseQuant(isItem);
     }
-    parseQuant() {
-        if (this.token && (this.token.text === '\\A' || this.token.text === '\\E' || this.token.text === '\\E!')) {
-            const left = this.token.start;
-            const quant = this.token.text;
+    parseQuant(isItem) {
+        if (this.token && (this.token.text === '\\a' || this.token.text === '\\e' || this.token.text === '\\e!' || this.token.text === '\\a@' || this.token.text === '\\e@' || this.token.text === '\\e!@')) {
+            const quantToken = this.token;
+            const start = quantToken.start;
+            const quant = quantToken.text;
             this.nextSym();
-            const varNode = this.parseATOM_ITEM(true);
-            if (this.acceptSym(':')) { /* 可选冒号 */ }
-            const body = this.parseWFF();
-            return new AST(NodeType.QUANT, quant, varNode, body).range(left, body.end);
-        }
-        return this.parseAtomicWFF();
-    }
-    parseAtomicWFF() {
-        let bracket = false;
-        // 括号
-        if (this.token.text === '(') {
-            this.nextSym();
-            bracket = true;
-        }
-        const token = this.token;
-        if (token.type === 'wff' || token.type === 'replvar') {
-            if (token.type === 'replvar') {
-                if (this.tokens[this.cursor]?.type === "keyword" && (predSyms.includes(this.tokens[this.cursor].text))) {
-                    token.type = 'replvar-item';
-                    const name = token.text;
-                    this.nextSym();
-                    const left = new AST(NodeType.ATOM_ITEM, name).range(token.start, token.end);
-                    if (this.token && (predSyms.includes(this.token.text))) {
-                        const op = this.token.text;
-                        this.nextSym();
-                        const right = this.parseITEM();
-                        if (bracket)
-                            this.expectSym(")");
-                        return new AST(NodeType.PRED, op, left, right).range(left.start, right.end);
-                    }
-                }
-                token.type = 'replvar-wff';
+            const varToken = this.token;
+            const varNode = this.parseVariable();
+            let colonToken = this.token;
+            if (!this.acceptSym(':')) {
+                colonToken = undefined;
             }
-            const name = token.text;
-            this.nextSym();
-            if (bracket)
-                this.expectSym(")");
-            return new AST(NodeType.ATOM_WFF, name).range(token.start, token.end);
+            const body = this.parseQuant(F);
+            const ast = new AST(NodeType.QUANT, quant, varNode, body).range(start, body.end);
+            quantToken.parentAST = ast;
+            varToken.parentAST = ast;
+            if (colonToken)
+                colonToken.parentAST = ast;
+            return ast;
         }
-        // 中缀谓词 = @ ：先解析左项，若后面跟 = 或 @，则构造谓词
-        let left = this.parseITEM();
-        if (this.token && (predSyms.includes(this.token.text))) {
-            const op = this.token.text;
-            this.nextSym();
-            const right = this.parseITEM();
-            if (bracket)
-                this.expectSym(")");
-            return new AST(NodeType.PRED, op, left, right).range(left.start, right.end);
+        if (this.token?.text === "~") {
+            return this.parseNot(F);
         }
-        // 谓词应用 fn(...)
-        if (this.token && this.token.text === '(') {
-            // 此时 left 是一个 ATOM（函数名），需要转换为谓词应用
-            const fnName = left.name;
-            this.token.type = 'wff';
-            this.nextSym(); // 跳过 '('
-            const args = [];
-            if (!this.acceptSym(')')) {
-                args.push(this.parseITEM());
-                while (this.acceptSym(',')) {
-                    args.push(this.parseITEM());
-                }
-                this.expectSym(')');
-                if (bracket)
-                    this.expectSym(")");
+        return this.parsePred(isItem);
+    }
+    remarkItem(left, leftToken) {
+        // 必须先检测括号
+        if (leftToken.text === "(") {
+            const innerToken = this.tokens[this.tokens.indexOf(leftToken) + 1];
+            this.remarkItem(left, innerToken);
+        }
+        else if (left.type === NodeType.ATOM_WFF) {
+            left.type = NodeType.ATOM_ITEM;
+            leftToken.type = "atom-item";
+        }
+        if (leftToken.type === "pred") {
+            leftToken.type = "fn";
+            if (leftToken.text === "#sb") {
+                leftToken.type = "sb";
+                // #sb ( ...
+                const innerToken = this.tokens[this.tokens.indexOf(leftToken) + 2];
+                const innerAst = left.nodes[0];
+                this.remarkItem(innerAst, innerToken);
             }
-            return new AST(NodeType.PRED, fnName, ...args).range(left.start, this.token.end);
         }
-        // 其他情况：{ } 或 #sb 开头
-        // if (this.token && this.token.text === '{') {
-        //     return this.parseBrace(AstType.WFF);
-        // }
-        if (this.token && this.token.text.startsWith('#sb')) {
-            return this.parseSb(AstType.WFF);
-        }
-        throw new Error(`Expected a formula, but got "${this.token?.text}"`);
     }
-    // ---- ITEM 递归下降 ----
-    parseITEM() {
-        return this.parseInfixFn();
-    }
-    parseInfixFn() {
-        let left = this.parseFnAppl();
-        while (this.token && (this.token.text === '\\U' || this.token.text === '\\I')) {
-            const op = this.token.text;
+    parsePred(isItem) {
+        const leftToken = this.token;
+        const left = this.parseITEM(isItem === T ? T : U);
+        // 中缀谓词
+        if (this.token && predSyms.includes(this.token.text)) {
+            this.remarkItem(left, leftToken);
+            const opToken = this.token;
+            const op = opToken.text;
+            const start = left.start;
             this.nextSym();
-            const right = this.parseFnAppl();
-            left = new AST(NodeType.FN, op, left, right);
+            const right = this.parseITEM(T);
+            const ast = new AST(NodeType.PRED, op, left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            return ast;
         }
         return left;
     }
-    parseFnAppl() {
-        let atom = this.parseAtomicITEM();
-        // 函数应用 f(...)
-        while (this.token && this.token.text === '(') {
+    // ---- ITEM 的递归下降（带中缀集合运算） ----
+    parseITEM(isItem) {
+        let leftToken = this.token;
+        let left = this.parseFn(isItem);
+        while (this.token && setSyms.includes(this.token.text)) {
+            this.remarkItem(left, leftToken);
+            if (isItem === F)
+                throw new Error("Set operations only allowed in item context");
+            const opToken = this.token;
+            const start = left.start;
             this.nextSym();
-            const args = [];
-            if (!this.acceptSym(')')) {
-                args.push(this.parseITEM());
-                while (this.acceptSym(',')) {
-                    args.push(this.parseITEM());
+            const right = this.parseFn(T);
+            const ast = new AST(NodeType.FN, opToken.text, left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            left = ast;
+        }
+        return left;
+    }
+    parseFn(isItem) {
+        const token = this.token;
+        let left;
+        const tokens = new Set([token]);
+        const leftToken = this.token;
+        if (token.type === 'atom') {
+            left = this.parseVarAtom(isItem === T);
+        }
+        if (this.token?.text === '(') {
+            tokens.add(this.token);
+            if (left) {
+                // fn(xxx,xxx)
+                const start = left.start;
+                this.nextSym();
+                const args = [];
+                if (isItem === T) {
+                    leftToken.type = "fn";
                 }
-                this.expectSym(')');
+                else {
+                    leftToken.type = "pred";
+                }
+                if (left.name === "#sb") {
+                    args.push(isItem === T ? this.parseITEM(T) : this.parseWFF(isItem));
+                    tokens.add(this.token);
+                    this.expectSym(',');
+                    args.push(this.parseVariable());
+                    tokens.add(this.token);
+                    this.expectSym(',');
+                    args.push(this.parseITEM(T));
+                    tokens.add(this.token);
+                    // 后续可选scope变量
+                    while (this.acceptSym(',')) {
+                        if (this.acceptSym(")")) {
+                            this.prevSym();
+                            break;
+                        }
+                        args.push(this.parseVariable());
+                        tokens.add(this.token);
+                    }
+                    tokens.add(this.token);
+                    this.expectSym(')');
+                    const ast = new AST(NodeType.SB, '', ...args).range(start, this.tokens[this.cursor - 2].end);
+                    tokens.forEach(t => t.parentAST = ast);
+                    return ast;
+                }
+                const closeparen = this.token;
+                if (!this.acceptSym(')')) {
+                    args.push(this.parseITEM(T));
+                    tokens.add(this.token);
+                    while (this.acceptSym(',')) {
+                        if (this.acceptSym(")")) {
+                            this.prevSym();
+                            break;
+                        }
+                        args.push(this.parseITEM(T));
+                    }
+                    tokens.add(this.token);
+                    this.expectSym(')');
+                }
+                else
+                    tokens.add(closeparen);
+                const ast = new AST(isItem === T ? NodeType.FN : NodeType.PRED, left.name, ...args).range(start, this.tokens[this.cursor - 2].end);
+                tokens.forEach(t => t.parentAST = ast);
+                return ast;
             }
-            atom = new AST(NodeType.FN, atom.name, ...args);
+            else {
+                const start = token.start;
+                this.nextSym();
+                const leftToken = this.token;
+                const inner = isItem === T ? this.parseITEM(T) : this.parseWFF(isItem);
+                const args = [];
+                let first = true;
+                tokens.add(this.token);
+                while (this.acceptSym(',')) {
+                    if (first) {
+                        first = false;
+                        this.remarkItem(inner, leftToken);
+                    }
+                    if (this.acceptSym(")")) {
+                        this.prevSym();
+                        break;
+                    }
+                    args.push(this.parseITEM(T));
+                    tokens.add(this.token);
+                }
+                tokens.add(this.token);
+                this.expectSym(')');
+                if (args.length) {
+                    const ast = new AST(NodeType.FN, "()", ...args).range(start, this.tokens[this.cursor - 2].end);
+                    tokens.forEach(t => t.parentAST = ast);
+                    return ast;
+                }
+                const ast = inner.range(start, this.tokens[this.cursor - 2].end);
+                tokens.forEach(t => t.parentAST = ast);
+                return ast;
+            }
         }
-        return atom;
-    }
-    parseATOM_ITEM(isVar) {
-        if (!this.token)
-            throw new Error("Unexpected end of input");
-        if (this.token.type === 'variable' || this.token.type === 'replvar' || this.token.type === 'locvar') {
-            const name = this.token.text;
-            if (this.token.type === 'replvar')
-                this.token.type = isVar ? 'replvar-var' : 'replvar-item';
+        if (!left && this.token?.text === '{') {
+            const start = this.token.start;
+            tokens.add(this.token);
             this.nextSym();
-            return new AST(NodeType.VAR, name);
+            if (this.token.type === "atom") {
+                this.nextSym();
+                //{x@y|wff}
+                if (this.token?.text === "@") {
+                    this.prevSym();
+                    tokens.add(this.token);
+                    const variable = this.parseVariable();
+                    tokens.add(this.token);
+                    this.nextSym();
+                    const set = this.parseITEM(T);
+                    tokens.add(this.token);
+                    this.expectSym("|");
+                    const wff = this.parseWFF(F);
+                    tokens.add(this.token);
+                    this.expectSym("}");
+                    const ast = new AST(NodeType.SEP, "", variable, set, wff).range(start, this.tokens[this.cursor - 2].end);
+                    tokens.forEach(e => e.parentAST = ast);
+                    return ast;
+                }
+                //{x|wff}
+                if (this.token?.text === "|") {
+                    this.prevSym();
+                    tokens.add(this.token);
+                    const variable = this.parseVariable();
+                    tokens.add(this.token);
+                    this.nextSym();
+                    const wff = this.parseWFF(F);
+                    tokens.add(this.token);
+                    this.expectSym("}");
+                    const ast = new AST(NodeType.CLASS, "", variable, wff).range(start, this.tokens[this.cursor - 2].end);
+                    tokens.forEach(e => e.parentAST = ast);
+                    return ast;
+                }
+                this.prevSym();
+            }
+            const first = this.parseITEM(T);
+            const args = [];
+            tokens.add(this.token);
+            while (this.acceptSym(',')) {
+                if (this.acceptSym("}")) {
+                    this.prevSym();
+                    break;
+                }
+                args.push(this.parseITEM(T));
+                tokens.add(this.token);
+            }
+            // {xx|x@y}
+            if (!args.length && this.acceptSym("|")) {
+                tokens.add(this.token);
+                const variable = this.parseVariable();
+                tokens.add(this.token);
+                this.expectSym("@");
+                const item = this.parseITEM(T);
+                tokens.add(this.token);
+                this.expectSym("}");
+                const ast = new AST(NodeType.RPL, "{}", first, variable, item).range(start, this.tokens[this.cursor - 2].end);
+                tokens.forEach(e => e.parentAST = ast);
+                return ast;
+            }
+            tokens.add(this.token);
+            // {xx,xx}
+            this.expectSym("}");
+            const ast = new AST(NodeType.FN, "{}", first, ...args).range(start, this.tokens[this.cursor - 2].end);
+            tokens.forEach(e => e.parentAST = ast);
+            return ast;
         }
-        throw new Error(`Expected a variable, but got: "${this.token.text}"`);
+        if (left)
+            return left;
+        throw new Error(`Unexpected token in item: "${token.text}"`);
     }
-    parseAtomicITEM() {
-        if (!this.token)
-            throw new Error("Unexpected end of input");
-        // atom
-        if (this.token.type === 'variable' || this.token.type === 'replvar' || this.token.type === 'locvar') {
-            return this.parseATOM_ITEM(false);
-        }
-        // 一元负号 / 正号
-        if (this.token.text === '-' || this.token.text === '+') {
-            const sign = this.token.text;
+    // 解析变量/替换变量/局部变量，根据 isItem 决定节点类型
+    parseVarAtom(isItem) {
+        const token = this.token;
+        const start = token.start;
+        let nodeType;
+        let name = token.text;
+        if (token.type === 'atom') {
+            if (!isItem) {
+                token.type = 'atom-wff';
+                nodeType = NodeType.ATOM_WFF;
+            }
+            else {
+                token.type = 'atom-item';
+                nodeType = NodeType.ATOM_ITEM;
+            }
             this.nextSym();
-            const atom = this.parseATOM_ITEM(false);
-            return new AST(NodeType.ATOM_ITEM, sign + atom.name);
+            return new AST(nodeType, name).range(start, token.end);
         }
-        // 括号
-        if (this.token.text === '(') {
-            this.nextSym();
-            const inner = this.parseITEM();
-            this.expectSym(')');
-            return inner;
-        }
-        // 大括号
-        // if (this.token.text === '{') {
-        //     return this.parseBrace(AstType.ITEM);
-        // }
-        // 替换函数
-        if (this.token.text.startsWith('#sb')) {
-            return this.parseSb(AstType.ITEM);
-        }
-        throw new Error(`Unexpected token in item: "${this.token.text}"`);
+        throw "";
     }
-    // ---- 大括号解析（SEP / RPL） ----
-    // private parseBrace(outerContext: AstType): AST {
-    //     this.expectSym('{');
-    //     const posAfterBrace = this.save();
-    //     // 策略：先尝试按 WFF 解析左部分，若失败则回退用 ITEM
-    //     // 尝试1：左侧为 WFF（可能是 SEP 的 x@A 或 RPL 的 x@B）
-    //     try {
-    //         const leftWFF = this.parseWFF();
-    //         if (this.token && this.token.text === '|') {
-    //             this.nextSym();
-    //             const rightWFF = this.parseWFF();
-    //             this.expectSym('}');
-    //             // 判断是 SEP 还是 RPL
-    //             // SEP: 左侧形如 PRED name='@' 且左子节点为变量
-    //             if (leftWFF.type === NodeType.PRED && leftWFF.name === '@' &&
-    //                 leftWFF.nodes[0].type === NodeType.ATOM) {
-    //                 const x = leftWFF.nodes[0];
-    //                 const A = leftWFF.nodes[1];
-    //                 return new AST(NodeType.SEP, '', x, A, rightWFF);
-    //             }
-    //             // RPL: 右侧形如 PRED name='@' 且左子节点为变量，左侧为 ITEM
-    //             // 但此时左侧是 WFF，不可能为 ITEM，所以 RPL 无法在此分支生成
-    //             // 如果不符合 SEP，报错
-    //             throw new Error("Invalid brace expression");
-    //         }
-    //     } catch { /* 回退 */ }
-    //     this.restore(posAfterBrace);
-    //     // 尝试2：左侧为 ITEM，右侧为 WFF（RPL: {A | x@B}）
-    //     const leftITEM = this.parseITEM();
-    //     this.expectSym('|');
-    //     const rightWFF = this.parseWFF();
-    //     this.expectSym('}');
-    //     // 右侧必须是 PRED name='@' 且左子节点为变量
-    //     if (rightWFF.type === NodeType.PRED && rightWFF.name === '@' &&
-    //         rightWFF.nodes[0].type === NodeType.ATOM) {
-    //         const x = rightWFF.nodes[0];
-    //         const B = rightWFF.nodes[1];
-    //         return new AST(NodeType.RPL, '', leftITEM, x, B);
-    //     }
-    //     throw new Error("Invalid brace expression");
-    // }
-    // ---- 替换函数 #sb(a,b,c,x1...xn) ----
-    parseSb(expectedType) {
-        this.nextSym(); // 吃掉 '#sb' 标识
-        this.expectSym('(');
-        const args = [];
-        // 第一个参数：根据 expectedType 解析 WFF 或 ITEM
-        args.push(expectedType === AstType.WFF ? this.parseWFF() : this.parseITEM());
-        this.expectSym(',');
-        // 第二个参数：变量
-        args.push(this.parseAtomicITEM());
-        args[args.length - 1].astType = AstType.VAR;
-        this.expectSym(',');
-        // 第三个参数：ITEM
-        args.push(this.parseITEM());
-        // 后续可选变量
-        while (this.acceptSym(',')) {
-            const v = this.parseAtomicITEM();
-            v.astType = AstType.VAR;
-            args.push(v);
+    parseVariable() {
+        const token = this.token;
+        if (!token || (token.type !== 'atom')) {
+            throw new Error(`Expected variable, but got "${token?.text}"`);
         }
-        this.expectSym(')');
-        // name 为空字符串
-        return new AST(NodeType.SB, '', ...args);
+        token.type = "atom-free-var";
+        const start = token.start;
+        this.nextSym();
+        return new AST(NodeType.VAR, token.text).range(start, token.end);
     }
 }
 //# sourceMappingURL=parser.js.map

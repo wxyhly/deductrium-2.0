@@ -3,10 +3,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0" />
     <meta charset="UTF-8">
     <title>Deductrium-2.0</title>
+    <link href="style/list.css" rel="stylesheet" type="text/css">
     <link href="style/editor.css" rel="stylesheet" type="text/css">
 </head>
 <script src="js/game.js" type="module"></script>
 <body>
+    <!-- ===== 定理表 ===== -->
+    <div class="manager-card" id="theoremManager">
+        <div class="card-header">
+            <h2>📐 定理表 <span class="badge" id="theoremBadge">0</span></h2>
+            <div class="actions">
+                <button class="btn-sm primary" id="theoremAddFolder">+ 文件夹</button>
+                <button class="btn-sm primary" id="theoremAddItem">+ 定理</button>
+            </div>
+        </div>
+        <div class="list-wrapper" id="theoremListWrapper">
+            <div class="rows-container" id="theoremRows"></div>
+        </div>
+    </div>
+
+    <!-- ===== 命题表 ===== -->
+    <div class="manager-card" id="propositionManager">
+        <div class="card-header">
+            <h2>📋 命题表 <span class="badge" id="propBadge">0</span></h2>
+            <div class="actions">
+                <button class="btn-sm primary" id="propAddFolder">+ 文件夹</button>
+                <button class="btn-sm primary" id="propAddItem">+ 命题</button>
+            </div>
+        </div>
+        <div class="list-wrapper" id="propListWrapper">
+            <div class="rows-container" id="propRows"></div>
+        </div>
+    </div>
+    <button>添加公理</button>
     <div id="deduct-editor"></div>
+    <div id="type-editor"></div>
 </body>
 </html>

@@ -1,8 +1,8 @@
 .editor-container {
   position: relative;
   width: 100%;
-  max-width: 700px;
-  height: 350px;
+  /* max-width: 700px; */
+  height: 200px;
   margin: 30px auto;
   overflow: hidden;
   border: 1px solid #ccc;
@@ -15,25 +15,25 @@
   width: 100%;
   height: 100%;
   margin: 0;
-  padding: 12px 16px;
+  padding: 2px 6px;
   border: none;
   outline: none;
   background: transparent;
-  font-family: 'Verdana', monospace, monospace;
-  font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-wrap: break-word;
   box-sizing: border-box;
-  tab-size: 4;
-  -moz-tab-size: 4;
-  font-variant-ligatures: none;
-  font-kerning: none;
   letter-spacing: normal;
   text-align: left;
   overflow: auto;
   resize: none;
 }
+.editor-textarea, .editor-pre, .editor-pre span, .cell-content span{
+  font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande',  Geneva, Verdana,Arial, "宋体", "黑体", simsun, "Fira Math", sans-serif;
+  font-size: 16px;
+  font-variant-ligatures: none;
+  font-kerning: auto;
+} 
 
 .editor-textarea {
   z-index: 2;
@@ -56,20 +56,31 @@
 }
 
 body{
-    --replvar-color:rgb(180, 33, 33);
+    --replvar-color:rgb(180, 33, 53);
 }
 
 /* Token 样式 */
-.token-keyword   { color: black;  }
-.token-operator  { color:blue; }
-.token-replvar  { color: rgb(80, 80, 80) }
-.token-replvar-wff  { color: rgb(252, 73, 73); }
-.token-replvar-item  { color:var(--replvar-color);}
-.token-replvar-var  { color:var(--replvar-color); font-style: italic;}
-.token-locvar  { color: rgb(109, 140, 173);font-style: italic; }
-.token-wff  { color: rgb(29, 177, 214);}
-.token-variable  { color: rgb(9, 179, 43); font-style: italic; }
-.token-const    { color: blue; }
+.token-layer-1 { color: #4070d5; }
+.token-layer-2 { color: #7e44bd; }
+.token-layer-3 { color: #c0202b; }
+.token-layer-4 { color: #a38400; }
+.token-layer-0 { color: #27ae60; }
+.token-atom    { color: rgb(154, 154, 154);}
+.token-atom-item    { color: rgb(120, 120, 194);}
+.token-atom-wff,.token-pred  { color: rgb(29, 177, 214);}
+.token-atom-var  { color: rgb(9, 179, 43); }
+.token-atom-free-var  { color: rgb(255, 0, 0); }
+.token-atom,.token-atom-item,.token-replvar{
+    text-decoration-line: underline;text-decoration-color: red; 
+}
+.token-atom-locvar  { color: rgb(151, 187, 24); }
+.token-atom-const { color: blue; }
+.token-fn {color: rgb(180, 0, 180);}
+.token-replvar  { color: rgb(120, 80, 80); }
+.token-replvar-wff  { color: rgb(252, 93, 73); }
+.token-replvar-item  { color:var(--replvar-color); }
+.token-replvar-var  { color:#a36400; }
+.token-sb  { color:purple}
 
 /* AST 悬停高亮 */
 .ast-highlight {
