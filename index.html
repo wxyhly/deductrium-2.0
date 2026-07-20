@@ -1,17 +1,19 @@
 <!DOCTYPE html>
+
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0" />
     <meta charset="UTF-8">
     <title>Deductrium-2.0</title>
+    <link href="style/fs.css" rel="stylesheet" type="text/css">
     <link href="style/list.css" rel="stylesheet" type="text/css">
     <link href="style/editor.css" rel="stylesheet" type="text/css">
 </head>
 <script src="js/game.js" type="module"></script>
+
 <body>
-    <!-- ===== 定理表 ===== -->
     <div class="manager-card" id="theoremManager">
         <div class="card-header">
-            <h2>📐 定理表 <span class="badge" id="theoremBadge">0</span></h2>
+            <h2>规则表 <span class="badge" id="theoremBadge">0</span></h2>
             <div class="actions">
                 <button class="btn-sm primary" id="theoremAddFolder">+ 文件夹</button>
                 <button class="btn-sm primary" id="theoremAddItem">+ 定理</button>
@@ -22,10 +24,9 @@
         </div>
     </div>
 
-    <!-- ===== 命题表 ===== -->
     <div class="manager-card" id="propositionManager">
         <div class="card-header">
-            <h2>📋 命题表 <span class="badge" id="propBadge">0</span></h2>
+            <h2>推理表 <span class="badge" id="propBadge">0</span></h2>
             <div class="actions">
                 <button class="btn-sm primary" id="propAddFolder">+ 文件夹</button>
                 <button class="btn-sm primary" id="propAddItem">+ 命题</button>
@@ -36,7 +37,29 @@
         </div>
     </div>
     <button>添加公理</button>
-    <div id="deduct-editor"></div>
+    <!-- <div class="cmd-footer">
+        <div class="card-header">
+            <h2>执行命令 <span class="badge">0</span></h2>
+            <div class="actions">
+                <button class="btn-sm warning" id="propAddFolder">OK</button>
+                <button class="btn-sm warning" id="propAddItem">ESC</button>
+            </div>
+        </div>
+        <div id="deduct-editor"></div>
+    </div> -->
+    <div class="cmd-footer" id="cmdFooter" style="height:150px;">
+        <div class="resize-handle" id="cmdResizeHandle"></div>
+        <div class="cmd-content">
+            <div class="actions">
+                <button class="btn-sm warning">OK</button>
+                <button class="btn-sm warning">ESC</button>
+            </div>
+            <div id="deduct-editor"></div>
+            <!-- <textarea class="cmd-textarea" placeholder="输入命令..."></textarea> -->
+        </div>
+    </div>
     <div id="type-editor"></div>
+
 </body>
+
 </html>

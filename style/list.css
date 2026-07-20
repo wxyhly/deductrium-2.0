@@ -17,7 +17,7 @@ body {
 
 .card-header {
     background-color: #f3f7ff;
-    padding: 0 1rem;
+    padding: 0 0.4rem;
     border-bottom: 1px solid #eef2f6;
     display: flex;
     align-items: center;
@@ -31,6 +31,7 @@ body {
     color: #0f172a;
     display: flex;
     align-items: center;
+    margin: 0.4rem 0;
     gap: 0.5rem;
 }
 
@@ -70,8 +71,17 @@ body {
     color: white;
 }
 
+.btn-sm.warning {
+    background: #dc2626;
+    color: white;
+}
+
 .btn-sm.primary:hover {
     background: #4338ca;
+}
+
+.btn-sm.warning:hover {
+    background: #c41616;
 }
 
 /* ===== 列表容器 ===== */
@@ -79,7 +89,6 @@ body {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    /* background: #fafbfc; */
     border-radius: 0 0 20px 20px;
     position: relative;
     min-height: 0;
@@ -98,7 +107,6 @@ body {
 .item-row {
     display: grid;
     grid-template-columns: var(--col-name, 60px) 1fr var(--col-extra, 80px) var(--col-actions, 10px);
-    gap: 0.5rem;
     align-items: stretch;
     padding: 0;
     border-bottom: 1px solid #f1f4f9;
@@ -121,7 +129,7 @@ body {
 }
 
 /* 占位符行（透明，极小高度） */
-.item-row.drop-placeholder {
+/* .item-row.drop-placeholder {
     min-height: 4px;
     height: 4px;
     padding: 0;
@@ -130,7 +138,7 @@ body {
     background: transparent;
     pointer-events: auto;
     touch-action: none;
-}
+} */
 
 /* 拖拽插入指示线 - 蓝色（允许） */
 .item-row.drop-before::before,
@@ -246,6 +254,7 @@ body {
 }
 
 .cell-content {
+    margin-left: 0.4rem;
     display: flex;
     align-items: center;
     overflow: visible;
@@ -364,6 +373,7 @@ body {
     padding: 0.2rem 0;
     opacity: 0;
     visibility: hidden;
+    display: none;
     transform: translateY(-4px) scale(0.96);
     transition: 0.14s ease;
     z-index: 100;
@@ -373,6 +383,7 @@ body {
 
 .dropdown-menu.open {
     opacity: 1;
+    display: block;
     visibility: visible;
     transform: translateY(0) scale(1);
     pointer-events: auto;

@@ -124,7 +124,7 @@ export class FSParser {
         return this.tokens;
     }
     // ---- 解析入口 ----
-    parse(unicodeText, isItem) {
+    parse(unicodeText, type) {
         this.tokens = this.tokenize(unicodeText);
         const tokensWithSpaces = this.tokens;
         this.tokens = this.tokens.filter(e => e.type !== "space");
@@ -132,16 +132,51 @@ export class FSParser {
         this.nextSym();
         let res;
         try {
-            if (isItem === T) {
-                res = this.parseITEM(T);
-            }
-            else {
-                res = this.parseWFF(isItem);
+            switch (type) {
+                case 'ast':
+                    res = this.parseWFF(U);
+                    break;
+                case 'wff':
+                    res = this.parseWFF(F);
+                    break;
+                case 'item':
+                    res = this.parseITEM(T);
+                    break;
+                case 'rule':
+                    res = this.nextRule();
+                    break;
             }
         }
-        catch (e) { }
+        catch { }
         this.tokens = tokensWithSpaces;
         return res;
+    }
+    nextRule() {
+        const start = this.cursor - 1;
+        let conds = [];
+        let symTokens = new Set;
+        let paren = this.acceptSym("(");
+        while (this.token) {
+            if (this.token.text === "|-")
+                break;
+            conds.push(this.parseWFF(F));
+            if (this.token.text === "|-")
+                break;
+            if (this.token.text !== ",")
+                throw "parse rule failed";
+            symTokens.add(this.token);
+            this.nextSym();
+        }
+        if (this.token.text !== "|-")
+            throw "parse rule failed";
+        symTokens.add(this.token);
+        this.nextSym();
+        const conc = this.parseWFF(F);
+        if (paren)
+            this.expectSym(")");
+        const ast = new AST(NodeType.RULE, "", ...conds, conc).range(start, this.tokens[this.cursor - 2].end);
+        symTokens.forEach(e => e.parentAST = ast);
+        return ast;
     }
     nextSym() { this.token = this.tokens[this.cursor++]; }
     prevSym() { this.token = this.tokens[this.cursor - 2]; this.cursor--; }
@@ -219,16 +254,23 @@ export class FSParser {
             this.nextSym();
             const varToken = this.token;
             const varNode = this.parseVariable();
-            let colonToken = this.token;
-            if (!this.acceptSym(':')) {
-                colonToken = undefined;
+            let symTokens = [];
+            let domainNode;
+            if (this.token.text === "@" || this.token.text === ":")
+                symTokens.push(this.token);
+            if (this.acceptSym("@")) {
+                this.parseITEM(T);
+                if (this.token.text === ":")
+                    symTokens.push(this.token);
             }
+            this.acceptSym(':');
             const body = this.parseQuant(F);
-            const ast = new AST(NodeType.QUANT, quant, varNode, body).range(start, body.end);
+            const ast = (domainNode ?
+                new AST(NodeType.BOUNDED_QUANT, quant, varNode, domainNode, body) :
+                new AST(NodeType.QUANT, quant, varNode, body)).range(start, body.end);
             quantToken.parentAST = ast;
             varToken.parentAST = ast;
-            if (colonToken)
-                colonToken.parentAST = ast;
+            symTokens.forEach(e => e.parentAST = ast);
             return ast;
         }
         if (this.token?.text === "~") {
@@ -237,7 +279,6 @@ export class FSParser {
         return this.parsePred(isItem);
     }
     remarkItem(left, leftToken) {
-        // 必须先检测括号
         if (leftToken.text === "(") {
             const innerToken = this.tokens[this.tokens.indexOf(leftToken) + 1];
             this.remarkItem(left, innerToken);
@@ -448,7 +489,7 @@ export class FSParser {
                 const item = this.parseITEM(T);
                 tokens.add(this.token);
                 this.expectSym("}");
-                const ast = new AST(NodeType.RPL, "{}", first, variable, item).range(start, this.tokens[this.cursor - 2].end);
+                const ast = new AST(NodeType.RPL, "", first, variable, item).range(start, this.tokens[this.cursor - 2].end);
                 tokens.forEach(e => e.parentAST = ast);
                 return ast;
             }
@@ -492,6 +533,56 @@ export class FSParser {
         const start = token.start;
         this.nextSym();
         return new AST(NodeType.VAR, token.text).range(start, token.end);
+    }
+    static stringyfy(ast, parenthese) {
+        if (ast.type === NodeType.ATOM_ITEM || ast.type === NodeType.ATOM_WFF || ast.type === NodeType.VAR)
+            return ast.name;
+        const left = parenthese ? "(" : "";
+        const right = parenthese ? ")" : "";
+        if (ast.type === NodeType.LOGIC) {
+            const a = ast.nodes[0];
+            const b = ast.nodes[1];
+            if (ast.name === ">" || ast.name === "<>")
+                return left + FSParser.stringyfy(a, a.type === NodeType.LOGIC && (a.name === ">" || a.name === "<>")) + ast.name + FSParser.stringyfy(b, false) + right;
+            if (ast.name === "\\/")
+                return left + FSParser.stringyfy(a, a.type === NodeType.LOGIC && (a.name === ">" || a.name === "<>")) + ast.name + FSParser.stringyfy(b, b.type === NodeType.LOGIC && (b.name === ">" || b.name === "<>" || b.name === "\\/")) + right;
+            if (ast.name === "/\\")
+                return left + FSParser.stringyfy(a, a.type === NodeType.LOGIC && (a.name === ">" || a.name === "<>" || a.name === "\\/")) + ast.name + FSParser.stringyfy(b, b.type === NodeType.LOGIC && (b.name === ">" || b.name === "<>" || b.name === "\\/" || b.name === "/\\")) + right;
+            if (ast.name === "~")
+                return "~" + FSParser.stringyfy(a, a.type === NodeType.LOGIC && (a.name === ">" || a.name === "<>" || a.name === "\\/" || a.name === "/\\"));
+        }
+        if (ast.type === NodeType.QUANT || ast.type === NodeType.BOUNDED_QUANT) {
+            const body = ast.nodes[ast.type === NodeType.QUANT ? 1 : 2];
+            const bounded = ast.type === NodeType.BOUNDED_QUANT ? "@" + FSParser.stringyfy(ast.nodes[1], false) : "";
+            return ast.name + ast.nodes[0].name + bounded + ":" + FSParser.stringyfy(body, body.type === NodeType.LOGIC && body.name !== "~");
+        }
+        if (ast.type === NodeType.FN) {
+            if (setSyms.includes(ast.name)) {
+                const a = ast.nodes[0];
+                const b = ast.nodes[1];
+                return left + FSParser.stringyfy(a, a.type === NodeType.FN && setSyms.includes(a.name)) + ast.name + b + right;
+            }
+            return ast.name === "()" || ast.name === "{}" ? "" : ast.name + (ast.name === "{}" ? "{" : "(") + ast.nodes.map(e => FSParser.stringyfy(e, false)).join(",") + (ast.name === "{}" ? "}" : ")");
+        }
+        if (ast.type === NodeType.PRED) {
+            return `${FSParser.stringyfy(ast.nodes[0], false)}${ast.name}${FSParser.stringyfy(ast.nodes[1], false)}`;
+        }
+        if (ast.type === NodeType.SEP) {
+            return `{${ast.nodes[0].name}@${FSParser.stringyfy(ast.nodes[1], false)}|${FSParser.stringyfy(ast.nodes[2], false)}}`;
+        }
+        if (ast.type === NodeType.CLASS) {
+            return `{${ast.nodes[0].name}|${FSParser.stringyfy(ast.nodes[1], false)}}`;
+        }
+        if (ast.type === NodeType.RPL) {
+            return `{${FSParser.stringyfy(ast.nodes[0], false)}|${ast.nodes[1].name}@${FSParser.stringyfy(ast.nodes[2], false)}}`;
+        }
+        if (ast.type === NodeType.RULE) {
+            const conc = ast.nodes.pop();
+            const str = ast.nodes.map(e => FSParser.stringyfy(e, false)).join(",") + "|-" + FSParser.stringyfy(conc, false);
+            ast.nodes.push(conc);
+            return str;
+        }
+        return "";
     }
 }
 //# sourceMappingURL=parser.js.map

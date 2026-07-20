@@ -1,15 +1,15 @@
 import { FSError } from "./error.js";
 export class Deduction {
-    system; // record which axioms are used
+    dependence; // record which axioms are used
     name;
     assertions;
     conditions;
     conclusion;
     step;
     replaceNames;
-    constructor(name, system, assertions, conditions, conclusion, step) {
+    constructor(dependence, name, assertions, conditions, conclusion, step) {
         try {
-            this.system = system;
+            this.dependence = dependence;
             this.name = name;
             this.assertions = assertions;
             this.conditions = conditions;
@@ -32,13 +32,30 @@ export class Deduction {
             throw FSError.createRule(name, e);
         }
     }
-    deduct(assertions, conditions, replaceValues) {
+}
+export class Proposition {
+    ast;
+    from;
+    constructor(ast, from) {
+        this.from = from;
+        this.ast = ast;
+    }
+    static hyp(ast) {
         try {
-            if (conditions.length !== this.conditions.length)
+            ast.checkWFF();
+        }
+        catch (e) {
+            FSError.hypFail(e);
+        }
+        return new Proposition(ast, 'h');
+    }
+    static d(deduction, assertions, conditions, replaceValues) {
+        try {
+            if (conditions.length !== deduction.conditions.length)
                 throw FSError.inconsistCondNum();
             for (let i = 0; i < conditions.length; i++) {
                 try {
-                    conditions[i].match(this.conditions[i], replaceValues);
+                    conditions[i].match(deduction.conditions[i], replaceValues);
                 }
                 catch (e) {
                     throw FSError.matchCond(i + 1, e);
@@ -53,7 +70,7 @@ export class Deduction {
                 }
             }
             try {
-                const res = this.conclusion.clone().mut_replaceByMatchTable(replaceValues);
+                const res = deduction.conclusion.clone().mut_replaceByMatchTable(replaceValues);
                 res.checkWFF();
                 return res;
             }
@@ -65,7 +82,5 @@ export class Deduction {
             throw FSError.deductFail(this.name, e);
         }
     }
-}
-class Proposition {
 }
 //# sourceMappingURL=deduct.js.map

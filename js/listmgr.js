@@ -246,52 +246,7 @@ export class FlatTreeManager {
         handle.className = 'resize-handle';
         this.container.appendChild(handle);
         this.resizeHandle = handle;
-        handle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            this.startResize(e.clientY);
-        });
-        handle.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const touch = e.touches[0];
-            this.startResize(touch.clientY);
-        }, { passive: false });
-    }
-    startResize(startY) {
-        this.isResizing = true;
-        if (this.resizeHandle)
-            this.resizeHandle.classList.add('active');
-        const onMove = (clientY) => {
-            if (!this.isResizing)
-                return;
-            const rect = this.container.getBoundingClientRect();
-            const newHeight = clientY - rect.top + (this.container.offsetHeight - rect.height);
-            if (newHeight < 80)
-                return;
-            this.container.style.height = newHeight + 'px';
-        };
-        const onEnd = () => {
-            this.isResizing = false;
-            if (this.resizeHandle)
-                this.resizeHandle.classList.remove('active');
-            document.removeEventListener('mousemove', mouseMoveHandler);
-            document.removeEventListener('mouseup', mouseUpHandler);
-            document.removeEventListener('touchmove', touchMoveHandler);
-            document.removeEventListener('touchend', touchEndHandler);
-            document.body.style.userSelect = '';
-        };
-        const mouseMoveHandler = (e) => onMove(e.clientY);
-        const mouseUpHandler = () => onEnd();
-        const touchMoveHandler = (e) => {
-            e.preventDefault();
-            const touch = e.touches[0];
-            onMove(touch.clientY);
-        };
-        const touchEndHandler = () => onEnd();
-        document.addEventListener('mousemove', mouseMoveHandler);
-        document.addEventListener('mouseup', mouseUpHandler);
-        document.addEventListener('touchmove', touchMoveHandler, { passive: false });
-        document.addEventListener('touchend', touchEndHandler);
-        document.body.style.userSelect = 'none';
+        makeResizable(this.container, handle, false);
     }
     expandAll() {
         const collect = (node) => {
@@ -1129,5 +1084,65 @@ export class FlatTreeManager {
     _mouseUp = null;
     _touchMove = null;
     _touchEnd = null;
+}
+/**
+ * 使容器支持通过手柄拖拽调整高度
+ * @param container  要调整高度的元素
+ * @param handle     拖拽手柄元素
+ * @param minHeight  最小高度（px）
+ * @param maxHeight  最大高度（px），可传入动态值如 window.innerHeight * 0.7
+ * @param onResize   可选回调，在高度变化时触发
+ */
+export function makeResizable(container, handle, topMode, 
+// minHeight: number = 60,
+// maxHeight: number = window.innerHeight * 0.7,
+onResize) {
+    let isResizing = false;
+    const startResize = (startY) => {
+        isResizing = true;
+        handle.classList.add('active');
+        const onMove = (clientY) => {
+            if (!isResizing)
+                return;
+            const rect = container.getBoundingClientRect();
+            const bottomOffset = window.innerHeight - rect.bottom;
+            // let newHeight = window.innerHeight - clientY - bottomOffset;
+            const newHeight = topMode ? window.innerHeight - clientY - bottomOffset : clientY - rect.top + (container.offsetHeight - rect.height);
+            if (newHeight < 60)
+                return;
+            container.style.height = newHeight + 'px';
+            onResize?.(newHeight);
+        };
+        const onEnd = () => {
+            isResizing = false;
+            handle.classList.remove('active');
+            document.removeEventListener('mousemove', mouseMove);
+            document.removeEventListener('mouseup', mouseUp);
+            document.removeEventListener('touchmove', touchMove);
+            document.removeEventListener('touchend', touchEnd);
+            document.body.style.userSelect = '';
+        };
+        const mouseMove = (e) => onMove(e.clientY);
+        const mouseUp = () => onEnd();
+        const touchMove = (e) => {
+            e.preventDefault();
+            onMove(e.touches[0].clientY);
+        };
+        const touchEnd = () => onEnd();
+        document.addEventListener('mousemove', mouseMove);
+        document.addEventListener('mouseup', mouseUp);
+        document.addEventListener('touchmove', touchMove, { passive: false });
+        document.addEventListener('touchend', touchEnd);
+        document.body.style.userSelect = 'none';
+    };
+    handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startResize(e.clientY);
+    });
+    handle.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        startResize(touch.clientY);
+    }, { passive: false });
 }
 //# sourceMappingURL=listmgr.js.map

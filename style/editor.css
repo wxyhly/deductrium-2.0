@@ -1,9 +1,7 @@
 .editor-container {
   position: relative;
   width: 100%;
-  /* max-width: 700px; */
-  height: 200px;
-  margin: 30px auto;
+  height: 100%;
   overflow: hidden;
   border: 1px solid #ccc;
   border-radius: 5px;
@@ -28,8 +26,12 @@
   overflow: auto;
   resize: none;
 }
+@font-face {
+  font-family: 'cambria_font';
+  src: url('cambria_font0.ttf');
+}
 .editor-textarea, .editor-pre, .editor-pre span, .cell-content span{
-  font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande',  Geneva, Verdana,Arial, "宋体", "黑体", simsun, "Fira Math", sans-serif;
+  font-family: "cambria_font";
   font-size: 16px;
   font-variant-ligatures: none;
   font-kerning: auto;
@@ -66,24 +68,59 @@ body{
 .token-layer-4 { color: #a38400; }
 .token-layer-0 { color: #27ae60; }
 .token-atom    { color: rgb(154, 154, 154);}
-.token-atom-item    { color: rgb(120, 120, 194);}
+.token-atom-item    { color: rgb(120, 120, 194); font-style: italic;}
 .token-atom-wff,.token-pred  { color: rgb(29, 177, 214);}
-.token-atom-var  { color: rgb(9, 179, 43); }
-.token-atom-free-var  { color: rgb(255, 0, 0); }
+.token-atom-var  { color: rgb(9, 179, 43); font-style: italic; }
+.token-atom-free-var  { color: rgb(255, 0, 0); font-style: italic; }
 .token-atom,.token-atom-item,.token-replvar{
     text-decoration-line: underline;text-decoration-color: red; 
 }
-.token-atom-locvar  { color: rgb(151, 187, 24); }
+.token-atom-locvar  { color: rgb(151, 187, 24); font-style: italic; }
 .token-atom-const { color: blue; }
 .token-fn {color: rgb(180, 0, 180);}
 .token-replvar  { color: rgb(120, 80, 80); }
 .token-replvar-wff  { color: rgb(252, 93, 73); }
-.token-replvar-item  { color:var(--replvar-color); }
-.token-replvar-var  { color:#a36400; }
+.token-replvar-item  { color:var(--replvar-color); font-style: italic; }
+.token-replvar-var  { color:#a36400; font-style: italic; }
 .token-sb  { color:purple}
 
 /* AST 悬停高亮 */
 .ast-highlight {
   background-color: rgba(255, 200, 0, 0.3);
   border-radius: 2px;
+}
+
+/* ===== 底部命令面板 ===== */
+.cmd-footer {
+    position: fixed;
+    bottom: 0px;
+    left: 8px;
+    right: 8px;
+    background-color: rgba(244, 247, 249, 0.9);
+    border-radius: 5px;
+    padding: 5px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    min-height: 60px;
+    max-height: 70vh;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
+    touch-action: none;
+}
+.cmd-footer .resize-handle {
+    border-radius: 5px 5px 0 0;
+    margin-top: -6px;
+    margin-bottom: 4px;
+}
+
+.cmd-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#deduct-editor{
+  flex: 1 1 0%;
 }

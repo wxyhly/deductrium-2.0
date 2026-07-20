@@ -1,6 +1,7 @@
 // atom:wff|item
 // logic:wff[]->wff
 // quant:Vvar:wff->wff
+// bounded-quant:Vvar@item:wff->wff
 // fn:item[]->item
 // pred:item[]->wff
 // sep:{var@item|wff}->item
@@ -11,7 +12,8 @@ import { FSError } from "./error.js";
 
 // sub: #sb(wff|item,var,item;...var)
 export enum NodeType {
-    VAR, ATOM_ITEM, ATOM_WFF, LOGIC, QUANT, FN, PRED, SEP, RPL, CLASS, SB,
+    VAR, ATOM_ITEM, ATOM_WFF, LOGIC, QUANT, BOUNDED_QUANT, FN, PRED, SEP, RPL, CLASS, SB,
+    RULE
 }
 
 type ReplvarTable = Map<string, boolean>;
@@ -32,7 +34,7 @@ export class AST {
         this.type = ast.type; this.name = ast.name;
         this.nodes = ast.nodes.map(e => e.clone());
     }
-    isAtom() { return this.type === NodeType.ATOM_ITEM || this.type === NodeType.ATOM_WFF ? this.name : undefined; }
+    isAtom() { return this.type === NodeType.VAR || this.type === NodeType.ATOM_ITEM || this.type === NodeType.ATOM_WFF ? this.name : undefined; }
     isReplvar() {
         const n = this.isAtom();
         return n && n.startsWith("$") ? n : undefined;
@@ -42,9 +44,9 @@ export class AST {
             const isItem = this.type === NodeType.ATOM_ITEM || this.type === NodeType.VAR;
             const oldIsItem = res.get(this.name);
             if (oldIsItem !== undefined && oldIsItem !== isItem) {
-                throw new Error(`Replvar ${this.name} has conflicting types: ${oldIsItem ? "item" : "wff"} vs ${isItem ? "item" : "wff"}`);
+                throw FSError.isItemAndWff(this.name);
             }
-            res.set(this.name, this.type === NodeType.ATOM_ITEM || this.type === NodeType.VAR);
+            res.set(this.name, isItem);
             return res;
         }
         for (const node of this.nodes) {

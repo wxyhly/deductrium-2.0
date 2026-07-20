@@ -1,0 +1,10 @@
+.cmd-footer {
+    position: fixed;
+    bottom: 0px;
+    left: 8px;
+    right: 8px;
+    background-color: rgba(244, 247, 249, 0.9);
+    border-radius: 5px;
+    padding: 5px;
+    z-index: 50;
+}

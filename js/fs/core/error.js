@@ -21,6 +21,9 @@ export class FSError {
     static assertFail(idx, msg) {
         return this.lang === "zh" ? "第" + idx + "个断言失败：" + msg : "assertion " + idx + " failed: " + msg;
     }
+    static distinctFail() {
+        return this.lang === "zh" ? "变量不满足互不相同" : "variables are not mutually distinct";
+    }
     static matchFail(a, b, name) {
         return this.lang === "zh" ? (name ? "元变量" + name + "取值不一致：" : "") + a.toString() + " <=X=> " + b.toString() : (name ? "meta variable " + name + " has inconsistent values: " : "") + a.toString() + " <=X=> " + b.toString();
     }
@@ -32,6 +35,9 @@ export class FSError {
     }
     static inconsistCondNum() {
         return this.lang === "zh" ? "条件数量不一致" : "inconsistent number of conditions";
+    }
+    static hypFail(msg) {
+        return this.lang === "zh" ? "创建假设失败：" + msg : "add hypothesis failed: " + msg;
     }
 }
 //# sourceMappingURL=error.js.map
