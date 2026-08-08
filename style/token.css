@@ -1,0 +1,50 @@
+.pre-span, .post-span{
+    background-color: rgba(220,230,255,0.5);
+    opacity: 0.9;
+    font-size: x-small;
+}
+
+.pre-span{
+    border-radius: 2px;
+    border: 1px blue solid;
+    margin-right: 2px;
+}
+
+/* Token 样式 */
+.token-layer-1 { color: #4070d5; }
+.token-layer-2 { color: #7e44bd; }
+.token-layer-3 { color: #90202b; }
+.token-layer-4 { color: #a38400; }
+.token-layer-0 { color: #27ae60; }
+.token-cmd    { color: rgb(59, 57, 189); font-weight: 900;}
+.token-atom    { color: rgb(154, 154, 154);}
+.token-atom-item    { color: rgb(120, 120, 194); font-style: italic;}
+.token-atom-wff,.token-pred  { color: rgb(29, 177, 214);}
+.token-atom-var  { color: rgb(9, 179, 43); font-style: italic; }
+.token-atom-free-var  { color: red; font-style: italic; }
+.token-atom,.token-atom-item,.token-replvar{
+  text-decoration-line: underline;text-decoration-color: red;
+}
+.token-atom-locvar  { color: rgb(151, 187, 24); font-style: italic; }
+.token-atom-const { color: blue; }
+.token-fn {color: rgb(180, 0, 180); font-style: italic;}
+.token-replvar  { color: rgb(120, 80, 80); }
+.token-replvar-wff  { color: rgb(252, 93, 73); }
+.token-replvar-item  { color:rgb(180, 33, 53); font-style: italic; }
+.token-replvar-U3  { color: grey; }
+.token-replvar-var  { color:#a36400; font-style: italic; }
+.token-sb  { color:purple}
+
+.token-rule-prefix{ color: #a32100;}
+.token-rule-atom{ color: rgb(97, 90, 120);}
+.token-rule-axiom{ color: rgb(140, 130, 0);}
+.token-rule-def{ color: rgb(5, 131, 34);}
+.token-rule-sharp{ color: grey; font-weight: 900;}
+.token-rule-mp{ color: rgb(74, 13, 159);}
+
+
+/* AST 悬停高亮 */
+.ast-highlight {
+  background-color: rgba(255, 200, 0, 0.3);
+  border-radius: 2px;
+}

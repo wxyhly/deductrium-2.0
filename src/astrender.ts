@@ -1,5 +1,14 @@
-import { NodeType } from "./fs/core/ast.js";
-
+import { NodeType } from "./asttype.js";
+const escapeHtmlMap: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+};
+export function highlightHTML(str: string, type: string) {
+    return `<span data-ast-type="${type}">${str.replace(/[&<>"']/g, ch => escapeHtmlMap[ch])}</span>`;
+}
 // ========== 类型与接口 ==========
 export interface Token {
     type: string;
@@ -28,6 +37,7 @@ export interface IParser {
 
     /** 输入自动替换规则：ASCII 序列 → Unicode 显示符号，按长度降序 */
     inputReplacements: [string, string][];
+    allowReplaceTokenType?: (type: string) => boolean;
 }
 
 // ========== 工具函数 ==========
@@ -49,13 +59,23 @@ type QuantStack = Array<{
 
 export class SyntaxHighlighter {
     dummytokens: Array<Token[]> = [];
-
+    outterDummyVars: Array<[string, HTMLElement]> = [];
     highlight(tokens: Token[]): string {
         const quantStack: QuantStack = [];
         let layerDepth = 0;
         this.dummytokens.length = 0;
         return tokens.map((tok, tidx) => {
             const boundedTokens = this.highLightQuants(quantStack, tokens, tok, tidx);
+            let attrs = '';
+            if (boundedTokens) {
+                this.dummytokens[tok.start] = boundedTokens;
+            } else if (tok.type.includes("replvar") || tok.type.includes('free')) {
+                const outerIdx = this.outterDummyVars.findIndex(([name, _]) => name === tok.text);
+                if (outerIdx !== -1) {
+                    if (!tok.type.includes("replvar")) tok.type = 'atom-var';
+                    attrs += ` data-outer-idx="${outerIdx}"`;
+                }
+            }
             let cls = 'token-' + tok.type;
             if (tok.type === "layer") {
                 if ("([{".includes(tok.text)) {
@@ -66,15 +86,14 @@ export class SyntaxHighlighter {
                     layerDepth--;
                 }
             }
+
             const escaped = this.escapeHtml(tok.displayText);
-            let attrs = `class="${cls}" data-start="${tok.start}" data-end="${tok.end}"`;
+            attrs += ` data-start="${tok.start}" data-end="${tok.end}"`;
             if (tok.parentAST && typeof tok.parentAST.start === 'number' && typeof tok.parentAST.end === 'number') {
                 attrs += ` data-parent-start="${tok.parentAST.start}" data-parent-end="${tok.parentAST.end}"`;
             }
-            if (boundedTokens) {
-                this.dummytokens[tok.start] = boundedTokens;
-            }
-            return `<span ${attrs}>${escaped}</span>`;
+
+            return `<span class="${cls}" ${attrs}>${escaped}</span>`;
         }).join('');
     }
 
@@ -132,7 +151,7 @@ export class SyntaxHighlighter {
 export class HighlightManager {
     private codeElement: HTMLElement;
     private highlighter: SyntaxHighlighter;
-
+    private highlightedOuter: HTMLElement | null = null;
     constructor(codeElement: HTMLElement, highlighter: SyntaxHighlighter) {
         this.codeElement = codeElement;
         this.highlighter = highlighter;
@@ -169,6 +188,25 @@ export class HighlightManager {
                     el.classList.add('ast-highlight');
                 }
             });
+        } else {
+            const outerIdx = span.dataset.outerIdx;
+            if (outerIdx !== undefined) {
+                const outerEl = this.highlighter.outterDummyVars[parseInt(outerIdx)]?.[1];
+                if (outerEl) {
+                    // 清除之前的外部高亮
+                    if (this.highlightedOuter && this.highlightedOuter !== outerEl) {
+                        this.highlightedOuter.classList.remove('ast-highlight');
+                    }
+                    outerEl.classList.add('ast-highlight');
+                    this.highlightedOuter = outerEl;
+                }
+            } else {
+                // 如果当前 span 没有外部变量，清除之前的外部高亮
+                if (this.highlightedOuter) {
+                    this.highlightedOuter.classList.remove('ast-highlight');
+                    this.highlightedOuter = null;
+                }
+            }
         }
     }
 
@@ -209,10 +247,13 @@ export abstract class BaseSyntaxViewer {
         this.highlightManager = new HighlightManager(codeElement, this.highlighter);
     }
 
+    setOutterDummyVars(outterDummyVars: [string, HTMLElement][]) {
+        this.highlighter.outterDummyVars = outterDummyVars;
+    }
+
     /** 设置/更新显示的代码（会进行 ASCII→Unicode 替换） */
     setCode(rawCode: string) {
-        const unicodeText = applyInputReplacements(rawCode, this.parser.inputReplacements);
-        this.render(unicodeText);
+        this.render(this.replaceText(rawCode));
     }
 
     /** 获取当前显示的代码（纯文本） */
@@ -227,28 +268,69 @@ export abstract class BaseSyntaxViewer {
 
     /** 渲染方法：解析并更新 code 元素的 innerHTML */
     protected render(unicodeText: string) {
+        if (!unicodeText?.trim()) return this.codeElement.innerHTML = "\n";
         try { this.parser.parse(unicodeText, ...this.parserArgs); } catch { }
         const tokens = this.parser.getTokens();
         const html = this.highlighter.highlight(tokens);
         this.codeElement.innerHTML = html + '\n';
     }
+
+    protected replaceText(str: string): string {
+        try { this.parser.parse(str, ...this.parserArgs) } catch { }
+        const tokens = this.parser.getTokens();
+        let result = "";
+        let buffer = "";
+        const allowed = this.parser.allowReplaceTokenType;
+
+        for (const tok of tokens) {
+            if (!allowed || allowed(tok.type)) {
+                // 可替换 token：将原始文本加入缓冲区
+                buffer += str.substring(tok.start, tok.end);
+            } else {
+                // 遇到不可替换 token，先处理缓冲区
+                if (buffer.length > 0) {
+                    result += applyInputReplacements(buffer, this.parser.inputReplacements);
+                    buffer = "";
+                }
+                // 直接追加不可替换 token 的原始文本
+                result += str.substring(tok.start, tok.end);
+            }
+        }
+        // 处理末尾缓冲区
+        if (buffer.length > 0) {
+            result += applyInputReplacements(buffer, this.parser.inputReplacements);
+        }
+        return result;
+    }
 }
 
 // ========== 只读视图 ==========
 export class SyntaxViewer extends BaseSyntaxViewer {
+    static onClickAst: ((text: string, e: MouseEvent, parser: IParser, parserArgs: any[]) => void) | null = null;
 
-    constructor(dom: HTMLElement, parser: IParser, initialCode: string, ...parserArgs: any[]) {
+    constructor(dom: HTMLElement, parser: IParser, initialCode: string | null, ...parserArgs: any[]) {
         // 调用基类构造函数
         super(parser, dom, ...parserArgs);
 
         // 绑定鼠标事件
         dom.addEventListener('mousemove', this.onMouseMove);
         dom.addEventListener('mouseleave', this.onMouseLeave);
+        dom.addEventListener('click', this.onClick);
 
         // 初始内容
-        this.setCode(initialCode);
+        if (initialCode) this.setCode(initialCode);
     }
-
+    /**
+       * 将容器内所有带 data-ast-type 属性的 <span> 初始化为可交互的语法高亮片段
+       */
+    static enhance(container: HTMLElement, parser: IParser) {
+        container.querySelectorAll<HTMLElement>("span[data-ast-type]:not(.ast-enhanced)").forEach(el => {
+            const type = el.getAttribute("data-ast-type")!;
+            const ast = el.innerText;
+            el.classList.add("ast", "ast-enhanced");
+            new SyntaxViewer(el, parser, ast, type);
+        });
+    }
     private onMouseMove = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
         const span = target?.closest?.('span') as HTMLElement | null;
@@ -258,11 +340,27 @@ export class SyntaxViewer extends BaseSyntaxViewer {
     private onMouseLeave = () => {
         this.highlightManager.clearHighlight();
     };
+    private onClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const span = target?.closest?.('span') as HTMLElement | null;
+        if (!span || !SyntaxViewer.onClickAst) return;
 
+        const parentStart = span.dataset.parentStart;
+        const parentEnd = span.dataset.parentEnd;
+        let text: string;
+        if (parentStart !== undefined && parentEnd !== undefined) {
+            const fullText = this.codeElement.textContent || '';
+            text = fullText.substring(parseInt(parentStart), parseInt(parentEnd));
+        } else {
+            text = span.innerText; // 或 span.textContent
+        }
+        SyntaxViewer.onClickAst(text, e, this.parser, this.parserArgs);
+    };
     // 覆写 destroy 以移除 DOM 和事件
     destroy() {
         this.codeElement.removeEventListener('mousemove', this.onMouseMove);
         this.codeElement.removeEventListener('mouseleave', this.onMouseLeave);
+        this.codeElement.removeEventListener('click', this.onClick);
     }
 }
 
@@ -271,6 +369,9 @@ export class SyntaxEditor extends BaseSyntaxViewer {
     private container: HTMLDivElement;
     private pre: HTMLPreElement;
     private textarea: HTMLTextAreaElement;
+    private triggerReplaceChars: Set<string>;
+
+    onEnter?: () => void;
 
     constructor(mount: HTMLElement, parser: IParser, initialValue: string, ...parserArgs: any[]) {
         // 创建 DOM 结构
@@ -288,6 +389,8 @@ export class SyntaxEditor extends BaseSyntaxViewer {
 
         this.container = container;
         this.pre = pre;
+
+        this.triggerReplaceChars = new Set(parser.inputReplacements.map(e => e[0][e[0].length - 1]));
 
         // 创建透明 textarea
         this.textarea = document.createElement('textarea');
@@ -307,6 +410,7 @@ export class SyntaxEditor extends BaseSyntaxViewer {
         this.textarea.addEventListener('paste', this.onPaste);
         this.textarea.addEventListener('mousemove', this.onTextareaMouseMove);
         this.textarea.addEventListener('mouseleave', this.onTextareaMouseLeave);
+        this.textarea.addEventListener('keydown', this.onKeyDown);
 
         // 初始内容
         this.setValue(initialValue);
@@ -314,12 +418,47 @@ export class SyntaxEditor extends BaseSyntaxViewer {
 
     /** 获取 textarea 中的值（Unicode 文本） */
     getValue(): string {
-        return this.textarea.value;
+        return this.replaceText(this.textarea.value);
     }
-
+    focus() {
+        this.textarea.focus();
+    }
+    isFocused() {
+        return document.activeElement === this.textarea;
+    }
+    setSelectionRange(start: number, end: number) {
+        this.textarea.selectionStart = start;
+        this.textarea.selectionEnd = end;
+    }
+    executeInsertText(text: string) {
+        const start = this.textarea.selectionStart;
+        const end = this.textarea.selectionEnd;
+        const value = this.textarea.value;
+        if (document.execCommand) {
+            this.textarea.focus();
+            this.textarea.setSelectionRange(start, end);
+            document.execCommand('insertText', false, text);
+            this.textarea.setSelectionRange(start, start + text.length);
+        } else {
+            this.textarea.value = value.substring(0, start) + text + value.substring(end);
+        }
+    }
+    blur() {
+        this.textarea.blur();
+    }
+    private _disabled = false;
+    get disabled() {
+        return this._disabled;
+    }
+    set disabled(v: boolean) {
+        this._disabled = v;
+        this.textarea.disabled = v;
+        v ? this.container.classList.add("disabled") : this.container.classList.remove("disabled");
+    }
+    setParserArgs(...args: any[]) { this.parserArgs = args; }
     /** 设置 textarea 的值并重新渲染 */
     setValue(unicodeText: string) {
-        this.textarea.value = applyInputReplacements(unicodeText, this.parser.inputReplacements);
+        this.textarea.value = this.replaceText(unicodeText);
         this.render(this.textarea.value);
     }
 
@@ -343,21 +482,38 @@ export class SyntaxEditor extends BaseSyntaxViewer {
         ta.selectionStart = ta.selectionEnd = start + text.length;
         this.onInput();
     };
-
     private onInput = () => {
         const ta = this.textarea;
         let val = ta.value;
         const cursor = ta.selectionStart;
-        for (const [ascii, unicode] of this.parser.inputReplacements) {
-            const start = cursor - ascii.length;
-            if (start >= 0 && val.startsWith(ascii, start)) {
-                val = val.slice(0, start) + unicode + val.slice(start + ascii.length);
-                ta.value = val;
-                ta.selectionStart = ta.selectionEnd = start + unicode.length;
-                break;
+        const lastChar = val[cursor - 1] || '';
+        if (this.triggerReplaceChars?.has(lastChar)) {
+            const replaced = this.replaceText(val);
+            if (replaced !== val) {
+                const prefixOld = val.substring(0, cursor);
+                const prefixNew = this.replaceText(prefixOld);
+                ta.setSelectionRange(0, val.length);
+                if (document.execCommand) {
+                    document.execCommand('insertText', false, replaced);
+                } else {
+                    ta.value = replaced;
+                }
+                ta.selectionStart = ta.selectionEnd = prefixNew.length;
             }
         }
         this.render(ta.value);
+    };
+    private onKeyDown = (e: KeyboardEvent) => {
+        if (e.key !== 'Enter') return;
+        // const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        // if (isTouchDevice) { return; }
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            document.execCommand('insertText', false, '\n');
+        } else {
+            e.preventDefault();
+            this.onEnter?.();
+        }
     };
 
     private onTextareaMouseMove = (e: MouseEvent) => {

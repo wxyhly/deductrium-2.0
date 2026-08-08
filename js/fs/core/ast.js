@@ -1,4 +1,4 @@
-// atom:wff|item
+// atom:wff|item|unknown (U is used only in assertion #nf(-,xx,xx))
 // logic:wff[]->wff
 // quant:Vvar:wff->wff
 // bounded-quant:Vvar@item:wff->wff
@@ -11,9 +11,9 @@ import { FSError } from "./error.js";
 // sub: #sb(wff|item,var,item;...var)
 export var NodeType;
 (function (NodeType) {
-    NodeType[NodeType["VAR"] = 0] = "VAR";
-    NodeType[NodeType["ATOM_ITEM"] = 1] = "ATOM_ITEM";
-    NodeType[NodeType["ATOM_WFF"] = 2] = "ATOM_WFF";
+    NodeType[NodeType["ATOM_ITEM"] = 0] = "ATOM_ITEM";
+    NodeType[NodeType["ATOM_WFF"] = 1] = "ATOM_WFF";
+    NodeType[NodeType["ATOM_UKNOWN"] = 2] = "ATOM_UKNOWN";
     NodeType[NodeType["LOGIC"] = 3] = "LOGIC";
     NodeType[NodeType["QUANT"] = 4] = "QUANT";
     NodeType[NodeType["BOUNDED_QUANT"] = 5] = "BOUNDED_QUANT";
@@ -23,7 +23,13 @@ export var NodeType;
     NodeType[NodeType["RPL"] = 9] = "RPL";
     NodeType[NodeType["CLASS"] = 10] = "CLASS";
     NodeType[NodeType["SB"] = 11] = "SB";
-    NodeType[NodeType["RULE"] = 12] = "RULE";
+    NodeType[NodeType["ASSERT"] = 12] = "ASSERT";
+    // rule: wff,wff|-wff
+    // cmd: str dname ast ast
+    NodeType[NodeType["CMD"] = 13] = "CMD";
+    NodeType[NodeType["RULE"] = 14] = "RULE";
+    NodeType[NodeType["NODE_DNAME"] = 15] = "NODE_DNAME";
+    NodeType[NodeType["ATOM_DNAME"] = 16] = "ATOM_DNAME";
 })(NodeType || (NodeType = {}));
 export class AST {
     type;
@@ -46,14 +52,36 @@ export class AST {
         this.name = ast.name;
         this.nodes = ast.nodes.map(e => e.clone());
     }
-    isAtom() { return this.type === NodeType.VAR || this.type === NodeType.ATOM_ITEM || this.type === NodeType.ATOM_WFF ? this.name : undefined; }
+    isAtom() { return this.type === NodeType.ATOM_UKNOWN || this.type === NodeType.ATOM_ITEM || this.type === NodeType.ATOM_WFF ? this.name : undefined; }
+    becomeItem() {
+        if (this.type === NodeType.ATOM_UKNOWN || this.type === NodeType.ATOM_WFF && this.name.match(/^[^A-Z]/))
+            this.type = NodeType.ATOM_ITEM;
+        if (this.type === NodeType.SB)
+            this.nodes[0].becomeItem();
+    }
     isReplvar() {
         const n = this.isAtom();
         return n && n.startsWith("$") ? n : undefined;
     }
+    isLocalvar() {
+        const n = this.isAtom();
+        return n && n.startsWith("#") ? n : undefined;
+    }
+    getReplvarsArrayByOrder(res = []) {
+        if (this.isReplvar() && !res.includes(this.name)) {
+            res.push(this.name);
+            return res;
+        }
+        for (const node of this.nodes) {
+            node.getReplvarsArrayByOrder(res);
+        }
+        return res;
+    }
     getReplvars(res = new Map()) {
         if (this.isReplvar()) {
-            const isItem = this.type === NodeType.ATOM_ITEM || this.type === NodeType.VAR;
+            if (this.type === NodeType.ATOM_UKNOWN)
+                return res;
+            const isItem = this.type === NodeType.ATOM_ITEM;
             const oldIsItem = res.get(this.name);
             if (oldIsItem !== undefined && oldIsItem !== isItem) {
                 throw FSError.isItemAndWff(this.name);
@@ -65,6 +93,25 @@ export class AST {
             node.getReplvars(res);
         }
         return res;
+    }
+    getLocalvars(res = new Set) {
+        if (this.isLocalvar()) {
+            res.add(this.name);
+            return res;
+        }
+        for (const node of this.nodes) {
+            node.getLocalvars(res);
+        }
+        return res;
+    }
+    hasSbFn() {
+        if (this.type === NodeType.SB)
+            return true;
+        for (const node of this.nodes) {
+            if (node.hasSbFn())
+                return true;
+        }
+        return false;
     }
     equal(ast) {
         if (this === ast)
@@ -94,7 +141,7 @@ export class AST {
             return res;
         }
         if (this.name !== pattern.name || this.type !== pattern.type || this.nodes?.length !== pattern.nodes?.length) {
-            throw FSError.matchFail(this, res[pattern.name]);
+            throw FSError.matchFail(this, pattern);
         }
         if (this.nodes?.length) {
             for (let i = 0; i < this.nodes.length; i++) {
@@ -114,11 +161,11 @@ export class AST {
         return this;
     }
     checkVAR() {
-        if (this.type !== NodeType.VAR)
+        if ((this.type !== NodeType.ATOM_UKNOWN && this.type !== NodeType.ATOM_ITEM) || !this.name.match(/^[a-z\$\#]/))
             throw FSError.isNotVar(this);
     }
     checkITEM() {
-        if (this.type === NodeType.ATOM_ITEM || this.type === NodeType.VAR)
+        if ((this.type === NodeType.ATOM_ITEM || this.type === NodeType.ATOM_UKNOWN) && !this.name.match(/^[A-Z]/))
             return;
         if (this.type === NodeType.FN) {
             for (let i = 0; i < this.nodes.length; i++) {
@@ -147,12 +194,43 @@ export class AST {
             this.nodes[0].checkITEM();
             this.nodes[1].checkVAR();
             this.nodes[2].checkITEM();
+            for (let i = 3; i < this.nodes.length; i++) {
+                this.nodes[i].checkVAR();
+            }
             return;
         }
         throw FSError.isNotItem(this);
     }
+    checkAssert() {
+        if (this.type !== NodeType.ASSERT)
+            throw FSError.isNotAssertion(this);
+        if (this.name === "of") {
+            if (this.nodes.length !== 2)
+                throw FSError.isNotAssertion(this);
+            if (this.nodes[1].type !== NodeType.FN || this.nodes[1].name !== " ")
+                throw FSError.isNotAssertion(this);
+            this.nodes[1].nodes.forEach(e => e.checkVAR());
+            return;
+        }
+        else if (this.name === "nf") {
+            if (this.nodes.length !== 3)
+                throw FSError.isNotAssertion(this);
+            if (this.nodes[1].type !== NodeType.FN || this.nodes[1].name !== " ")
+                throw FSError.isNotAssertion(this);
+            this.nodes[1].nodes.forEach(e => e.checkVAR());
+            if (this.nodes[2].type !== NodeType.FN || this.nodes[2].name !== " ")
+                throw FSError.isNotAssertion(this);
+            this.nodes[2].nodes.forEach(e => e.checkVAR());
+            return;
+        }
+        else if (this.name === "dt") {
+            this.nodes.forEach(e => e.checkVAR());
+            return;
+        }
+        throw FSError.isNotAssertion(this);
+    }
     checkWFF() {
-        if (this.type === NodeType.ATOM_WFF)
+        if (this.type === NodeType.ATOM_WFF && this.name.match(/^[A-Z\$]/))
             return;
         if (this.type === NodeType.LOGIC) {
             for (let i = 0; i < this.nodes.length; i++) {
@@ -175,6 +253,9 @@ export class AST {
             this.nodes[0].checkWFF();
             this.nodes[1].checkVAR();
             this.nodes[2].checkITEM();
+            for (let i = 3; i < this.nodes.length; i++) {
+                this.nodes[i].checkVAR();
+            }
             return;
         }
         throw FSError.isNotWFF(this);

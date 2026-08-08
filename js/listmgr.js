@@ -1,110 +1,338 @@
+import { LangMgr } from "./lang.js";
 function isFolder(node) {
-    return node.type === 'folder';
+    return !!node.children;
 }
-function isItem(node) {
-    return node.type === 'item';
-}
-// ================================================================
-//  2. 数据管理器
-// ================================================================
-export class DataManager {
-    root;
-    idCounter = 1000;
-    onDataChange = null;
-    constructor(initialData) {
-        this.root = {
-            id: 'root',
-            name: '全部',
-            type: 'folder',
-            children: initialData || []
-        };
-        this.assignIds(this.root);
+export const ROOT_ID = -1;
+export class TreeListViewer {
+    container;
+    rowsContainer;
+    badgeEl;
+    openMenuId = null;
+    dragState = null;
+    expandedFolders = new Set();
+    // 长按拖拽相关
+    longPressTimer = null;
+    touchStartX = 0;
+    touchStartY = 0;
+    isDraggingTouch = false;
+    longPressDelay = 300;
+    allowDrop = () => true;
+    onAfterChange = () => { };
+    onRename = () => true;
+    onDelete = () => true;
+    wideToggleFolderRange = () => true;
+    renderName = i => i.name;
+    // renderFolderNameCell: (item: T, nameCell: HTMLDivElement, isExpanded: boolean) => void = i => { };
+    renderContent = i => { };
+    // renderFolderContent: (item: T, dom: HTMLSpanElement) => void = i => { };
+    renderExtra = i => document.createTextNode(i.name);
+    folderMenuItems = [];
+    itemMenuItems = [];
+    initialHeight = '30vh';
+    onFolderActiveCancel = () => { };
+    data;
+    static PLACEHOLDER_ID = -2;
+    idCounter = 1;
+    constructor(data, container, initialHeight) {
+        this.container = container;
+        this.rowsContainer = this.container.querySelector('.rows-container');
+        this.badgeEl = this.container.querySelector('.badge');
+        if (initialHeight)
+            this.initialHeight = initialHeight;
+        this.container.style.height = this.initialHeight;
+        this.createResizeHandle();
+        document.addEventListener('click', this.globalClickHandler);
+        this.data = data;
+        this.expandAll();
+        this.renderList();
+        this.bindRowEvents();
     }
-    assignIds(node) {
-        if (!node.id) {
-            node.id = 'n' + (this.idCounter++);
-        }
-        if (isFolder(node)) {
-            for (const child of node.children) {
-                this.assignIds(child);
-            }
-        }
+    createResizeHandle() {
+        const existing = this.container.querySelector('.resize-handle');
+        if (existing)
+            existing.remove();
+        const handle = document.createElement('div');
+        handle.className = 'resize-handle';
+        this.container.appendChild(handle);
+        makeResizable(this.container, handle, false);
     }
-    getRoot() { return this.root; }
-    findNode(id) {
-        const search = (node) => {
-            if (node.id === id)
-                return node;
+    expandAll() {
+        const collect = (node) => {
             if (isFolder(node)) {
-                for (const child of node.children) {
-                    const found = search(child);
+                this.expandedFolders.add(node.uuid);
+                for (const child of node.children)
+                    collect(child);
+            }
+        };
+        for (const child of this.data) {
+            collect(child);
+        }
+    }
+    refresh() { this.renderList(); }
+    renderList() {
+        const flat = this.flattenVisible();
+        this.rowsContainer.innerHTML = '';
+        if (flat.length === 0)
+            return;
+        const fragment = document.createDocumentFragment();
+        for (const { node, depth } of flat) {
+            const row = this.buildRow(node, depth);
+            fragment.appendChild(row);
+        }
+        const placeholder = this.buildPlaceholderRow();
+        fragment.appendChild(placeholder);
+        this.rowsContainer.appendChild(fragment);
+        this.bindRowEvents();
+        this.updateBadge();
+    }
+    buildPlaceholderRow() {
+        const row = document.createElement('div');
+        row.className = 'item-row drop-placeholder';
+        row.dataset.uuid = String(TreeListViewer.PLACEHOLDER_ID);
+        row.dataset.type = 'placeholder';
+        row.style.setProperty('--depth', '0');
+        for (let i = 0; i < 4; i++) {
+            const cell = document.createElement('div');
+            cell.style.display = 'none';
+            row.appendChild(cell);
+        }
+        return row;
+    }
+    flattenVisible() {
+        const result = [];
+        let hasActiveFolder = false;
+        let hasFolder = false;
+        (this.findActiveAndParents() || []).forEach(e => { if (!e.uuid)
+            e.uuid = this.idCounter++; this.expandedFolders.add(e.uuid); });
+        const traverse = (node, depth) => {
+            result.push({ node, depth });
+            if (!node.uuid)
+                node.uuid = this.idCounter++;
+            if (isFolder(node)) {
+                hasFolder = true;
+                if (this.expandedFolders.has(node.uuid)) {
+                    for (const child of node.children) {
+                        traverse(child, depth + 1);
+                    }
+                    if (node.active) {
+                        hasActiveFolder = true;
+                        result.push({ node: { uuid: 0, name: "", parentId: node.uuid }, depth: depth + 1 });
+                    }
+                }
+            }
+        };
+        for (const child of this.data) {
+            traverse(child, 0);
+        }
+        if (hasFolder && !hasActiveFolder) {
+            result.push({ node: { uuid: 0, name: "", parentId: ROOT_ID }, depth: 0 });
+        }
+        return result;
+    }
+    buildRow(node, depth) {
+        const isPlaceholder = node.uuid === 0 && node.name === "";
+        const isFolderNode = isFolder(node);
+        const id = node.uuid;
+        const row = document.createElement('div');
+        row.className = `item-row ${isFolderNode ? 'folder-row' : ''}`;
+        row.dataset.uuid = String(id);
+        row.dataset.type = node.type;
+        row.style.setProperty('--depth', String(depth));
+        row.draggable = true;
+        // ---- 名称列 ----
+        const nameCell = document.createElement('div');
+        nameCell.className = 'cell-name';
+        nameCell.dataset.uuid = isPlaceholder ? "" : String(id);
+        nameCell.draggable = !isPlaceholder;
+        const nameText = document.createElement('span');
+        nameText.className = 'name-text';
+        nameText.textContent = isPlaceholder ? "" : this.renderName(node);
+        nameCell.appendChild(nameText);
+        const indent = document.createElement('span');
+        indent.className = 'row-indent';
+        nameCell.appendChild(indent);
+        row.appendChild(nameCell);
+        // ---- 内容列 ----
+        const contentCell = document.createElement('div');
+        contentCell.className = `cell-content ${isFolderNode ? this.wideToggleFolderRange(node) ? 'wide-folder-bar' : 'short-folder-bar' : ''}`;
+        contentCell.dataset.uuid = String(id);
+        row.appendChild(contentCell);
+        if (isPlaceholder) {
+            row.classList.add("activePlaceholder");
+            const parent = this.findNode(node?.parentId);
+            const parentName = parent ? `'${this.renderName(parent)}'` : LangMgr.text.rootList;
+            contentCell.innerText = LangMgr.formalize.activePlaceholder(parentName);
+            return row;
+        }
+        const contentNode = document.createElement("span");
+        contentNode.classList.add("inner");
+        contentCell.appendChild(contentNode);
+        if (isFolderNode) {
+            contentCell.dataset.isFolder = 'true';
+            if (node.active)
+                row.classList.add("active");
+            const isExpanded = this.expandedFolders.has(id);
+            const toggle = document.createElement('span');
+            toggle.className = `toggle-icon ${isExpanded ? 'expanded' : ''}`;
+            toggle.dataset.uuid = String(id);
+            toggle.textContent = '▶';
+            contentCell.prepend(toggle);
+        }
+        this.renderContent(node, contentNode);
+        // ---- 额外列 ----
+        const extraCell = document.createElement('div');
+        extraCell.className = 'cell-extra';
+        extraCell.dataset.uuid = String(id);
+        const extraContainer = document.createElement('span');
+        extraContainer.className = 'extra-text';
+        extraContainer.appendChild(this.renderExtra(node));
+        extraCell.appendChild(extraContainer);
+        row.appendChild(extraCell);
+        // ---- 操作列 ----
+        const actionsCell = document.createElement('div');
+        actionsCell.className = 'cell-actions';
+        actionsCell.dataset.uuid = String(id);
+        const trigger = document.createElement('button');
+        trigger.className = 'dropdown-trigger';
+        trigger.dataset.uuid = String(id);
+        trigger.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>`;
+        actionsCell.appendChild(trigger);
+        const menu = document.createElement('div');
+        menu.className = 'dropdown-menu';
+        menu.dataset.uuid = String(id);
+        menu.innerHTML = this.buildMenuHTML(node);
+        actionsCell.appendChild(menu);
+        row.appendChild(actionsCell);
+        return row;
+    }
+    buildMenuHTML(node) {
+        const id = node.uuid;
+        let html = '';
+        if (isFolder(node)) {
+            // html += `<button class="menu-item" data-action="add-subfolder" data-uuid="${id}"><span class="icon">📁</span> 新建子文件夹</button>`;
+            html += `<button class="menu-item" data-action="rename-folder" data-uuid="${id}"><span class="icon">✏️</span> 重命名</button>`;
+            for (const mi of this.folderMenuItems || []) {
+                const danger = mi.danger ? 'danger' : '';
+                const icon = mi.icon || '•';
+                html += `<button class="menu-item ${danger}" data-action="custom-folder" data-custom-index="${this.folderMenuItems?.indexOf(mi)}" data-uuid="${id}"><span class="icon">${icon}</span> ${mi.label}</button>`;
+            }
+            html += `<div class="menu-divider"></div>`;
+            html += `<button class="menu-item danger" data-action="delete-folder" data-uuid="${id}"><span class="icon">🗑️</span> 删除</button>`;
+        }
+        else {
+            html += `<button class="menu-item" data-action="rename" data-uuid="${id}"><span class="icon">✏️</span> 重命名</button>`;
+            for (const mi of this.itemMenuItems || []) {
+                const danger = mi.danger ? 'danger' : '';
+                const icon = mi.icon || '•';
+                html += `<button class="menu-item ${danger}" data-action="custom-item" data-custom-index="${this.itemMenuItems?.indexOf(mi)}" data-uuid="${id}"><span class="icon">${icon}</span> ${mi.label}</button>`;
+            }
+            html += `<div class="menu-divider"></div>`;
+            html += `<button class="menu-item danger" data-action="delete" data-uuid="${id}"><span class="icon">🗑️</span> 删除</button>`;
+        }
+        return html;
+    }
+    bindRowEvents() {
+        // 展开/折叠
+        this.rowsContainer.querySelectorAll('.folder-row .cell-name,.folder-row .wide-folder-bar,.folder-row .short-folder-bar .toggle-icon').forEach(el => {
+            el.removeEventListener('click', this.toggleHandler);
+            el.addEventListener('click', this.toggleHandler);
+        });
+        // 菜单触发
+        this.rowsContainer.querySelectorAll('.dropdown-trigger').forEach(btn => {
+            btn.removeEventListener('click', this.menuTriggerHandler);
+            btn.addEventListener('click', this.menuTriggerHandler);
+        });
+        // 菜单项
+        this.rowsContainer.querySelectorAll('.menu-item').forEach(item => {
+            item.removeEventListener('click', this.menuItemHandler);
+            item.addEventListener('click', this.menuItemHandler);
+        });
+        // 拖拽（鼠标 + 触摸）
+        this.rowsContainer.querySelectorAll('.item-row').forEach(row => {
+            if (row.dataset.uuid === String(TreeListViewer.PLACEHOLDER_ID))
+                return;
+            // 鼠标拖拽
+            row.removeEventListener('dragstart', this.dragStartHandler);
+            row.removeEventListener('dragend', this.dragEndHandler);
+            row.removeEventListener('dragover', this.dragOverHandler);
+            row.removeEventListener('dragleave', this.dragLeaveHandler);
+            row.removeEventListener('drop', this.dropHandler);
+            row.addEventListener('dragstart', this.dragStartHandler);
+            row.addEventListener('dragend', this.dragEndHandler);
+            row.addEventListener('dragover', this.dragOverHandler);
+            row.addEventListener('dragleave', this.dragLeaveHandler);
+            row.addEventListener('drop', this.dropHandler);
+            // 触摸拖拽（长按触发）
+            row.removeEventListener('touchstart', this.touchStartHandler);
+            row.removeEventListener('touchmove', this.touchMoveHandler);
+            row.removeEventListener('touchend', this.touchEndHandler);
+            row.addEventListener('touchstart', this.touchStartHandler, { passive: false });
+            row.addEventListener('touchmove', this.touchMoveHandler, { passive: false });
+            row.addEventListener('touchend', this.touchEndHandler);
+        });
+    }
+    findNode(id) {
+        const search = (nodes) => {
+            for (const node of nodes) {
+                if (node.uuid === id)
+                    return node;
+                if (isFolder(node)) {
+                    const found = search(node.children);
                     if (found)
                         return found;
                 }
             }
             return null;
         };
-        return search(this.root);
+        return search(this.data);
     }
-    findParentAndIndex(id) {
-        const search = (node) => {
-            if (isFolder(node)) {
-                for (let i = 0; i < node.children.length; i++) {
-                    const child = node.children[i];
-                    if (child.id === id) {
-                        return { parent: node, index: i };
-                    }
-                    if (isFolder(child)) {
-                        const res = search(child);
-                        if (res)
-                            return res;
+    findActiveAndParents() {
+        const search = (nodes) => {
+            for (const node of nodes) {
+                if (isFolder(node)) {
+                    if (node.active)
+                        return [node];
+                    const res = search(node.children);
+                    if (res) {
+                        res.push(node);
+                        return res;
                     }
                 }
             }
             return null;
         };
-        return search(this.root);
+        return search(this.data);
     }
-    addNode(parentId, node) {
-        const parent = this.findNode(parentId);
-        if (!parent || !isFolder(parent))
-            throw new Error('父节点必须是文件夹');
-        const newNode = { ...node, id: 'n' + (this.idCounter++) };
-        parent.children.push(newNode);
-        this.notify();
-        return newNode;
-    }
-    deleteNode(id) {
-        if (id === 'root')
-            return false;
-        const info = this.findParentAndIndex(id);
-        if (!info)
-            return false;
-        info.parent.children.splice(info.index, 1);
-        this.notify();
-        return true;
-    }
-    renameNode(id, newName) {
-        const node = this.findNode(id);
-        if (!node)
-            return false;
-        node.name = newName;
-        this.notify();
-        return true;
+    findParentAndIndex(id) {
+        const search = (nodes) => {
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                if (node.uuid === id) {
+                    return { parent: nodes, index: i };
+                }
+                if (isFolder(node)) {
+                    const res = search(node.children);
+                    if (res)
+                        return res;
+                }
+            }
+            return null;
+        };
+        return search(this.data);
     }
     moveNode(sourceId, targetId, position) {
-        if (sourceId === targetId || sourceId === 'root')
+        if (sourceId === targetId || sourceId === ROOT_ID)
             return false;
         const srcInfo = this.findParentAndIndex(sourceId);
         if (!srcInfo)
             return false;
         const srcParent = srcInfo.parent;
         const srcIdx = srcInfo.index;
-        const srcNode = srcParent.children[srcIdx];
+        const srcNode = srcParent[srcIdx];
         if (isFolder(srcNode)) {
             const isDescendant = (folder, id) => {
                 for (const child of folder.children) {
-                    if (child.id === id)
+                    if (child.uuid === id)
                         return true;
                     if (isFolder(child) && isDescendant(child, id))
                         return true;
@@ -122,8 +350,8 @@ export class DataManager {
         if (position === 'inside') {
             if (!isFolder(targetNode))
                 return false;
-            targetParent = targetNode;
-            insertIdx = targetParent.children.length;
+            targetParent = targetNode.children;
+            insertIdx = targetParent.length;
         }
         else {
             const tInfo = this.findParentAndIndex(targetId);
@@ -140,390 +368,96 @@ export class DataManager {
             if (insertIdx > srcIdx)
                 insertIdx--;
         }
-        srcParent.children.splice(srcIdx, 1);
-        targetParent.children.splice(insertIdx, 0, srcNode);
-        this.notify();
+        srcParent.splice(srcIdx, 1);
+        targetParent.splice(insertIdx, 0, srcNode);
         return true;
-    }
-    flattenTree() {
-        const result = [];
-        const traverse = (node, depth) => {
-            result.push({ node, depth });
-            if (isFolder(node)) {
-                for (const child of node.children) {
-                    traverse(child, depth + 1);
-                }
-            }
-        };
-        for (const child of this.root.children) {
-            traverse(child, 0);
-        }
-        return result;
-    }
-    notify() {
-        if (this.onDataChange)
-            this.onDataChange();
-    }
-    exportData() {
-        return this.root.children;
-    }
-}
-export class FlatTreeManager {
-    config;
-    manager;
-    container;
-    rowsContainer;
-    badgeEl;
-    openMenuId = null;
-    dragState = null;
-    expandedFolders = new Set();
-    addFolderBtn;
-    addItemBtn;
-    resizeHandle = null;
-    isResizing = false;
-    // 长按拖拽相关
-    longPressTimer = null;
-    touchStartX = 0;
-    touchStartY = 0;
-    isDraggingTouch = false;
-    longPressDelay = 300;
-    static PLACEHOLDER_ID = '__drop_placeholder__';
-    constructor(config) {
-        const def = {
-            folderMenuItems: [],
-            itemMenuItems: [],
-            onRename: () => { },
-            onDelete: () => { },
-            onMove: () => true,
-            onReorder: () => true,
-            allowDrag: true,
-            allowDrop: () => true,
-            data: [],
-            initialHeight: '50vh',
-            longPressDelay: 300,
-        };
-        this.config = {
-            container: config.container,
-            data: config.data || [],
-            renderName: config.renderName,
-            renderContent: config.renderContent,
-            renderExtra: config.renderExtra,
-            folderMenuItems: config.folderMenuItems ?? def.folderMenuItems,
-            itemMenuItems: config.itemMenuItems ?? def.itemMenuItems,
-            onRename: config.onRename ?? def.onRename,
-            onDelete: config.onDelete ?? def.onDelete,
-            onMove: config.onMove ?? def.onMove,
-            onReorder: config.onReorder ?? def.onReorder,
-            allowDrag: config.allowDrag ?? def.allowDrag,
-            allowDrop: config.allowDrop ?? def.allowDrop,
-            initialHeight: config.initialHeight ?? def.initialHeight,
-            longPressDelay: config.longPressDelay ?? def.longPressDelay,
-        };
-        this.longPressDelay = this.config.longPressDelay;
-        this.container = config.container;
-        this.rowsContainer = this.container.querySelector('.rows-container');
-        this.badgeEl = this.container.querySelector('.badge');
-        this.addFolderBtn = this.container.querySelector('.actions .btn-sm:first-child');
-        this.addItemBtn = this.container.querySelector('.actions .btn-sm:last-child');
-        this.container.style.height = this.config.initialHeight;
-        this.createResizeHandle();
-        this.manager = new DataManager(this.config.data);
-        this.manager.onDataChange = () => {
-            this.renderList();
-            this.updateBadge();
-        };
-        this.expandAll();
-        this.renderList();
-        this.updateBadge();
-        this.bindRowEvents();
-        this.bindAddButtons();
-    }
-    createResizeHandle() {
-        const existing = this.container.querySelector('.resize-handle');
-        if (existing)
-            existing.remove();
-        const handle = document.createElement('div');
-        handle.className = 'resize-handle';
-        this.container.appendChild(handle);
-        this.resizeHandle = handle;
-        makeResizable(this.container, handle, false);
-    }
-    expandAll() {
-        const collect = (node) => {
-            if (isFolder(node)) {
-                this.expandedFolders.add(node.id);
-                for (const child of node.children)
-                    collect(child);
-            }
-        };
-        for (const child of this.manager.getRoot().children) {
-            collect(child);
-        }
-    }
-    renderList() {
-        const flat = this.flattenVisible();
-        this.rowsContainer.innerHTML = '';
-        if (flat.length === 0)
-            return;
-        const fragment = document.createDocumentFragment();
-        for (const { node, depth } of flat) {
-            const row = this.buildRow(node, depth);
-            fragment.appendChild(row);
-        }
-        const placeholder = this.buildPlaceholderRow();
-        fragment.appendChild(placeholder);
-        this.rowsContainer.appendChild(fragment);
-        this.bindRowEvents(); // 重新绑定事件
-    }
-    buildPlaceholderRow() {
-        const row = document.createElement('div');
-        row.className = 'item-row drop-placeholder';
-        row.dataset.id = FlatTreeManager.PLACEHOLDER_ID;
-        row.dataset.type = 'placeholder';
-        row.style.setProperty('--depth', '0');
-        for (let i = 0; i < 4; i++) {
-            const cell = document.createElement('div');
-            cell.style.display = 'none';
-            row.appendChild(cell);
-        }
-        return row;
-    }
-    flattenVisible() {
-        const result = [];
-        const traverse = (node, depth) => {
-            result.push({ node, depth });
-            if (isFolder(node) && this.expandedFolders.has(node.id)) {
-                for (const child of node.children) {
-                    traverse(child, depth + 1);
-                }
-            }
-        };
-        for (const child of this.manager.getRoot().children) {
-            traverse(child, 0);
-        }
-        return result;
-    }
-    buildRow(node, depth) {
-        const isFolderNode = isFolder(node);
-        const id = node.id;
-        const name = node.name;
-        const row = document.createElement('div');
-        row.className = `item-row ${isFolderNode ? 'folder-row' : ''}`;
-        row.dataset.id = id;
-        row.dataset.type = node.type;
-        row.style.setProperty('--depth', String(depth));
-        if (this.config.allowDrag) {
-            row.draggable = true;
-        }
-        // ---- 名称列 ----
-        const nameCell = document.createElement('div');
-        nameCell.className = 'cell-name';
-        nameCell.dataset.id = id;
-        if (this.config.allowDrag) {
-            nameCell.draggable = true;
-        }
-        const indent = document.createElement('span');
-        indent.className = 'row-indent';
-        nameCell.appendChild(indent);
-        if (isFolderNode) {
-            const isExpanded = this.expandedFolders.has(id);
-            const toggle = document.createElement('span');
-            toggle.className = `toggle-icon ${isExpanded ? 'expanded' : ''}`;
-            toggle.dataset.id = id;
-            toggle.textContent = '▶';
-            nameCell.appendChild(toggle);
-            const folderIcon = document.createElement('span');
-            folderIcon.className = 'folder-icon';
-            folderIcon.dataset.id = id;
-            folderIcon.textContent = '📁';
-            nameCell.appendChild(folderIcon);
-            const nameText = document.createElement('span');
-            nameText.className = 'name-text';
-            nameText.style.display = 'none';
-            nameCell.appendChild(nameText);
-        }
-        else {
-            const nameText = document.createElement('span');
-            nameText.className = 'name-text';
-            nameText.textContent = this.config.renderName(node);
-            nameCell.appendChild(nameText);
-        }
-        row.appendChild(nameCell);
-        // ---- 内容列 ----
-        const contentCell = document.createElement('div');
-        contentCell.className = `cell-content ${isFolderNode ? 'folder-content' : ''}`;
-        contentCell.dataset.id = id;
-        if (isFolderNode) {
-            contentCell.dataset.isFolder = 'true';
-        }
-        if (isFolderNode) {
-            const inner = document.createElement('span');
-            inner.className = 'inner';
-            inner.style.fontWeight = '500';
-            inner.style.color = '#1e293b';
-            inner.textContent = name;
-            contentCell.appendChild(inner);
-        }
-        else {
-            const contentNode = this.config.renderContent(node);
-            if (contentNode instanceof DocumentFragment) {
-                contentCell.appendChild(contentNode);
-            }
-            else {
-                contentCell.appendChild(contentNode);
-            }
-        }
-        row.appendChild(contentCell);
-        // ---- 额外列 ----
-        const extraCell = document.createElement('div');
-        extraCell.className = 'cell-extra';
-        extraCell.dataset.id = id;
-        const extraContainer = document.createElement('span');
-        extraContainer.className = 'extra-text';
-        if (isFolderNode) {
-            extraContainer.textContent = `📂 ${node.children.length}`;
-        }
-        else {
-            const extraNode = this.config.renderExtra(node);
-            if (extraNode instanceof DocumentFragment) {
-                extraContainer.appendChild(extraNode);
-            }
-            else {
-                extraContainer.appendChild(extraNode);
-            }
-        }
-        extraCell.appendChild(extraContainer);
-        row.appendChild(extraCell);
-        // ---- 操作列 ----
-        const actionsCell = document.createElement('div');
-        actionsCell.className = 'cell-actions';
-        actionsCell.dataset.id = id;
-        const trigger = document.createElement('button');
-        trigger.className = 'dropdown-trigger';
-        trigger.dataset.id = id;
-        trigger.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>`;
-        actionsCell.appendChild(trigger);
-        const menu = document.createElement('div');
-        menu.className = 'dropdown-menu';
-        menu.dataset.id = id;
-        menu.innerHTML = this.buildMenuHTML(node);
-        actionsCell.appendChild(menu);
-        row.appendChild(actionsCell);
-        return row;
-    }
-    buildMenuHTML(node) {
-        const id = node.id;
-        let html = '';
-        if (isFolder(node)) {
-            html += `<button class="menu-item" data-action="add-subfolder" data-id="${id}"><span class="icon">📁</span> 新建子文件夹</button>`;
-            html += `<button class="menu-item" data-action="rename-folder" data-id="${id}"><span class="icon">✏️</span> 重命名</button>`;
-            for (const mi of this.config.folderMenuItems) {
-                const danger = mi.danger ? 'danger' : '';
-                const icon = mi.icon || '•';
-                html += `<button class="menu-item ${danger}" data-action="custom-folder" data-custom-index="${this.config.folderMenuItems.indexOf(mi)}" data-id="${id}"><span class="icon">${icon}</span> ${mi.label}</button>`;
-            }
-            html += `<div class="menu-divider"></div>`;
-            html += `<button class="menu-item danger" data-action="delete-folder" data-id="${id}"><span class="icon">🗑️</span> 删除</button>`;
-        }
-        else {
-            html += `<button class="menu-item" data-action="rename" data-id="${id}"><span class="icon">✏️</span> 重命名</button>`;
-            for (const mi of this.config.itemMenuItems) {
-                const danger = mi.danger ? 'danger' : '';
-                const icon = mi.icon || '•';
-                html += `<button class="menu-item ${danger}" data-action="custom-item" data-custom-index="${this.config.itemMenuItems.indexOf(mi)}" data-id="${id}"><span class="icon">${icon}</span> ${mi.label}</button>`;
-            }
-            html += `<div class="menu-divider"></div>`;
-            html += `<button class="menu-item danger" data-action="delete" data-id="${id}"><span class="icon">🗑️</span> 删除</button>`;
-        }
-        return html;
-    }
-    // ---- 事件绑定（修复死机问题） ----
-    bindRowEvents() {
-        // 展开/折叠
-        this.rowsContainer.querySelectorAll('.item-row.folder-row').forEach(el => {
-            el.removeEventListener('click', this.toggleHandler);
-            el.addEventListener('click', this.toggleHandler);
-        });
-        // 菜单触发
-        this.rowsContainer.querySelectorAll('.dropdown-trigger').forEach(btn => {
-            btn.removeEventListener('click', this.menuTriggerHandler);
-            btn.addEventListener('click', this.menuTriggerHandler);
-        });
-        // 菜单项
-        this.rowsContainer.querySelectorAll('.menu-item').forEach(item => {
-            item.removeEventListener('click', this.menuItemHandler);
-            item.addEventListener('click', this.menuItemHandler);
-        });
-        // 拖拽（鼠标 + 触摸）
-        if (this.config.allowDrag) {
-            this.rowsContainer.querySelectorAll('.item-row').forEach(row => {
-                if (row.dataset.id === FlatTreeManager.PLACEHOLDER_ID)
-                    return;
-                // 鼠标拖拽
-                row.removeEventListener('dragstart', this.dragStartHandler);
-                row.removeEventListener('dragend', this.dragEndHandler);
-                row.removeEventListener('dragover', this.dragOverHandler);
-                row.removeEventListener('dragleave', this.dragLeaveHandler);
-                row.removeEventListener('drop', this.dropHandler);
-                row.addEventListener('dragstart', this.dragStartHandler);
-                row.addEventListener('dragend', this.dragEndHandler);
-                row.addEventListener('dragover', this.dragOverHandler);
-                row.addEventListener('dragleave', this.dragLeaveHandler);
-                row.addEventListener('drop', this.dropHandler);
-                // 触摸拖拽（长按触发）
-                row.removeEventListener('touchstart', this.touchStartHandler);
-                row.removeEventListener('touchmove', this.touchMoveHandler);
-                row.removeEventListener('touchend', this.touchEndHandler);
-                row.addEventListener('touchstart', this.touchStartHandler, { passive: false });
-                row.addEventListener('touchmove', this.touchMoveHandler, { passive: false });
-                row.addEventListener('touchend', this.touchEndHandler);
-            });
-        }
     }
     // ---- 折叠切换 ----
     toggleHandler = (e) => {
         const target = e.currentTarget;
-        let id = target.dataset.id;
+        let id = Number(target.dataset.uuid);
         if (!id) {
             const row = target.closest('.item-row');
             if (row)
-                id = row.dataset.id;
+                id = Number(row.dataset.uuid);
         }
         if (!id)
             return;
-        const node = this.manager.findNode(id);
+        const node = this.findNode(id);
         if (!node || !isFolder(node))
             return;
         if (this.expandedFolders.has(id)) {
+            let changed = false;
+            const clearActive = (folder) => {
+                if (folder.active) {
+                    changed = true;
+                    folder.active = false;
+                }
+                for (const child of folder.children) {
+                    if (isFolder(child))
+                        clearActive(child);
+                }
+            };
+            clearActive(node);
             this.expandedFolders.delete(id);
+            if (changed)
+                this.onFolderActiveCancel();
         }
         else {
             this.expandedFolders.add(id);
         }
         this.renderList();
     };
+    globalClickHandler = (e) => {
+        const target = e.target;
+        // 如果点击的是菜单内部或触发器，不关闭
+        if (target.closest('.dropdown-menu') || target.closest('.dropdown-trigger')) {
+            return;
+        }
+        this.closeAllMenus();
+    };
     // ---- 菜单 ----
     menuTriggerHandler = (e) => {
         e.stopPropagation();
         const btn = e.currentTarget;
-        const id = btn.dataset.id;
+        const id = btn.dataset.uuid;
         if (!id)
             return;
-        const menu = btn.parentElement?.querySelector('.dropdown-menu');
-        if (!menu)
-            return;
+        // 从 body 中查找已存在的菜单，若没有则从原位置移动
+        let menu = this.rowsContainer.querySelector(`.dropdown-menu[data-uuid="${id}"]`);
+        // 切换菜单开关
         if (this.openMenuId === id) {
             this.closeAllMenus();
             return;
         }
         this.closeAllMenus();
+        // 计算菜单位置
+        const rect = btn.getBoundingClientRect();
+        const menuWidth = 140; // 与 CSS min-width 一致
+        let top = rect.bottom + 4;
+        // 先临时显示菜单以测量实际高度
+        menu.style.position = 'fixed';
+        menu.style.top = top + 'px';
+        menu.style.width = menuWidth + 'px';
+        menu.style.right = '8px';
+        menu.style.opacity = '0'; // 透明，避免闪烁
         menu.classList.add('open');
+        // 获取实际高度
+        const actualHeight = menu.offsetHeight;
+        // 如果超出底部，则向上展开
+        if (top + actualHeight > window.innerHeight) {
+            top = rect.top - actualHeight - 4;
+            if (top < 0)
+                top = 4; // 防止超出顶部
+        }
+        menu.style.top = top + 'px';
+        menu.style.opacity = '1';
         this.openMenuId = id;
     };
     menuItemHandler = (e) => {
         const target = e.currentTarget;
         const action = target.dataset.action;
-        const id = target.dataset.id;
+        const id = Number(target.dataset.uuid);
         if (!id)
             return;
         e.stopPropagation();
@@ -531,27 +465,22 @@ export class FlatTreeManager {
         if (action === 'rename') {
             this.startRenameItem(id);
         }
-        else if (action === 'delete') {
-            this.deleteItem(id);
-        }
-        else if (action === 'custom-item') {
-            const idx = parseInt(target.dataset.customIndex || '-1', 10);
-            const menu = this.config.itemMenuItems[idx];
-            if (menu)
-                menu.handler(id);
-        }
         else if (action === 'rename-folder') {
             this.startRenameFolder(id);
         }
-        else if (action === 'delete-folder') {
-            this.deleteFolder(id);
+        else if (action === 'custom-item') {
+            const idx = parseInt(target.dataset.customIndex || '-1', 10);
+            const menu = this.itemMenuItems[idx];
+            if (menu)
+                menu.handler(id);
         }
-        else if (action === 'add-subfolder') {
-            this.addSubfolder(id);
+        else if (action === 'delete') {
+            this.onDelete(this.findNode(id));
+            this.refresh();
         }
         else if (action === 'custom-folder') {
             const idx = parseInt(target.dataset.customIndex || '-1', 10);
-            const menu = this.config.folderMenuItems[idx];
+            const menu = this.folderMenuItems[idx];
             if (menu)
                 menu.handler(id);
         }
@@ -573,14 +502,14 @@ export class FlatTreeManager {
             e.preventDefault();
             return;
         }
-        const id = row.dataset.id;
-        if (!id || id === FlatTreeManager.PLACEHOLDER_ID) {
+        const id = Number(row.dataset.uuid);
+        if (!id || id === TreeListViewer.PLACEHOLDER_ID) {
             e.preventDefault();
             return;
         }
         this.dragState = {
             type: 'node',
-            id: id,
+            uuid: id,
             sourceElement: row
         };
         e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'node', id }));
@@ -602,30 +531,32 @@ export class FlatTreeManager {
         const targetRow = e.target.closest('.item-row');
         if (!targetRow)
             return;
-        const targetId = targetRow.dataset.id;
+        const targetId = Number(targetRow.dataset.uuid);
         if (!targetId)
             return;
-        const sourceId = this.dragState?.id;
+        const sourceId = this.dragState?.uuid;
         if (!sourceId || sourceId === targetId) {
             this.clearDropTarget(targetRow);
             return;
         }
         // 占位符
-        if (targetId === FlatTreeManager.PLACEHOLDER_ID) {
-            const allowed = this.config.allowDrop(sourceId, targetId, 'before');
+        if (targetId === TreeListViewer.PLACEHOLDER_ID) {
+            const allowed = this.allowDrop(sourceId, targetId, 'before');
             this.clearDropTarget(targetRow);
             if (allowed) {
                 targetRow.classList.add('drop-before');
+                e.dataTransfer.dropEffect = 'move';
             }
             else {
                 targetRow.classList.add('drop-before-disallowed');
+                e.dataTransfer.dropEffect = 'none';
             }
             return;
         }
         const rect = targetRow.getBoundingClientRect();
         const y = e.clientY - rect.top;
         const height = rect.height;
-        const targetNode = this.manager.findNode(targetId);
+        const targetNode = this.findNode(targetId);
         const isFolderTarget = targetNode && isFolder(targetNode);
         const isExpanded = isFolderTarget && this.expandedFolders.has(targetId);
         let position = 'before';
@@ -635,9 +566,10 @@ export class FlatTreeManager {
         else {
             position = (y / height) < 0.5 ? 'before' : 'after';
         }
-        const allowed = this.config.allowDrop(sourceId, targetId, position);
+        const allowed = this.allowDrop(sourceId, targetId, position);
         this.clearDropTarget(targetRow);
         if (allowed) {
+            e.dataTransfer.dropEffect = 'move';
             if (position === 'inside')
                 targetRow.classList.add('drop-inside');
             else if (position === 'before')
@@ -646,6 +578,7 @@ export class FlatTreeManager {
                 targetRow.classList.add('drop-after');
         }
         else {
+            e.dataTransfer.dropEffect = 'none';
             if (position === 'inside')
                 targetRow.classList.add('drop-inside-disallowed');
             else if (position === 'before')
@@ -665,30 +598,30 @@ export class FlatTreeManager {
         const targetRow = e.target.closest('.item-row');
         if (!targetRow)
             return;
-        const targetId = targetRow.dataset.id;
+        const targetId = Number(targetRow.dataset.uuid);
         if (!targetId)
             return;
-        const sourceId = this.dragState?.id;
+        const sourceId = this.dragState?.uuid;
         if (!sourceId || sourceId === targetId) {
             this.dragEndHandler(e);
             return;
         }
         // 占位符
-        if (targetId === FlatTreeManager.PLACEHOLDER_ID) {
-            const allowed = this.config.allowDrop(sourceId, targetId, 'before');
+        if (targetId === TreeListViewer.PLACEHOLDER_ID) {
+            const allowed = this.allowDrop(sourceId, targetId, 'before');
             if (!allowed) {
-                alert('不允许放置到此位置');
                 this.dragEndHandler(e);
                 return;
             }
-            const srcInfo = this.manager.findParentAndIndex(sourceId);
+            const srcInfo = this.findParentAndIndex(sourceId);
             if (srcInfo) {
                 const parent = srcInfo.parent;
                 const idx = srcInfo.index;
-                const node = parent.children[idx];
-                parent.children.splice(idx, 1);
-                parent.children.push(node);
-                this.manager.onDataChange?.();
+                const node = parent[idx];
+                parent.splice(idx, 1);
+                parent.push(node);
+                this.onAfterChange();
+                this.renderList();
             }
             this.dragEndHandler(e);
             return;
@@ -707,7 +640,7 @@ export class FlatTreeManager {
             const rect = targetRow.getBoundingClientRect();
             const y = e.clientY - rect.top;
             const height = rect.height;
-            const targetNode = this.manager.findNode(targetId);
+            const targetNode = this.findNode(targetId);
             const isFolderTarget = targetNode && isFolder(targetNode);
             const isExpanded = isFolderTarget && this.expandedFolders.has(targetId);
             if (isExpanded && (y / height) > 0.5)
@@ -715,31 +648,16 @@ export class FlatTreeManager {
             else
                 position = (y / height) < 0.5 ? 'before' : 'after';
         }
-        const allowed = this.config.allowDrop(sourceId, targetId, position);
+        const allowed = this.allowDrop(sourceId, targetId, position);
         if (!allowed) {
-            alert('不允许放置到此位置');
             this.dragEndHandler(e);
             return;
         }
-        let success = false;
-        if (position === 'inside') {
-            success = this.config.onMove(sourceId, targetId, 'inside');
-        }
-        else {
-            const srcInfo = this.manager.findParentAndIndex(sourceId);
-            const tgtInfo = this.manager.findParentAndIndex(targetId);
-            if (srcInfo && tgtInfo && srcInfo.parent === tgtInfo.parent) {
-                success = this.config.onReorder(sourceId, targetId, position);
-            }
-            else {
-                success = this.config.onMove(sourceId, targetId, position);
-            }
-        }
+        let success = this.allowDrop(sourceId, targetId, position);
         if (success) {
-            this.manager.moveNode(sourceId, targetId, position);
-        }
-        else {
-            alert('移动操作被禁止或失败');
+            this.moveNode(sourceId, targetId, position);
+            this.onAfterChange();
+            this.renderList();
         }
         this.dragEndHandler(e);
     };
@@ -753,8 +671,8 @@ export class FlatTreeManager {
         const row = cellName.closest('.item-row');
         if (!row)
             return;
-        const id = row.dataset.id;
-        if (!id || id === FlatTreeManager.PLACEHOLDER_ID)
+        const id = Number(row.dataset.uuid);
+        if (!id || id === TreeListViewer.PLACEHOLDER_ID)
             return;
         const touch = e.touches[0];
         this.touchStartX = touch.clientX;
@@ -769,7 +687,7 @@ export class FlatTreeManager {
             document.addEventListener('touchmove', this.preventScroll, { passive: false });
             this.dragState = {
                 type: 'node',
-                id: id,
+                uuid: id,
                 sourceElement: row
             };
             row.classList.add('dragging');
@@ -786,12 +704,12 @@ export class FlatTreeManager {
             const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
             const targetRow = targetElement?.closest('.item-row');
             if (targetRow && targetRow !== this.dragState.sourceElement) {
-                const targetId = targetRow.dataset.id;
+                const targetId = Number(targetRow.dataset.uuid);
                 if (targetId) {
-                    const sourceId = this.dragState.id;
+                    const sourceId = this.dragState.uuid;
                     if (sourceId && sourceId !== targetId) {
-                        if (targetId === FlatTreeManager.PLACEHOLDER_ID) {
-                            const allowed = this.config.allowDrop(sourceId, targetId, 'before');
+                        if (targetId === TreeListViewer.PLACEHOLDER_ID) {
+                            const allowed = this.allowDrop(sourceId, targetId, 'before');
                             this.clearDragHighlights();
                             if (allowed) {
                                 targetRow.classList.add('drop-before');
@@ -804,7 +722,7 @@ export class FlatTreeManager {
                         const rect = targetRow.getBoundingClientRect();
                         const y = touch.clientY - rect.top;
                         const height = rect.height;
-                        const targetNode = this.manager.findNode(targetId);
+                        const targetNode = this.findNode(targetId);
                         const isFolderTarget = targetNode && isFolder(targetNode);
                         const isExpanded = isFolderTarget && this.expandedFolders.has(targetId);
                         let position = 'before';
@@ -814,7 +732,7 @@ export class FlatTreeManager {
                         else {
                             position = (y / height) < 0.5 ? 'before' : 'after';
                         }
-                        const allowed = this.config.allowDrop(sourceId, targetId, position);
+                        const allowed = this.allowDrop(sourceId, targetId, position);
                         this.clearDragHighlights();
                         if (allowed) {
                             if (position === 'inside')
@@ -862,24 +780,22 @@ export class FlatTreeManager {
             const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
             const targetRow = targetElement?.closest('.item-row');
             if (targetRow) {
-                const targetId = targetRow.dataset.id;
-                const sourceId = this.dragState.id;
+                const targetId = Number(targetRow.dataset.uuid);
+                const sourceId = this.dragState.uuid;
                 if (targetId && sourceId && sourceId !== targetId) {
-                    if (targetId === FlatTreeManager.PLACEHOLDER_ID) {
-                        const allowed = this.config.allowDrop(sourceId, targetId, 'before');
+                    if (targetId === TreeListViewer.PLACEHOLDER_ID) {
+                        const allowed = this.allowDrop(sourceId, targetId, 'before');
                         if (allowed) {
-                            const srcInfo = this.manager.findParentAndIndex(sourceId);
+                            const srcInfo = this.findParentAndIndex(sourceId);
                             if (srcInfo) {
                                 const parent = srcInfo.parent;
                                 const idx = srcInfo.index;
-                                const node = parent.children[idx];
-                                parent.children.splice(idx, 1);
-                                parent.children.push(node);
-                                this.manager.onDataChange?.();
+                                const node = parent[idx];
+                                parent.splice(idx, 1);
+                                parent.push(node);
+                                this.onAfterChange();
+                                this.renderList();
                             }
-                        }
-                        else {
-                            alert('不允许放置到此位置');
                         }
                         this.clearDragHighlights();
                         if (this.dragState.sourceElement) {
@@ -904,7 +820,7 @@ export class FlatTreeManager {
                         const rect = targetRow.getBoundingClientRect();
                         const y = touch.clientY - rect.top;
                         const height = rect.height;
-                        const targetNode = this.manager.findNode(targetId);
+                        const targetNode = this.findNode(targetId);
                         const isFolderTarget = targetNode && isFolder(targetNode);
                         const isExpanded = isFolderTarget && this.expandedFolders.has(targetId);
                         if (isExpanded && (y / height) > 0.5)
@@ -912,31 +828,11 @@ export class FlatTreeManager {
                         else
                             position = (y / height) < 0.5 ? 'before' : 'after';
                     }
-                    const allowed = this.config.allowDrop(sourceId, targetId, position);
+                    const allowed = this.allowDrop(sourceId, targetId, position);
                     if (allowed) {
-                        let success = false;
-                        if (position === 'inside') {
-                            success = this.config.onMove(sourceId, targetId, 'inside');
-                        }
-                        else {
-                            const srcInfo = this.manager.findParentAndIndex(sourceId);
-                            const tgtInfo = this.manager.findParentAndIndex(targetId);
-                            if (srcInfo && tgtInfo && srcInfo.parent === tgtInfo.parent) {
-                                success = this.config.onReorder(sourceId, targetId, position);
-                            }
-                            else {
-                                success = this.config.onMove(sourceId, targetId, position);
-                            }
-                        }
-                        if (success) {
-                            this.manager.moveNode(sourceId, targetId, position);
-                        }
-                        else {
-                            alert('移动操作被禁止或失败');
-                        }
-                    }
-                    else {
-                        alert('不允许放置到此位置');
+                        this.moveNode(sourceId, targetId, position);
+                        this.onAfterChange();
+                        this.renderList();
                     }
                 }
             }
@@ -961,10 +857,10 @@ export class FlatTreeManager {
     }
     // ---- 操作 ----
     startRenameItem(id) {
-        const node = this.manager.findNode(id);
+        const node = this.findNode(id);
         if (!node || isFolder(node))
             return;
-        const row = this.rowsContainer.querySelector(`.item-row[data-id="${id}"]`);
+        const row = this.rowsContainer.querySelector(`.item-row[data-uuid="${id}"]`);
         if (!row)
             return;
         const nameEl = row.querySelector('.cell-name .name-text');
@@ -974,19 +870,17 @@ export class FlatTreeManager {
         const input = document.createElement('input');
         input.className = 'name-input';
         input.value = currentName;
-        input.dataset.id = id;
+        input.dataset.uuid = String(id);
         nameEl.replaceWith(input);
         input.focus();
         input.select();
         const finish = () => {
             const newName = input.value.trim();
-            if (newName && newName !== currentName) {
-                this.manager.renameNode(id, newName);
-                this.config.onRename(id, newName);
+            if (newName !== currentName && this.onRename(node, newName)) {
+                this.renameNode(id, newName);
+                this.onAfterChange();
             }
-            else {
-                this.renderList();
-            }
+            this.renderList();
         };
         input.addEventListener('blur', finish);
         input.addEventListener('keydown', (e) => {
@@ -999,79 +893,22 @@ export class FlatTreeManager {
             }
         });
     }
-    deleteItem(id) {
-        const node = this.manager.findNode(id);
-        if (!node || isFolder(node))
-            return;
-        if (!confirm(`确定删除「${node.name}」吗？`))
-            return;
-        this.manager.deleteNode(id);
-        this.config.onDelete(id);
-    }
     startRenameFolder(id) {
-        const node = this.manager.findNode(id);
+        const node = this.findNode(id);
         if (!node || !isFolder(node))
             return;
-        const newName = prompt('重命名文件夹', node.name);
-        if (newName && newName.trim() !== '') {
-            this.manager.renameNode(id, newName.trim());
-            this.config.onRename(id, newName.trim());
-        }
+        this.onRename(node, null);
     }
-    deleteFolder(id) {
-        const node = this.manager.findNode(id);
-        if (!node || !isFolder(node))
-            return;
-        if (!confirm(`确定删除文件夹「${node.name}」及其所有内容吗？`))
-            return;
-        this.manager.deleteNode(id);
-        this.config.onDelete(id);
-    }
-    addSubfolder(id) {
-        const parent = this.manager.findNode(id);
-        if (!parent || !isFolder(parent))
-            return;
-        const name = prompt('输入子文件夹名称');
-        if (name && name.trim() !== '') {
-            this.manager.addNode(id, { type: 'folder', name: name.trim(), children: [] });
-            this.expandedFolders.add(id);
-        }
-    }
-    bindAddButtons() {
-        this.addFolderBtn.addEventListener('click', () => {
-            const name = prompt('输入文件夹名称');
-            if (name && name.trim() !== '') {
-                const newNode = this.manager.addNode('root', { type: 'folder', name: name.trim(), children: [] });
-                this.expandedFolders.add(newNode.id);
-            }
-        });
-        this.addItemBtn.addEventListener('click', () => {
-            this.onAddItem('root');
-        });
-    }
-    onAddItem(parentId) {
-        const name = prompt('输入名称');
-        if (!name || name.trim() === '')
-            return;
-        const content = prompt('输入内容') || '';
-        const extra = prompt('输入额外信息') || '';
-        this.manager.addNode(parentId, {
-            type: 'item',
-            name: name.trim(),
-            content: content,
-            extra: extra
-        });
+    renameNode(id, newName) {
+        const node = this.findNode(id);
+        if (!node)
+            return false;
+        node.name = newName;
+        return true;
     }
     updateBadge() {
-        const count = this.manager.getRoot().children.length;
+        const count = this.data.length;
         this.badgeEl.textContent = count.toString();
-    }
-    refresh() {
-        this.renderList();
-        this.updateBadge();
-    }
-    getDataManager() {
-        return this.manager;
     }
     destroy() {
         document.removeEventListener('mousemove', this._mouseMove);
@@ -1079,43 +916,51 @@ export class FlatTreeManager {
         document.removeEventListener('touchmove', this._touchMove);
         document.removeEventListener('touchend', this._touchEnd);
         document.removeEventListener('touchmove', this.preventScroll);
+        document.removeEventListener('click', this.globalClickHandler);
     }
     _mouseMove = null;
     _mouseUp = null;
     _touchMove = null;
     _touchEnd = null;
 }
-/**
- * 使容器支持通过手柄拖拽调整高度
- * @param container  要调整高度的元素
- * @param handle     拖拽手柄元素
- * @param minHeight  最小高度（px）
- * @param maxHeight  最大高度（px），可传入动态值如 window.innerHeight * 0.7
- * @param onResize   可选回调，在高度变化时触发
- */
-export function makeResizable(container, handle, topMode, 
-// minHeight: number = 60,
-// maxHeight: number = window.innerHeight * 0.7,
-onResize) {
+export function makeResizable(container, dragHandle, topMode, onResize, defaultHeight = '300px') {
+    const toggleHandle = container.querySelector(".card-header h2");
     let isResizing = false;
+    let isCollapsed = false;
+    let expandedHeight = null;
+    const collapsedHeight = 50;
+    // ----- 拖拽逻辑 -----
     const startResize = (startY) => {
         isResizing = true;
-        handle.classList.add('active');
+        dragHandle.classList.add('active');
+        container.classList.remove('smooth-height');
         const onMove = (clientY) => {
             if (!isResizing)
                 return;
+            if (isCollapsed)
+                isCollapsed = false;
             const rect = container.getBoundingClientRect();
-            const bottomOffset = window.innerHeight - rect.bottom;
-            // let newHeight = window.innerHeight - clientY - bottomOffset;
-            const newHeight = topMode ? window.innerHeight - clientY - bottomOffset : clientY - rect.top + (container.offsetHeight - rect.height);
-            if (newHeight < 60)
+            let newHeight;
+            if (topMode) {
+                // 从顶部拖拽：高度 = 视口高度 - 鼠标Y - 底部偏移
+                const bottomOffset = window.innerHeight - rect.bottom;
+                newHeight = window.innerHeight - clientY - bottomOffset;
+            }
+            else {
+                // 从底部拖拽：高度 = 鼠标Y - 容器顶部 + 当前高度偏移
+                newHeight = clientY - rect.top + (container.offsetHeight - rect.height);
+            }
+            const minHeight = 60;
+            if (newHeight < minHeight)
                 return;
             container.style.height = newHeight + 'px';
+            // 更新存储的展开高度（因为正在拖拽，保存当前高度）
+            expandedHeight = newHeight + 'px';
             onResize?.(newHeight);
         };
         const onEnd = () => {
             isResizing = false;
-            handle.classList.remove('active');
+            dragHandle.classList.remove('active');
             document.removeEventListener('mousemove', mouseMove);
             document.removeEventListener('mouseup', mouseUp);
             document.removeEventListener('touchmove', touchMove);
@@ -1135,14 +980,51 @@ onResize) {
         document.addEventListener('touchend', touchEnd);
         document.body.style.userSelect = 'none';
     };
-    handle.addEventListener('mousedown', (e) => {
+    // 绑定拖拽事件
+    dragHandle.addEventListener('mousedown', (e) => {
         e.preventDefault();
         startResize(e.clientY);
     });
-    handle.addEventListener('touchstart', (e) => {
+    dragHandle.addEventListener('touchstart', (e) => {
         e.preventDefault();
         const touch = e.touches[0];
         startResize(touch.clientY);
     }, { passive: false });
+    // ----- 展开/折叠逻辑 -----
+    const toggleCollapse = () => {
+        container.classList.add('smooth-height');
+        if (isCollapsed) {
+            // 展开
+            const targetHeight = expandedHeight || defaultHeight;
+            container.style.height = targetHeight;
+            isCollapsed = false;
+        }
+        else {
+            // 收起：保存当前高度
+            expandedHeight = container.style.height || defaultHeight;
+            container.style.height = collapsedHeight + 'px';
+            isCollapsed = true;
+        }
+        // 触发回调，传递当前高度
+        const currentHeight = parseInt(container.style.height, 10);
+        if (!isNaN(currentHeight))
+            onResize?.(currentHeight);
+    };
+    // 绑定点击展开/折叠事件
+    if (toggleHandle) {
+        toggleHandle.addEventListener('click', (e) => {
+            const target = e.target;
+            // 如果点击的是按钮、下拉菜单触发器或操作区域，不触发展开/收起
+            if (target.closest('.btn-sm, .dropdown-trigger, .actions, .dropdown-menu')) {
+                return;
+            }
+            toggleCollapse();
+        });
+    }
+    const onTransitionEnd = () => {
+        container.classList.remove('smooth-height');
+        container.removeEventListener('transitionend', onTransitionEnd);
+    };
+    container.addEventListener('transitionend', onTransitionEnd);
 }
 //# sourceMappingURL=listmgr.js.map

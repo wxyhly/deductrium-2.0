@@ -1,3 +1,6 @@
+// import { Assertion } from "./assert.js";
+import { Assertion, AtomSolver } from "./assertsolver.js";
+import { AST, NodeType } from "./ast.js";
 import { FSError } from "./error.js";
 export class Deduction {
     dependence; // record which axioms are used
@@ -18,6 +21,7 @@ export class Deduction {
             const conclusionReplvars = conclusion.getReplvars();
             const conditionReplvars = new Map();
             conditions.forEach(c => c.getReplvars(conditionReplvars));
+            assertions.forEach(c => AtomSolver.getReplvars(c, conclusionReplvars));
             this.replaceNames = [...conclusionReplvars.entries()].filter(e => {
                 if (conditionReplvars.has(e[0])) {
                     if (conditionReplvars.get(e[0]) !== e[1]) {
@@ -26,44 +30,106 @@ export class Deduction {
                     return false;
                 }
                 return true;
-            }).sort((a, b) => a[0].localeCompare(b[0]));
+            }); //.sort((a, b) => a[0].localeCompare(b[0]));
         }
         catch (e) {
             throw FSError.createRule(name, e);
         }
     }
+    toString() {
+        return this.assertions.map(e => AtomSolver.print(e)).concat(this.conditions).join(",") + "⊢" + this.conclusion;
+    }
+    getNewReplName(type) {
+        const vars = new Map();
+        this.conditions.forEach(c => c.getReplvars(vars));
+        this.conclusion.getReplvars(vars);
+        if (type === 'wff') {
+            let name = "$0", i = 0;
+            while (vars.has(name)) {
+                name = "$" + (i++);
+            }
+            return new AST(NodeType.ATOM_WFF, name);
+        }
+        if (type === 'var') {
+            let name = "$a", i = ['a'.charCodeAt(0)];
+            while (vars.has(name)) {
+                // 生成字典顺序：a-z,然后aa~az ba~bz ...zz，然后aaa...
+                for (let j = i.length - 1; j >= 0; j--) {
+                    if (i[j] < 'z'.charCodeAt(0)) {
+                        i[j]++;
+                        break;
+                    }
+                    else {
+                        i[j] = 'a'.charCodeAt(0);
+                        if (j === 0) {
+                            i.push('a'.charCodeAt(0));
+                        }
+                    }
+                }
+                name = "$" + (i.map(e => String.fromCharCode(e)).join(""));
+            }
+            return new AST(NodeType.ATOM_ITEM, name);
+        }
+        throw "can't reach";
+    }
 }
 export class Proposition {
     ast;
     from;
-    constructor(ast, from) {
+    children;
+    name = "";
+    id = 0;
+    relyBefore;
+    relyAfter;
+    constructor(ast, from, name) {
         this.from = from;
         this.ast = ast;
+        this.name = name || "";
     }
     static hyp(ast) {
+        if (ast.type === NodeType.ASSERT) {
+            try {
+                ast.checkAssert();
+                ast.getReplvars();
+            }
+            catch (e) {
+                throw FSError.hypFail(e);
+            }
+            const atomicAssertion = AtomSolver.fromAST(ast);
+            return new Proposition(ast, { type: "a", data: atomicAssertion });
+        }
         try {
             ast.checkWFF();
+            ast.getReplvars();
         }
         catch (e) {
-            FSError.hypFail(e);
+            throw FSError.hypFail(e);
         }
-        return new Proposition(ast, 'h');
+        return new Proposition(ast, { type: 'h' });
     }
     static d(deduction, assertions, conditions, replaceValues) {
         try {
             if (conditions.length !== deduction.conditions.length)
                 throw FSError.inconsistCondNum();
+            for (const [name, isItem] of deduction.replaceNames) {
+                if (isItem)
+                    replaceValues[name]?.becomeItem();
+            }
             for (let i = 0; i < conditions.length; i++) {
                 try {
-                    conditions[i].match(deduction.conditions[i], replaceValues);
+                    conditions[i].ast.match(deduction.conditions[i], replaceValues);
                 }
                 catch (e) {
                     throw FSError.matchCond(i + 1, e);
                 }
             }
-            for (let i = 0; i < assertions.length; i++) {
+            for (let i = 0; i < deduction.assertions.length; i++) {
                 try {
-                    assertions[i].replaceByMatchTable(replaceValues).check(assertions);
+                    const constraint = Assertion.fromAtomic(deduction.assertions[i]).mut_replaceByMatchTable(replaceValues).reduce();
+                    const check = Assertion.check(assertions, constraint);
+                    if (!check.passed) {
+                        throw check.counterexample;
+                    }
                 }
                 catch (e) {
                     throw FSError.assertFail(i + 1, e);
@@ -72,7 +138,7 @@ export class Proposition {
             try {
                 const res = deduction.conclusion.clone().mut_replaceByMatchTable(replaceValues);
                 res.checkWFF();
-                return res;
+                return new Proposition(res, { type: "d", data: { deduction: deduction.name, conditions, replaceValues } });
             }
             catch (e) {
                 throw FSError.conclusionFail(e);

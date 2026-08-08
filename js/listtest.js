@@ -752,7 +752,7 @@
 //         // ================================================================
 //         //  4. 定理表与命题表
 //         // ================================================================
-//         class TheoremManager extends FlatTreeManager {
+//         class RuleManager extends FlatTreeManager {
 //             constructor(container: HTMLElement) {
 //                 const initialData: TNode[] = [
 //                     {
@@ -843,7 +843,7 @@
 //                 };
 //             }
 //         }
-//         class PropositionManager extends FlatTreeManager {
+//         class PropManager extends FlatTreeManager {
 //             constructor(container: HTMLElement) {
 //                 const initialData: TNode[] = [
 //                     {
@@ -915,9 +915,9 @@
 //         //  5. 启动
 //         // ================================================================
 //         document.addEventListener('DOMContentLoaded', () => {
-//             const theoremManager = new TheoremManager(document.getElementById('theoremManager')!);
-//             const propManager = new PropositionManager(document.getElementById('propositionManager')!);
-//             (window as any).__theoremManager = theoremManager;
+//             const ruleManager = new RuleManager(document.getElementById('ruleManager')!);
+//             const propManager = new PropManager(document.getElementById('propManager')!);
+//             (window as any).__ruleManager = ruleManager;
 //             (window as any).__propManager = propManager;
 //             console.log('✅ 已启动，renderContent / renderExtra 返回 DOM 对象');
 //         });

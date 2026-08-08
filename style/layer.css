@@ -1,0 +1,105 @@
+body {
+    margin-top: 0;
+}
+
+/* ===== 导航栏：flex 一行，左标题 + 右按钮 ===== */
+.layer-nav {
+    display: flex;
+    align-items: center;
+    border-bottom: 2px solid #eef2f6;
+}
+
+.layer-title {
+    margin-left: 5px;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #1a2b44;
+}
+
+.layer-title sup {
+    font-size: 0.4em;
+    color: gray;
+    font-weight: 500;
+    vertical-align: top;
+}
+
+.layer-buttons {
+    display: flex;
+    margin-left: auto;
+}
+
+.layer-buttons button {
+    padding: 10px 14px;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #5b6a7e;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: color 0.25s, background 0.25s;
+    border-radius: 8px 8px 0 0;
+    position: relative;
+    letter-spacing: 0.3px;
+}
+
+.layer-buttons button:hover {
+    color: #1a2b44;
+    background: #f0f4fe;
+}
+
+.layer-buttons button.active {
+    color: #1a5cff;
+    font-weight: 600;
+}
+
+/* 滑动下划线 */
+.layer-buttons button::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%) scaleX(0);
+    width: 70%;
+    height: 3px;
+    background: #1a5cff;
+    border-radius: 4px;
+    transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1);
+}
+
+.layer-buttons button.active::after {
+    transform: translateX(-50%) scaleX(1);
+}
+
+/* ===== 内容面板 ===== */
+.layer-panel {
+    display: none;
+    animation: fadeIn 0.25s ease;
+}
+
+.layer-panel.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 小屏适配 */
+@media (max-width: 500px) {
+    .layer-buttons button {
+        padding: 8px 4px;
+        font-size: 0.9rem;
+    }
+
+    .layer-title {
+        font-size: 1rem;
+    }
+}

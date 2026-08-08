@@ -1,25 +1,19 @@
-import { FSParser } from "./fs/core/parser.js";
-import { SyntaxEditor } from "./astrender.js";
-import { test } from "./fs/core/assert.js";
-import { TypeParser } from "./tt/parser.js";
-import { PropositionManager, TheoremManager } from "./fs/gui/list.js";
-import { loadFSGui } from "./fs/gui/cmd.js";
-const initialCode1 = `(∀ₛa: (DdkCut(a) ↔ ((((¬(a = {}) ∧ ¬(a = ℚ)) ∧ (((ℚ＼ a) ∪ a) = ℚ)) ∧ (∀x: (∀y: ((x ∈ a) → ((y ∈ (ℚ＼ a)) → ((x ≤ y) ∧ ¬(x = y))))))) ∧ ¬(∃x: ((x ∈ a) ∧ (∀y: ((y ∈ a) → (x = y))))))))`;
-const initialCode2 = `\\lx:x y.x y`;
-const initialD = `axiom mp: $1>$2, $1 |- $2;
-axiom a1: |-$1→$2→$1;
-`.split("\n").map(e => ({
-    id: e.match(/^[a-z]+\s+([^\s\:]+)/)?.[1],
-    name: e.match(/^[a-z]+\s+([^\s\:]+)/)?.[1],
-    content: e.match(/\:\s*([^\;]\;)*([^\;]+);$/)?.[2],
-    type: 'item'
-}));
-const editor1 = new SyntaxEditor(document.getElementById('deduct-editor'), new FSParser, initialCode1, 'wff');
-const editor2 = new SyntaxEditor(document.getElementById('type-editor'), new TypeParser, initialCode2);
-const theoremManager = new TheoremManager(document.getElementById('theoremManager'), initialD);
-const propManager = new PropositionManager(document.getElementById('propositionManager'));
-loadFSGui();
-test();
+import { initialRules } from "./hs/core/initial.js";
+import { DeductLayer } from "./hs/main.js";
+import { LangMgr } from "./lang.js";
+class Game {
+    langMgr = new LangMgr;
+    deductLayer = new DeductLayer;
+    constructor() {
+        this.deductLayer.addRules(initialRules);
+        this.deductLayer.unlockBasicPropCmd();
+        this.deductLayer.unlockBasicRuleCmd();
+        this.deductLayer.unlockMetaBlock("c");
+        this.deductLayer.unlockMetaBlock("v");
+        this.deductLayer.unlockMetaBlock("f");
+    }
+}
+new Game;
 // axiom a2: |-($1→$2→$3)→($1→$2)→($1→$3);
 // axiom a3: |-(¬$1→¬$2)→($2→$1);
 // axiom a4: |-∀$x:$0→#sb($0,$x,$A);

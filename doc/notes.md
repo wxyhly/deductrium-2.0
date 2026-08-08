@@ -68,11 +68,18 @@ nf a>b B C <=> nf a B C & nf b B C
 3. 涉及量词时，nf与of的行为有所不同，nf为将量词纳入第三个参数的集合后分配，of为纳入第二个参数的集合后分配：
 - nf Vx:a B C <=> nf a B CU{x}
 - of Vx:a B <=> of a BU{x}
-4. 涉及#sb函数时，首先尝试化简#sb函数，无法化简时只能认为该断言未知，但下列特殊情况例外：
-- nf c b => nf #sb(a,b,c,D) b
+4. 涉及#sb函数时，首先尝试化简#sb函数，无法化简时只能认为该断言未知从而失败，但下列特殊情况例外：
+- nf c b & nf b D => nf #sb(a,b,c,D) b
+- ??(a) & ??(c) => ??(#sb(a,b,c,D))  其中??是nf或of断言，处第一个参数括号中指定外，剩下的参数可任取
 
 
 定理列表中可前置添加一系列的原子断言（即关于元变量和普通变量的断言），原子断言有三种：（用小写字母表示变量，大写字母表示变量的集合）
-- nf a B C : a不属于B或a属于C
-- of a B : a属于B
-- dt A : A中的变量互不相同
+- nf a B C :  a!@B || a@C || a=0
+- of a B : a@B || a=0
+- dt A : forall i,j: ai!=aj
+它们的否定为
+- of a B & a!=c & a!=0 : a@B && a!@C && a!=0
+- nf a B & a!=0: a!@B && a!=0
+- ex A : exists i,j: ai=aj
+
+constrain设为属于、不属于、nf、of、dt、ex四种

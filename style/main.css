@@ -1,0 +1,87 @@
+/* ===== 高度调整手柄 ===== */
+.resize-handle {
+  height: 6px;
+  background: #cbd5e155;
+  cursor: ns-resize;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  border-radius: 0 0 20px 20px;
+  margin-top: -6px;
+  z-index: 10;
+  touch-action: none;
+}
+
+.resize-handle:hover,
+.resize-handle.active {
+  background: #cbd5e1;
+}
+
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 4px;
+  border-radius: 4px;
+  background: #94a3b8;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+}
+
+.resize-handle:hover::after,
+.resize-handle.active::after {
+  opacity: 0.8;
+  background: #4f46e5;
+}
+/* ===== 底部命令面板 ===== */
+.cmd-footer {
+  position: fixed;
+  bottom: 0px;
+  left: 8px;
+  right: 8px;
+  background-color: rgba(244, 247, 249, 0.9);
+  border-radius: 5px;
+  padding: 5px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-height: 60px;
+  max-height: 70vh;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
+  touch-action: none;
+}
+
+#cmd-prompt {
+  word-break: break-all;
+  flex: 0 2 auto;
+  min-height: 1.5em;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.cmd-footer .resize-handle {
+  border-radius: 5px 5px 0 0;
+  margin-top: -6px;
+  margin-bottom: 4px;
+}
+
+.cmd-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#hs-cmd-input {
+  /* flex: 1 1 0%; */
+  flex: 1 0.5 auto;
+  min-height: 1.8em;
+}
+
+div.smooth-height {
+  transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}

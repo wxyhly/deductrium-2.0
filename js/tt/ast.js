@@ -1,12 +1,12 @@
 export var NodeType;
 (function (NodeType) {
-    NodeType[NodeType["ATOM"] = 127] = "ATOM";
-    NodeType[NodeType["SYM"] = 128] = "SYM";
-    NodeType[NodeType["BOUND"] = 129] = "BOUND";
-    NodeType[NodeType["U"] = 130] = "U";
-    NodeType[NodeType["APP"] = 131] = "APP";
-    NodeType[NodeType["PRED"] = 132] = "PRED";
-    NodeType[NodeType["UFN"] = 133] = "UFN";
+    NodeType[NodeType["ATOM"] = 0] = "ATOM";
+    NodeType[NodeType["SYM"] = 1] = "SYM";
+    NodeType[NodeType["BOUND"] = 2] = "BOUND";
+    NodeType[NodeType["U"] = 3] = "U";
+    NodeType[NodeType["APP"] = 4] = "APP";
+    NodeType[NodeType["PRED"] = 5] = "PRED";
+    NodeType[NodeType["UFN"] = 6] = "UFN";
 })(NodeType || (NodeType = {}));
 export class AST {
     type;

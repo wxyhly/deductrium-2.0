@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>尺规作图推理游戏</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --panel-bg: #16213e;
+            --text: #e0e0e0;
+            --accent: #e2b04a;
+            --accent2: #4a9eff;
+            --danger: #e05555;
+            --success: #5cb878;
+            --border: #2a3a5c;
+            --hover: #253553;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: var(--bg);
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            user-select: none; -webkit-user-select: none;
+            touch-action: none;
+        }
+        .app-container { display:flex; gap:12px; padding:12px; max-width:1300px; width:100%; height:96vh; }
+        .canvas-panel { flex:1; min-width:0; background:var(--panel-bg); border-radius:12px; border:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+        .canvas-header { display:flex; align-items:center; gap:6px; padding:8px 12px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+        .tool-btn {
+            padding:6px 12px; border-radius:5px; border:1px solid var(--border);
+            background:var(--panel-bg); color:var(--text); cursor:pointer;
+            font-size:12px; transition:all 0.15s; white-space:nowrap; font-family:inherit;
+        }
+        .tool-btn:hover { background:var(--hover); border-color:var(--accent2); }
+        .tool-btn.active { background:var(--accent2); border-color:var(--accent2); color:#fff; font-weight:600; }
+        .tool-btn.danger { border-color:var(--danger); color:var(--danger); }
+        .layer-switch {
+            display:flex; align-items:center; gap:4px; margin-left:8px;
+            padding:4px 8px; background:#ffffff0a; border-radius:5px; font-size:11px;
+        }
+        .layer-dot { width:12px; height:12px; border-radius:50%; border:1px solid #fff; }
+        .canvas-wrap { flex:1; position:relative; cursor:crosshair; min-height:400px; }
+        canvas { display:block; width:100%; height:100%; }
+        .hint-bar { padding:6px 12px; border-top:1px solid var(--border); font-size:11px; color:#999; min-height:30px; display:flex; align-items:center; }
+        .side-panel { width:330px; min-width:330px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; }
+        .panel-card { background:var(--panel-bg); border-radius:10px; border:1px solid var(--border); padding:12px; }
+        .panel-card h3 { font-size:13px; margin-bottom:8px; color:var(--accent); }
+        .goal-desc { font-size:12px; line-height:1.5; padding:8px; background:#ffffff08; border-radius:5px; border-left:3px solid var(--accent); }
+        .step-list { max-height:180px; overflow-y:auto; font-size:11px; display:flex; flex-direction:column; gap:3px; }
+        .step-item { padding:4px 8px; border-radius:3px; background:#ffffff05; font-family:monospace; font-size:10px; }
+        .constraint-item { display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:3px; font-size:11px; background:#ffffff06; margin-bottom:3px; }
+        .status { width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; flex-shrink:0; }
+        .status.pending { background:#555; color:#aaa; } .status.ok { background:var(--success); color:#fff; } .status.fail { background:var(--danger); color:#fff; }
+        .btn { padding:6px 12px; border-radius:5px; border:none; cursor:pointer; font-size:11px; font-weight:600; font-family:inherit; }
+        .btn-primary { background:var(--accent2); color:#fff; }
+        .btn-outline { background:transparent; border:1px solid var(--border); color:var(--text); }
+        .layer-item { display:flex; align-items:center; gap:6px; padding:4px 0; font-size:11px; }
+        .layer-color { width:16px; height:16px; border-radius:3px; border:1px solid #fff; }
+        @media (max-width:850px) {
+            .app-container { flex-direction:column; height:auto; }
+            .side-panel { width:100%; min-width:0; }
+            .canvas-wrap { min-height:350px; }
+        }
+    </style>
+</head>
+<body>
+<div class="app-container">
+    <div class="canvas-panel">
+        <div class="canvas-header">
+            <button class="tool-btn active" data-tool="free-point">📍自由点</button>
+            <button class="tool-btn" data-tool="line">📏直线</button>
+            <button class="tool-btn" data-tool="circle">⭕圆</button>
+            <button class="tool-btn" data-tool="intersection">✂️取交点</button>
+            <span style="flex:1"></span>
+            <div class="layer-switch" id="layerSwitch">
+                <span class="layer-dot" id="currentLayerColor"></span>
+                <span id="currentLayerName">图层 0</span>
+                <button class="btn btn-outline" style="font-size:10px;padding:2px 6px;" id="btnPrevLayer">◀</button>
+                <button class="btn btn-outline" style="font-size:10px;padding:2px 6px;" id="btnNextLayer">▶</button>
+                <button class="btn btn-outline" style="font-size:10px;padding:2px 6px;" id="btnAddLayerTop">+</button>
+            </div>
+            <button class="tool-btn danger" id="btnUndo">↩撤销</button>
+            <button class="tool-btn danger" id="btnClear">🗑清空</button>
+        </div>
+        <div class="canvas-wrap" id="canvasWrap">
+            <canvas id="mainCanvas"></canvas>
+        </div>
+        <div class="hint-bar" id="hintBar">💡 选择工具开始作图</div>
+    </div>
+    <div class="side-panel">
+        <div class="panel-card">
+            <h3>🎯 目标</h3>
+            <div class="goal-desc" id="goalDesc">📐 等边三角形</div>
+            <button class="btn btn-outline" id="btnNextGoal" style="margin-top:6px;">下一关 ▶</button>
+        </div>
+        <div class="panel-card">
+            <h3>🎨 图层管理</h3>
+            <div id="layerList"></div>
+        </div>
+        <div class="panel-card">
+            <h3>🔍 约束验证</h3>
+            <div id="constraintList"><div class="constraint-item"><span class="status pending">?</span>等待构造</div></div>
+            <button class="btn btn-primary" id="btnVerify" style="margin-top:6px;">精确验证</button>
+        </div>
+        <div class="panel-card">
+            <h3>📋 构造步骤</h3>
+            <div class="step-list" id="stepList"><div class="step-item">暂无</div></div>
+        </div>
+        <div class="panel-card">
+            <h3>🧮 选中点坐标</h3>
+            <div id="algebraPreview" style="font-family:monospace;font-size:10px;word-break:break-all;">点击任意点查看</div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="js/rl/main.js"></script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 export enum NodeType {
-    ATOM=127, SYM, BOUND, U, APP, PRED, UFN
+    ATOM, SYM, BOUND, U, APP, PRED, UFN
 }
 
 export class AST {
