@@ -115,11 +115,11 @@ export class TypeParser {
                     this.nextSym();
                     const type = this.type();
                     const colNode = new AST(NodeType.SYM, ':', right, type).range(right.start, type.end);
-                    const ast2 = new AST(NodeType.PRED, ':=', ast, colNode).range(ast.start, colNode.end);
+                    const ast2 = new AST(NodeType.PROP, ':=', ast, colNode).range(ast.start, colNode.end);
                     opToken.parentAST = ast2;
                     return ast2;
                 }
-                const ast2 = new AST(NodeType.PRED, op, ast, right).range(ast.start, right.end);
+                const ast2 = new AST(NodeType.PROP, op, ast, right).range(ast.start, right.end);
                 opToken.parentAST = ast2;
                 return ast2;
             }

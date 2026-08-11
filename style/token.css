@@ -9,6 +9,9 @@
     border: 1px blue solid;
     margin-right: 2px;
 }
+.post-span{
+    margin-left: 2px;
+}
 
 /* Token 样式 */
 .token-layer-1 { color: #4070d5; }

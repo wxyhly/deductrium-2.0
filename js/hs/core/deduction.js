@@ -138,15 +138,19 @@ export class Proposition {
         if (this.from.type === "a" || this.from.type === "h") {
             return `hyp ${this.ast}`;
         }
-        if (this.from.type === "f") {
+        else if (this.from.type === "f") {
             return `dir ${this.name}`;
         }
-        if (this.from.type === "c" || this.from.type === "v") {
-            return `hyp ${this.ast}`;
+        else if (this.from.type === "c") {
+            return `cond ${this.ast}`;
         }
-        if (this.from.type === "d") {
+        else if (this.from.type === "v") {
+            return `var ${this.ast.name}`;
+        }
+        else if (this.from.type === "d") {
             const data = this.from.data;
-            return `d ${data.deduction} ${data.conditions.map(p => p.id).join(" ")} ${Object.values(data.replaceValues).join(" ")}`.trimEnd();
+            const cond = data.conditions.map(p => p.id).join(" ");
+            return `d ${data.deduction} ${cond ? cond + " " : ""}${Object.values(data.replaceValues).join(" ")}`.trimEnd();
         }
         throw "can't reach";
     }

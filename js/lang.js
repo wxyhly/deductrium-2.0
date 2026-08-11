@@ -12,11 +12,17 @@ export class LangMgr {
         deducing: { zh: "正在进行推理 ", en: "Deducing " },
         plsEnterRuleName: { zh: "请输入规则名：", en: "Please enter rule name: " },
         plsEnterNewRule: { zh: '请输入新规则名：', en: "Please enter new rule name: " },
+        plsEnterNewProp: { zh: '请输入新步骤名：', en: "Please enter new step name: " },
         plsEnterHyp: { zh: '请输入假设：', en: "Please enter hypothesis: " },
         plsEnterVar: { zh: '请输入变量：', en: "Please enter variable: " },
         plsEnterFolderName: { zh: '请输入文件夹名称：', en: "Please enter folder name: " },
-        plsEnterProp: { zh: '请输入或点选命题层级：', en: "Please enter or click deduction step layer: " },
+        plsEnterProp: { zh: '请输入或点选推理步骤：', en: "Please enter or click deduction step: " },
         rootList: { zh: '根列表', en: " root list " },
+        // 菜单
+        rename: { zh: '重命名', en: "Rename" },
+        delete: { zh: '删除', en: "Delete" },
+        copyCode: { zh: '复制代码', en: "Copy Code" },
+        loadMacro: { zh: '加载宏', en: "Load Macro" },
     };
     static formalize = {
         plsEnterCond: cond => this.lang === "zh" ? `请输入条件${cond}的命题编号，或点选命题` : `Please enter the proposition number for condition ${cond}, or click the proposition`,
@@ -123,6 +129,8 @@ export class LangMgr {
                 return zh ? "结论中不能出现局部变量" : "local variable can't appear in the conclusion";
             case "sbInHyp":
                 return zh ? "假设中不能出现未化简的#sb函数" : "function #sb can't appear in the hypotheses";
+            case "pListIsntEmpty":
+                return zh ? "请先清空推理表再操作" : "Step table must be empty before the operation";
             case "distinctFail":
                 return zh ? "变量不满足互不相同" : "variables are not mutually distinct";
             case "matchFail": {

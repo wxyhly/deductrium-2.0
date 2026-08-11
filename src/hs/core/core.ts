@@ -5,6 +5,16 @@ import { Bool3, F3, not3, T3, U3 } from "./bool3.js";
 import { Deduction, DeductionStep, Proposition } from "./deduction.js";
 import { HSError } from "./error.js";
 const RuleNameNotAllowedStartsWith = "acdempuv0123456789#$%<>.";
+
+// props相关的完整状态，用于保存/恢复当前props数据
+// 注意：rules是共用的，不属于context
+export interface HSContext {
+    props: Proposition[];
+    activeProp: Proposition | null;
+    flatProps: Map<string, Proposition>;
+    replvarVars: Set<string>;
+    replvars: Map<string, boolean>;
+}
 export class HilbertSystem {
     rules: Map<string, Deduction> = new Map;
     props: Proposition[] = [];
@@ -14,6 +24,26 @@ export class HilbertSystem {
     private flatProps: Map<string, Proposition> = new Map;
     private replvarVars = new Set<string>;
     private replvars = new Map;
+
+    // 保存当前props状态到context
+    saveContext(): HSContext {
+        return {
+            props: this.props,
+            activeProp: this.activeProp,
+            flatProps: this.flatProps,
+            replvarVars: this.replvarVars,
+            replvars: this.replvars,
+        };
+    }
+    // 用context覆盖当前状态，实现props数据切换
+    loadContext(ctx: HSContext) {
+        this.props = ctx.props;
+        this.activeProp = ctx.activeProp;
+        this.flatProps = ctx.flatProps;
+        this.replvarVars = ctx.replvarVars;
+        this.replvars = ctx.replvars;
+    }
+
     getD(dname: AST): Deduction {
         if (dname.type === NodeType.ATOM_DNAME) {
             const d = this.rules.get(dname.name);
@@ -270,6 +300,7 @@ export class HilbertSystem {
             for (const [name, isItem] of deduction.replaceNames) {
                 if (isItem) replaceValues[name]?.becomeItem();
             }
+            const originReplaceValues = Object.assign({}, replaceValues);
             for (let i = 0; i < conditions.length; i++) {
                 const cond = conditions[i];
                 if (cond.from.type !== "h" && cond.from.type !== "d" && cond.from.type !== "c") throw HSError.matchCond(i + 1, HSError.isNotWFF(cond.ast));
@@ -294,7 +325,7 @@ export class HilbertSystem {
             try {
                 const res = deduction.conclusion.clone().mut_replaceByMatchTable(replaceValues);
                 res.checkWFF();
-                return this.addP(new Proposition(res, { type: "d", data: { deduction: deduction.name, conditions, replaceValues } }));
+                return this.addP(new Proposition(res, { type: "d", data: { deduction: deduction.name, conditions, replaceValues: originReplaceValues } }));
             } catch (e) { throw HSError.conclusionFail(e); }
         } catch (e) { throw HSError.deductFail(deduction.name.toString(), e); }
     }
@@ -409,11 +440,7 @@ export class HilbertSystem {
             if (p.relyAfter?.length) throw HSError.delFail(p.relyAfter, null);
         } else {
             // check all propositions in the list
-            const currentProps = this.props;
-            const currentActive = this.activeProp;
-            const flatProps = this.flatProps;
-            const vars = this.replvarVars;
-            const repls = this.replvars;
+            const ctx = this.saveContext();
             this.props = [];
             this.flatProps = new Map;
             this.activeProp = null;
@@ -424,7 +451,7 @@ export class HilbertSystem {
             try {
                 while (true) {
                     if (thisId === id) id++;
-                    const oldP = flatProps.get(String(id++));
+                    const oldP = ctx.flatProps.get(String(id++));
                     if (!oldP) break;
                     while (this.activeProp) {
                         if ((this.activeProp as Proposition).id + 1 === oldP.parent?.id) break;
@@ -454,19 +481,10 @@ export class HilbertSystem {
                     if (!p) break;
                     p.id++;
                 }
-                this.props = currentProps;
-                this.flatProps = flatProps;
-                this.activeProp = currentActive;
-                this.replvarVars = vars;
-                this.replvars = repls;
-
-                throw HSError.delFail([flatProps.get(String(id - 1))!], e);
+                this.loadContext(ctx);
+                throw HSError.delFail([ctx.flatProps.get(String(id - 1))!], e);
             }
-            this.props = currentProps;
-            this.flatProps = flatProps;
-            this.activeProp = currentActive;
-            this.replvarVars = vars;
-            this.replvars = repls;
+            this.loadContext(ctx);
         }
         if (failed) return false;
         const iter = (nodes: Proposition[]) => {
@@ -499,7 +517,7 @@ export class HilbertSystem {
         this.activeProp = null;
     }
     cd(p: Proposition) {
-        if (!p.children) throw HSError.invalidPropDir();
+        if (!p.children && p.parent) { this.cd(p.parent); return; }
         this.clearActiveDir();
         p.active = true;
         this.activeProp = p;
@@ -509,5 +527,57 @@ export class HilbertSystem {
         this.activeProp.active = false;
         if (this.activeProp.parent) this.activeProp.parent.active = true;
         this.activeProp = this.activeProp.parent;
+    }
+    genCmd(props: Proposition[] = this.props) {
+        let flatProps = this.flatProps;
+        if (props !== this.props) {
+            // get flatprops
+            let idx = 1;
+            flatProps = new Map;
+            const iter = (arr: Proposition[]) => {
+                for (const p of arr) {
+                    flatProps.set(String(idx++), p);
+                    if (p.children) iter(p.children);
+                }
+            }
+            iter(props);
+        }
+        let id = 1;
+        const cmds: string[] = [];
+        let lastP: Proposition | null = null;
+        while (true) {
+            const p = flatProps.get(String(id++));
+            if (!p) break;
+            let parent = p.parent;
+            // 第一条或更深都不用管，否则cd到parent
+            if (lastP && parent !== lastP && parent !== lastP.parent) {
+                cmds.push('cd ' + (parent?.id || "0"));
+            }
+            cmds.push(p.getCmd());
+            if (p.name && p.from.type !== "f") cmds.push(`name ${p.id} ${p.name}`);
+            lastP = p;
+        }
+        return cmds;
+    }
+    fromCmd(cmds: AST[]) {
+        for (const cmd of cmds) {
+            const name = cmd.name;
+            const args = cmd.nodes;
+            if (name === "hyp") this.hyp(args[0]);
+            if (name === "d") {
+                const rule = this.getD(args[0]);
+                const conds = args.slice(1, rule.conditions.length + 1).map(e => this.getP(e.name)!);
+                const replaceValues = Object.fromEntries(args.slice(rule.conditions.length + 1).map((e, idx) => [rule.replaceNames[idx][0], e]));
+                this.d(rule, conds, replaceValues);
+            }
+            if (name === "cond" || name === "var" || name === "dir") {
+                this[name === "dir" ? "f" : name[0] as "c" | "v"](args[0]);
+            }
+            if (name === "cd") {
+                if (args[0].name === "0") this.clearActiveDir();
+                this.cd(this.getP(args[0].name)!);
+            }
+            if (name === "m") this.m(args[0].name);
+        }
     }
 }

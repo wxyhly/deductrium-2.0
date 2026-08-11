@@ -1,17 +1,29 @@
 import { initialRules } from "./hs/core/initial.js";
-import { DeductLayer } from "./hs/main.js";
+import { HSLayer } from "./hs/main.js";
 import { LangMgr } from "./lang.js";
+import { SaveLoad } from "./saveload.js";
+const gameModeURL = window.location.search.substring(1);
+const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
 
 class Game {
     langMgr = new LangMgr;
-    deductLayer = new DeductLayer;
+    hsLayer = new HSLayer;
+    saveload = new SaveLoad(gameMode, () => ({
+        hs: this.hsLayer.serialize(),
+    }), (data) => {
+        this.hsLayer.deserialize(data.hs);
+    })
     constructor() {
-        this.deductLayer.addRules(initialRules);
-        this.deductLayer.unlockBasicPropCmd();
-        this.deductLayer.unlockBasicRuleCmd();
-        this.deductLayer.unlockMetaBlock("c");
-        this.deductLayer.unlockMetaBlock("v");
-        this.deductLayer.unlockMetaBlock("f");
+        this.hsLayer.unlockBasicPropCmd();
+        this.hsLayer.unlockBasicRuleCmd();
+        this.hsLayer.unlockMetaBlock("c");
+        this.hsLayer.unlockMetaBlock("v");
+        this.hsLayer.unlockMetaBlock("f");
+
+        this.hsLayer.onchange = () => this.saveload.notifySave();
+        if (!this.saveload.load()) {
+            this.hsLayer.addRules(initialRules);
+        }
     }
 }
 new Game;

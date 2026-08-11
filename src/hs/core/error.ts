@@ -29,6 +29,7 @@ export type HSErrorInfo =
     | { type: "unknownCmd"; command: string }
     | { type: "argNotEnough"; command: string }
     | { type: "cmdIsRunning" }
+    | { type: "pListIsntEmpty" }
     | { type: "invalidPropDir" }
     | { type: "delFail"; rely: { name: string, id: number }[]; cause: unknown }
     | { type: "invalidPropName" }
@@ -53,6 +54,7 @@ export const HSError = {
     emptyValue(): HSErrorInfo { return { type: "emptyValue" }; },
     noConclusion(): HSErrorInfo { return { type: "noConclusion" }; },
     cmdIsRunning(): HSErrorInfo { return { type: "cmdIsRunning" }; },
+    pListIsntEmpty(): HSErrorInfo { return { type: "pListIsntEmpty" }; },
     invalidPropName(): HSErrorInfo { return { type: "invalidPropName" }; },
     nameAlreadyExist(name: string): HSErrorInfo { return { type: "nameAlreadyExist", name }; },
     invalidRuleNameStartsWith(invalidChars: string): HSErrorInfo { return { type: "invalidRuleNameStartsWith", invalidChars }; },

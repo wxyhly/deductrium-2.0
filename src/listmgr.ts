@@ -22,7 +22,9 @@ export class TreeListViewer<T extends ListNode> {
     private badgeEl: HTMLElement;
     private openMenuId: string | null = null;
     private dragState: { type: 'node' | 'item'; uuid: number; sourceElement: HTMLElement } | null = null;
-    private expandedFolders: Set<number> = new Set();
+    
+    idCounter = 1;
+    expandedFolders: Set<number> = new Set();
 
     // 长按拖拽相关
     private longPressTimer: number | null = null;
@@ -31,10 +33,12 @@ export class TreeListViewer<T extends ListNode> {
     private isDraggingTouch: boolean = false;
     private longPressDelay: number = 300;
 
-    public allowDrop: (sourceId: number, targetId: number, position: 'inside' | 'before' | 'after') => boolean = () => true;
-    public onAfterChange: () => void = () => { };
-    public onRename: (item: T, newName: string | null) => boolean = () => true;
-    public onDelete: (item: T) => boolean = () => true;
+
+    allowDrop: (sourceId: number, targetId: number, position: 'inside' | 'before' | 'after') => boolean = () => true;
+    onAfterChange: () => void = () => { };
+    onAfterRender: () => void = () => { };
+    onRename: (item: T, newName: string | null) => boolean = () => true;
+    onMenuAction: (item: T, action: string) => void = () => { };
     wideToggleFolderRange: (item: T) => boolean = () => true;
     renderName: (item: T) => string = i => i.name;
     // renderFolderNameCell: (item: T, nameCell: HTMLDivElement, isExpanded: boolean) => void = i => { };
@@ -42,13 +46,12 @@ export class TreeListViewer<T extends ListNode> {
     // renderFolderContent: (item: T, dom: HTMLSpanElement) => void = i => { };
     renderExtra: (item: T) => Node = i => document.createTextNode(i.name);
     folderMenuItems: Array<{ label: string; icon?: string; handler: (id: number) => void; danger?: boolean }> = [];
-    itemMenuItems: Array<{ label: string; icon?: string; handler: (id: number) => void; danger?: boolean }> = [];
+    menuItems: (item: T) => Array<{ label: string; icon?: string; action: string; danger?: boolean }> = () => [];
     initialHeight = '30vh';
     onFolderActiveCancel: () => void = () => { };
-    public data: T[];
+    data: T[];
 
     private static PLACEHOLDER_ID = -2;
-    private idCounter = 1;
 
     constructor(data: T[], container: HTMLElement, initialHeight?: string) {
         this.container = container;
@@ -89,7 +92,7 @@ export class TreeListViewer<T extends ListNode> {
     private renderList(): void {
         const flat = this.flattenVisible();
         this.rowsContainer.innerHTML = '';
-        if (flat.length === 0) return;
+        if (flat.length === 0) { this.onAfterRender?.(); return; }
 
         const fragment = document.createDocumentFragment();
         for (const { node, depth } of flat) {
@@ -103,6 +106,7 @@ export class TreeListViewer<T extends ListNode> {
         this.rowsContainer.appendChild(fragment);
         this.bindRowEvents();
         this.updateBadge();
+        this.onAfterRender?.();
     }
 
     private buildPlaceholderRow(): HTMLElement {
@@ -170,7 +174,7 @@ export class TreeListViewer<T extends ListNode> {
         nameText.className = 'name-text';
         nameText.textContent = isPlaceholder ? "" : this.renderName(node);
         nameCell.appendChild(nameText);
-        
+
         const indent = document.createElement('span');
         indent.className = 'row-indent';
         nameCell.appendChild(indent);
@@ -240,26 +244,12 @@ export class TreeListViewer<T extends ListNode> {
 
     private buildMenuHTML(node: T): string {
         const id = node.uuid;
-        let html = '';
-        if (isFolder(node)) {
-            // html += `<button class="menu-item" data-action="add-subfolder" data-uuid="${id}"><span class="icon">📁</span> 新建子文件夹</button>`;
-            html += `<button class="menu-item" data-action="rename-folder" data-uuid="${id}"><span class="icon">✏️</span> 重命名</button>`;
-            for (const mi of this.folderMenuItems || []) {
-                const danger = mi.danger ? 'danger' : '';
-                const icon = mi.icon || '•';
-                html += `<button class="menu-item ${danger}" data-action="custom-folder" data-custom-index="${this.folderMenuItems?.indexOf(mi)}" data-uuid="${id}"><span class="icon">${icon}</span> ${mi.label}</button>`;
-            }
-            html += `<div class="menu-divider"></div>`;
-            html += `<button class="menu-item danger" data-action="delete-folder" data-uuid="${id}"><span class="icon">🗑️</span> 删除</button>`;
-        } else {
-            html += `<button class="menu-item" data-action="rename" data-uuid="${id}"><span class="icon">✏️</span> 重命名</button>`;
-            for (const mi of this.itemMenuItems || []) {
-                const danger = mi.danger ? 'danger' : '';
-                const icon = mi.icon || '•';
-                html += `<button class="menu-item ${danger}" data-action="custom-item" data-custom-index="${this.itemMenuItems?.indexOf(mi)}" data-uuid="${id}"><span class="icon">${icon}</span> ${mi.label}</button>`;
-            }
-            html += `<div class="menu-divider"></div>`;
-            html += `<button class="menu-item danger" data-action="delete" data-uuid="${id}"><span class="icon">🗑️</span> 删除</button>`;
+        let html = ``;
+        const menus = this.menuItems(node);
+        for (const mi of menus) {
+            const danger = mi.danger ? 'danger' : '';
+            const icon = mi.icon || '•';
+            html += `<button class="menu-item ${danger}" data-action="${mi.action}" data-uuid="${id}"><span class="icon">${icon}</span> ${mi.label}</button>`;
         }
         return html;
     }
@@ -350,6 +340,12 @@ export class TreeListViewer<T extends ListNode> {
         };
         return search(this.data);
     }
+    deleteNode(id: number): boolean {
+        const info = this.findParentAndIndex(id);
+        if (!info) return false;
+        info.parent.splice(info.index, 1);
+        return true;
+    }
     moveNode(sourceId: number, targetId: number, position: 'inside' | 'before' | 'after'): boolean {
         if (sourceId === targetId || sourceId === ROOT_ID) return false;
         const srcInfo = this.findParentAndIndex(sourceId);
@@ -439,7 +435,6 @@ export class TreeListViewer<T extends ListNode> {
         const id = btn.dataset.uuid;
         if (!id) return;
 
-        // 从 body 中查找已存在的菜单，若没有则从原位置移动
         let menu = this.rowsContainer.querySelector(`.dropdown-menu[data-uuid="${id}"]`) as HTMLElement;
 
         // 切换菜单开关
@@ -469,11 +464,8 @@ export class TreeListViewer<T extends ListNode> {
             top = rect.top - actualHeight - 4;
             if (top < 0) top = 4; // 防止超出顶部
         }
-
         menu.style.top = top + 'px';
-
         menu.style.opacity = '1';
-
         this.openMenuId = id;
     };
 
@@ -487,19 +479,8 @@ export class TreeListViewer<T extends ListNode> {
 
         if (action === 'rename') {
             this.startRenameItem(id);
-        } else if (action === 'rename-folder') {
-            this.startRenameFolder(id);
-        } else if (action === 'custom-item') {
-            const idx = parseInt(target.dataset.customIndex || '-1', 10);
-            const menu = this.itemMenuItems[idx];
-            if (menu) menu.handler(id);
-        } else if (action === 'delete') {
-            this.onDelete(this.findNode(id)!);
-            this.refresh();
-        } else if (action === 'custom-folder') {
-            const idx = parseInt(target.dataset.customIndex || '-1', 10);
-            const menu = this.folderMenuItems[idx];
-            if (menu) menu.handler(id);
+        } else {
+            this.onMenuAction(this.findNode(id)!, action!);
         }
     };
 
@@ -508,7 +489,6 @@ export class TreeListViewer<T extends ListNode> {
         this.openMenuId = null;
     }
 
-    // ---- 鼠标拖拽（修复死机：减少DOM操作，避免重复查询） ----
     private dragStartHandler = (e: DragEvent) => {
         const target = e.target as HTMLElement;
         const cellName = target.closest('.cell-name');
@@ -876,7 +856,7 @@ export class TreeListViewer<T extends ListNode> {
     // ---- 操作 ----
     private startRenameItem(id: number): void {
         const node = this.findNode(id);
-        if (!node || isFolder(node)) return;
+        if (!node) return;
         const row = this.rowsContainer.querySelector(`.item-row[data-uuid="${id}"]`);
         if (!row) return;
         const nameEl = row.querySelector('.cell-name .name-text') as HTMLElement;
@@ -918,7 +898,7 @@ export class TreeListViewer<T extends ListNode> {
         node.name = newName;
         return true;
     }
-
+    // todo
     private updateBadge(): void {
         const count = this.data.length;
         this.badgeEl.textContent = count.toString();

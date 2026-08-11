@@ -16,6 +16,7 @@ export const HSError = {
     emptyValue() { return { type: "emptyValue" }; },
     noConclusion() { return { type: "noConclusion" }; },
     cmdIsRunning() { return { type: "cmdIsRunning" }; },
+    pListIsntEmpty() { return { type: "pListIsntEmpty" }; },
     invalidPropName() { return { type: "invalidPropName" }; },
     nameAlreadyExist(name) { return { type: "nameAlreadyExist", name }; },
     invalidRuleNameStartsWith(invalidChars) { return { type: "invalidRuleNameStartsWith", invalidChars }; },

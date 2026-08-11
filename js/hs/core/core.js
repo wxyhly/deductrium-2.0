@@ -305,6 +305,7 @@ export class HilbertSystem {
                 if (isItem)
                     replaceValues[name]?.becomeItem();
             }
+            const originReplaceValues = Object.assign({}, replaceValues);
             for (let i = 0; i < conditions.length; i++) {
                 const cond = conditions[i];
                 if (cond.from.type !== "h" && cond.from.type !== "d" && cond.from.type !== "c")
@@ -332,7 +333,7 @@ export class HilbertSystem {
             try {
                 const res = deduction.conclusion.clone().mut_replaceByMatchTable(replaceValues);
                 res.checkWFF();
-                return this.addP(new Proposition(res, { type: "d", data: { deduction: deduction.name, conditions, replaceValues } }));
+                return this.addP(new Proposition(res, { type: "d", data: { deduction: deduction.name, conditions, replaceValues: originReplaceValues } }));
             }
             catch (e) {
                 throw HSError.conclusionFail(e);
@@ -569,8 +570,10 @@ export class HilbertSystem {
         this.activeProp = null;
     }
     cd(p) {
-        if (!p.children)
-            throw HSError.invalidPropDir();
+        if (!p.children && p.parent) {
+            this.cd(p.parent);
+            return;
+        }
         this.clearActiveDir();
         p.active = true;
         this.activeProp = p;
@@ -582,6 +585,64 @@ export class HilbertSystem {
         if (this.activeProp.parent)
             this.activeProp.parent.active = true;
         this.activeProp = this.activeProp.parent;
+    }
+    genCmd(props = this.props) {
+        let flatProps = this.flatProps;
+        if (props !== this.props) {
+            // get flatprops
+            let idx = 1;
+            flatProps = new Map;
+            const iter = (arr) => {
+                for (const p of arr) {
+                    flatProps.set(String(idx++), p);
+                    if (p.children)
+                        iter(p.children);
+                }
+            };
+            iter(props);
+        }
+        let id = 1;
+        const cmds = [];
+        let lastP = null;
+        while (true) {
+            const p = flatProps.get(String(id++));
+            if (!p)
+                break;
+            let parent = p.parent;
+            // 第一条或更深都不用管，否则cd到parent
+            if (lastP && parent !== lastP && parent !== lastP.parent) {
+                cmds.push('cd ' + (parent?.id || "0"));
+            }
+            cmds.push(p.getCmd());
+            if (p.name && p.from.type !== "f")
+                cmds.push(`name ${p.id} ${p.name}`);
+            lastP = p;
+        }
+        return cmds;
+    }
+    fromCmd(cmds) {
+        for (const cmd of cmds) {
+            const name = cmd.name;
+            const args = cmd.nodes;
+            if (name === "hyp")
+                this.hyp(args[0]);
+            if (name === "d") {
+                const rule = this.getD(args[0]);
+                const conds = args.slice(1, rule.conditions.length + 1).map(e => this.getP(e.name));
+                const replaceValues = Object.fromEntries(args.slice(rule.conditions.length + 1).map((e, idx) => [rule.replaceNames[idx][0], e]));
+                this.d(rule, conds, replaceValues);
+            }
+            if (name === "cond" || name === "var" || name === "dir") {
+                this[name === "dir" ? "f" : name[0]](args[0]);
+            }
+            if (name === "cd") {
+                if (args[0].name === "0")
+                    this.clearActiveDir();
+                this.cd(this.getP(args[0].name));
+            }
+            if (name === "m")
+                this.m(args[0].name);
+        }
     }
 }
 //# sourceMappingURL=core.js.map

@@ -48,11 +48,12 @@ const commandDefs = {
     b: { params: [] },
     pop: { params: [] },
     cd: { params: [{ type: 'ast', astType: 'item' }] },
+    name: { params: [{ type: 'ast', astType: 'item' }, { type: 'ast', astType: 'item' }] },
+    del: { params: [{ type: 'ast', astType: 'item' }] },
     dir: { params: [{ type: 'ast', astType: 'item' }] },
-    del: { params: [{ type: 'rulename' }] },
     m: { params: [{ type: 'rulename' }] },
-    axiom: { params: [{ type: 'atom_token' }, { type: 'ast', astType: 'wff' }] },
-    assert: { params: [{ type: 'atom_token' }, { type: 'ast', astType: 'wff' }, { type: 'ast', astType: 'wff', optional: true, repeat: true, separator: ',' }] },
+    // axiom: { params: [{ type: 'atom_token' }, { type: 'ast', astType: 'wff' }] },
+    // assert: { params: [{ type: 'atom_token' }, { type: 'ast', astType: 'wff' }, { type: 'ast', astType: 'wff', optional: true, repeat: true, separator: ',' }] },
 };
 export class HSParser {
     allowReplaceTokenType(type) {
@@ -213,7 +214,7 @@ export class HSParser {
             if (text[this.cursor] === ' ' || text[this.cursor] === '\t' || text[this.cursor] === ';' || text[this.cursor] === '\n')
                 return;
             if (ruleCharSeps.includes(text[this.cursor])) {
-                this.tokens.push({ type: "()".includes(text[this.cursor]) ? 'layer' : 'rule-sym', text: text[this.cursor], displayText: text[this.cursor], start: this.cursor, end: this.cursor + 1 });
+                this.tokens.push({ type: "()".includes(text[this.cursor]) ? 'rule-layer' : 'rule-sym', text: text[this.cursor], displayText: text[this.cursor], start: this.cursor, end: this.cursor + 1 });
                 this.cursor++;
                 continue;
             }
@@ -337,15 +338,20 @@ export class HSParser {
         this.nextSym();
         if (cmdToken.type === "cmd") {
             if (this.token) {
-                const firstParam = commandDefs[cmd].params[0];
+                const params = commandDefs[cmd].params;
+                const firstParam = params[0];
                 if (cmd === "hyp") {
                     args = [this.parseWFF(F3)];
                 }
                 else if (firstParam?.type === "rulename") {
                     args = this.parseDeductCmd();
                 }
-                else if (firstParam?.type === "ast") {
-                    args = [this.parseWFF(firstParam.astType === "wff" ? F3 : firstParam.astType === "item" ? T3 : U3)];
+                else {
+                    for (const p of params) {
+                        if (p.type === "ast") {
+                            args.push(this.parseWFF(p.astType === "wff" ? F3 : p.astType === "item" ? T3 : U3));
+                        }
+                    }
                 }
             }
         }
@@ -390,7 +396,7 @@ export class HSParser {
     }
     parseDnameFn() {
         let left = this.parseDnameFastRule();
-        if (this.token?.text === "(") {
+        if (this.token?.text === "(" && this.token.type === "rule-layer") {
             // fn(xxx,xxx)
             const tokens = new Set([this.token]);
             const start = left.start;
@@ -447,7 +453,7 @@ export class HSParser {
         return ast;
     }
     parseDnameAtom() {
-        if (this.token.text === "(") {
+        if (this.token.text === "(" && this.token.type === "rule-layer") {
             const left = this.token;
             this.nextSym();
             const inner = this.parseDname();
@@ -653,6 +659,11 @@ export class HSParser {
         if (this.token?.text === '(') {
             tokens.add(this.token);
             if (left) {
+                // 若left不是标准的函数/谓词命名，或left跟后面括号之间有空格，则在此截止
+                if ((!left.name.match(/^[a-zA-Z]/) && left.name !== "#nf" && left.name !== "#of" && left.name !== "#dt" && left.name !== "#sb") || left.end !== this.token.start) {
+                    // 括号可能是下一个要parse的AST，留给后面处理
+                    return left;
+                }
                 // fn(xxx,xxx)
                 const start = left.start;
                 this.nextSym();
@@ -778,7 +789,7 @@ export class HSParser {
                 tokens.add(this.token);
                 this.expectSym(')');
                 if (args.length) {
-                    const ast = new AST(NodeType.FN, "()", ...args).range(start, this.tokens[this.cursor - 2].end);
+                    const ast = new AST(NodeType.FN, "()", inner, ...args).range(start, this.tokens[this.cursor - 2].end);
                     tokens.forEach(t => t.parentAST = ast);
                     return ast;
                 }
@@ -942,7 +953,7 @@ export class HSParser {
                 const b = ast.nodes[1];
                 return left + HSParser.stringify(a, a.type === NodeType.FN && setSyms.includes(a.name)) + (ascii2unicodeTable[ast.name] || ast.name) + HSParser.stringify(b, b.type === NodeType.FN && setSyms.includes(b.name)) + right;
             }
-            return ast.name === "()" || ast.name === "{}" ? "" : ast.name + (ast.name === "{}" ? "{" : "(") + ast.nodes.map(e => HSParser.stringify(e, false)).join(",") + (ast.name === "{}" ? "}" : ")");
+            return (ast.name === "()" || ast.name === "{}" ? "" : ast.name) + (ast.name === "{}" ? "{" : "(") + ast.nodes.map(e => HSParser.stringify(e, false)).join(",") + (ast.name === "{}" ? "}" : ")");
         }
         if (ast.type === NodeType.PRED) {
             if (predSyms.includes(ast.name))

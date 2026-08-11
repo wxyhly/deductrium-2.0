@@ -219,14 +219,14 @@ export class BaseSyntaxViewer {
     /** 渲染方法：解析并更新 code 元素的 innerHTML */
     render(unicodeText) {
         if (!unicodeText?.trim())
-            return this.codeElement.innerHTML = "\n";
+            return this.codeElement.innerHTML = "";
         try {
             this.parser.parse(unicodeText, ...this.parserArgs);
         }
         catch { }
         const tokens = this.parser.getTokens();
         const html = this.highlighter.highlight(tokens);
-        this.codeElement.innerHTML = html + '\n';
+        this.codeElement.innerHTML = html;
     }
     replaceText(str) {
         try {
