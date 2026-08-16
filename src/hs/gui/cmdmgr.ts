@@ -287,17 +287,20 @@ export class CommandUIManager {
     private promptDiv: HTMLDivElement;
     private cmdInput: SyntaxEditor;
     private engine: ExecutionEngine;
+    private onClearState?: () => void;
 
     constructor(
         engine: ExecutionEngine,
         cmdInput: SyntaxEditor,
         errorDiv: HTMLDivElement,
-        promptDiv: HTMLDivElement
+        promptDiv: HTMLDivElement,
+        onClearState?: () => void
     ) {
         this.engine = engine;
         this.cmdInput = cmdInput;
         this.errorDiv = errorDiv;
         this.promptDiv = promptDiv;
+        this.onClearState = onClearState;
 
         // 将自身作为 engine 的 ui 回调对象
         engine.ui = {
@@ -326,6 +329,8 @@ export class CommandUIManager {
         this.cmdInput.disabled = false;
         this.cmdInput.setParserArgs("cmds");
         SyntaxViewer.onClickAst = this.insertText;
+        // 命令结束/取消时通知外部清理（如列表行的点击回调）
+        this.onClearState?.();
     }
     insertText = (text: string, e: MouseEvent, parser: IParser) => {
         if (parser instanceof HSParser) this.cmdInput.executeInsertText(text);

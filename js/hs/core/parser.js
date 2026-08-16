@@ -33,9 +33,10 @@ function genAscii2unicodeTable(strMap) {
     }
     return Array.from(Object.entries(res)).sort((a, b) => b[0].length - a[0].length);
 }
-const charSeps = '()[]{},;|:=+*! \t\n';
-const predSyms = ["=", "@", "\\<", "\\>", "\\<=", "\\>=", "\\d"];
-const setSyms = ["\\u", "\\i", "+", "-", "\\\\"];
+const charSeps = '()[]{},;|:=+*! \t\n\\';
+const predSyms = ["=", "@", "\\<", "\\>", "\\<=", "\\>=", "\\d", "\\c"];
+// 集合/算术二元运算（按优先级：∪ < ∩ < +- < *× < \\）
+const setSyms = ["\\u", "\\i", "+", "-", "\\", "*", "\\x"];
 // rulename parse rule:
 const prefix = new Set("uvce<>");
 const ruleCharSeps = "(,;\n \t:)";
@@ -86,6 +87,28 @@ export class HSParser {
                     end: this.cursor + matchedUni.length
                 });
                 this.cursor += matchedUni.length;
+                continue;
+            }
+            // 1.5 ascii 转义序列（\a \c \e! \<= \\ 等；地图文本/直接 parse 不依赖 applyInputReplacements）
+            // ascii2unicode 已按长度降序，最长优先（如 \e!@ 先于 \e）
+            let matchedAscii = null;
+            if (text[this.cursor] === "\\") {
+                for (const [a, u] of ascii2unicode) {
+                    if (text.startsWith(a, this.cursor)) {
+                        matchedAscii = [a, u];
+                        break;
+                    }
+                }
+            }
+            if (matchedAscii) {
+                this.tokens.push({
+                    type: 'sym',
+                    text: symbolMap[matchedAscii[1]] ?? matchedAscii[1],
+                    displayText: matchedAscii[0],
+                    start: this.cursor,
+                    end: this.cursor + matchedAscii[0].length
+                });
+                this.cursor += matchedAscii[0].length;
                 continue;
             }
             // 2. {}
@@ -288,6 +311,8 @@ export class HSParser {
     replvarTable;
     // ---- 解析入口 ----
     parse(text, type, replvarTable) {
+        if (!text)
+            return null;
         this.replvarTable = replvarTable;
         this.tokens = this.tokenize(text, type === "cmd" || type === "cmds" ? "cmd" : type === "dname" ? "rulename" : "ast");
         const tokensWithSpaces = this.tokens;
@@ -475,7 +500,6 @@ export class HSParser {
         const start = this.cursor - 1;
         let conds = [];
         let symTokens = new Set;
-        let paren = this.acceptSym("(");
         while (this.token) {
             if (this.token.text === "|-")
                 break;
@@ -492,8 +516,6 @@ export class HSParser {
         symTokens.add(this.token);
         this.nextSym();
         const conc = this.parseWFF(F3);
-        if (paren)
-            this.expectSym(")");
         const ast = new AST(NodeType.RULE, "", ...conds, conc).range(start, this.tokens[this.cursor - 2].end);
         symTokens.forEach(e => e.parentAST = ast);
         return ast;
@@ -590,6 +612,12 @@ export class HSParser {
             opToken.parentAST = ast;
             return ast;
         }
+        else if (this.token?.text === "+") {
+            // 一元正号：+23 等价 23（旧地图 dZop 门如 (-13)*(+23)）
+            const start = this.token.start;
+            this.nextSym();
+            return this.parseUnaryLogic(F3);
+        }
         return this.parsePred(isItem);
     }
     remarkItem(left, leftToken) {
@@ -601,6 +629,11 @@ export class HSParser {
             left.type = NodeType.ATOM_ITEM;
             if (!leftToken.type.startsWith("replvar"))
                 leftToken.type = "atom-item";
+        }
+        else if (left.type === NodeType.PRED && !predSyms.includes(left.name)) {
+            // 函数调用在项位置（如 Pr2(x)=0、S(x)=y 中的 Pr2(x)/S(x)）：
+            // 之前按 wff 上下文解析成了 PRED，作为谓词操作数时应转回 FN（项）
+            left.type = NodeType.FN;
         }
         if (leftToken.type === "pred") {
             leftToken.type = "fn";
@@ -630,11 +663,87 @@ export class HSParser {
         }
         return left;
     }
-    // ---- ITEM 的递归下降（带中缀集合运算） ----
+    // ---- ITEM 的递归下降（中缀集合/算术运算按优先级：∪ < ∩ < +- < *× < \） ----
     parseITEM(isItem) {
+        return this.parseUnion(isItem);
+    }
+    // ∪ 最低
+    parseUnion(isItem) {
+        let leftToken = this.token;
+        let left = this.parseInter(isItem);
+        while (this.token?.text === '\\u') {
+            this.remarkItem(left, leftToken);
+            if (isItem === F3)
+                throw new Error("Set operations only allowed in item context");
+            const opToken = this.token;
+            const start = left.start;
+            this.nextSym();
+            const right = this.parseInter(T3);
+            const ast = new AST(NodeType.FN, opToken.text, left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            left = ast;
+        }
+        return left;
+    }
+    // ∩
+    parseInter(isItem) {
+        let leftToken = this.token;
+        let left = this.parseArith(isItem);
+        while (this.token?.text === '\\i') {
+            this.remarkItem(left, leftToken);
+            if (isItem === F3)
+                throw new Error("Set operations only allowed in item context");
+            const opToken = this.token;
+            const start = left.start;
+            this.nextSym();
+            const right = this.parseArith(T3);
+            const ast = new AST(NodeType.FN, opToken.text, left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            left = ast;
+        }
+        return left;
+    }
+    // 算术加减
+    parseArith(isItem) {
+        let leftToken = this.token;
+        let left = this.parseMult(isItem);
+        while (this.token && (this.token.text === '+' || this.token.text === '-')) {
+            this.remarkItem(left, leftToken);
+            if (isItem === F3)
+                throw new Error("Set operations only allowed in item context");
+            const opToken = this.token;
+            const start = left.start;
+            this.nextSym();
+            const right = this.parseMult(T3);
+            const ast = new AST(NodeType.FN, opToken.text, left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            left = ast;
+        }
+        return left;
+    }
+    // 乘法/笛卡尔积
+    parseMult(isItem) {
+        let leftToken = this.token;
+        let left = this.parseDiff(isItem);
+        while (this.token && (this.token.text === '*' || this.token.text === '\\x')) {
+            this.remarkItem(left, leftToken);
+            if (isItem === F3)
+                throw new Error("Set operations only allowed in item context");
+            const opToken = this.token;
+            const start = left.start;
+            this.nextSym();
+            const right = this.parseDiff(T3);
+            const ast = new AST(NodeType.FN, opToken.text, left, right).range(start, right.end);
+            opToken.parentAST = ast;
+            left = ast;
+        }
+        return left;
+    }
+    // 差集 \\ 最高
+    parseDiff(isItem) {
         let leftToken = this.token;
         let left = this.parseFn(isItem);
-        while (this.token && setSyms.includes(this.token.text)) {
+        while (this.token && (this.token.text === '\\' || this.token.text === '\\\\')) {
             this.remarkItem(left, leftToken);
             if (isItem === F3)
                 throw new Error("Set operations only allowed in item context");
@@ -649,6 +758,12 @@ export class HSParser {
         return left;
     }
     parseFn(isItem) {
+        // 一元正号/负号：+23 → 23、-x → -x（-13 已作为 atom；这里兜底括号内 +x）
+        if (this.token?.text === "+" || this.token?.text === "-") {
+            const start = this.token.start;
+            this.nextSym();
+            return this.parseFn(isItem);
+        }
         const token = this.token;
         let left;
         const tokens = new Set([token]);
@@ -683,14 +798,19 @@ export class HSParser {
                     this.expectSym(',');
                     args.push(this.parseITEM(T3));
                     tokens.add(this.token);
+                    const bounded = new AST(NodeType.FN, " ");
+                    args.push(bounded);
                     // 后续可选scope变量
-                    while (this.acceptSym(',')) {
-                        if (this.acceptSym(")")) {
-                            this.prevSym();
-                            break;
+                    if (this.acceptSym(',')) {
+                        bounded.nodes ??= [];
+                        while (this.token && this.token.text !== ")") {
+                            const t = this.token;
+                            bounded.nodes.push(this.parseVariable());
+                            t.type = "atom-var";
                         }
-                        args.push(this.parseVariable());
-                        tokens.add(this.token);
+                        // if (this.acceptSym(")")) { this.prevSym(); break; }
+                        // args.push(this.parseVariable());
+                        // tokens.add(this.token);
                     }
                     tokens.add(this.token);
                     this.expectSym(')');
@@ -934,7 +1054,10 @@ export class HSParser {
             return ascii2unicodeTable[ast.name] + ast.nodes[0].name + bounded + ":" + HSParser.stringify(body, body.type === NodeType.LOGIC && body.name !== "~");
         }
         if (ast.type === NodeType.SB) {
-            return "#sb(" + ast.nodes.map(e => HSParser.stringify(e, false)).join(",") + ")";
+            const inner = ast.nodes.map(e => HSParser.stringify(e, false));
+            if (inner[3]?.length === 0)
+                inner.pop();
+            return "#sb(" + inner.join(",") + ")";
         }
         if (ast.type === NodeType.ASSERT) {
             const inner = ast.nodes.map(e => HSParser.stringify(e, false));
@@ -958,6 +1081,8 @@ export class HSParser {
         if (ast.type === NodeType.PRED) {
             if (predSyms.includes(ast.name))
                 return `${HSParser.stringify(ast.nodes[0], false)}${ascii2unicodeTable[ast.name] || ast.name}${HSParser.stringify(ast.nodes[1], false)}`;
+            // 非中缀谓词（函数式谓词如 Equiv(a,b)）：按函数调用形式输出
+            return ast.name + "(" + ast.nodes.map(e => HSParser.stringify(e, false)).join(",") + ")";
         }
         if (ast.type === NodeType.SEP) {
             return `{${ast.nodes[0].name}∈${HSParser.stringify(ast.nodes[1], false)}|${HSParser.stringify(ast.nodes[2], false)}}`;

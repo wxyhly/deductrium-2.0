@@ -1,1 +1,0 @@
-{"version":3,"file":"hint.js","sourceRoot":"","sources":["../../../src/fs/gui/hint.ts"],"names":[],"mappings":"AAEA,MAAM,OAAO,OAAO;IAChB,MAAM,CAAU,IAAI,CAAS;IAC7B,MAAM,CAAC,UAAU,CAAC,IAAW;QACzB,OAAO,IAAI,CAAC,IAAI,KAAK,IAAI,CAAC,CAAC,CAAC,OAAO,GAAG,IAAI,CAAC,CAAC,CAAC,mBAAmB,GAAG,IAAI,CAAC;IAC5E,CAAC;CACJ"}

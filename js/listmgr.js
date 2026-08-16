@@ -6,7 +6,6 @@ export const ROOT_ID = -1;
 export class TreeListViewer {
     container;
     rowsContainer;
-    badgeEl;
     openMenuId = null;
     dragState = null;
     idCounter = 1;
@@ -22,6 +21,8 @@ export class TreeListViewer {
     onAfterRender = () => { };
     onRename = () => true;
     onMenuAction = () => { };
+    // 点击整行回调（d命令选择命题/规则时用）；参数为对应的逻辑对象
+    onRowClick = () => { };
     wideToggleFolderRange = () => true;
     renderName = i => i.name;
     // renderFolderNameCell: (item: T, nameCell: HTMLDivElement, isExpanded: boolean) => void = i => { };
@@ -37,7 +38,6 @@ export class TreeListViewer {
     constructor(data, container, initialHeight) {
         this.container = container;
         this.rowsContainer = this.container.querySelector('.rows-container');
-        this.badgeEl = this.container.querySelector('.badge');
         if (initialHeight)
             this.initialHeight = initialHeight;
         this.container.style.height = this.initialHeight;
@@ -70,6 +70,11 @@ export class TreeListViewer {
         }
     }
     refresh() { this.renderList(); }
+    // 重新绑定数据源（用于切换推理表sheet时）
+    setData(data) {
+        this.data = data;
+        this.refresh();
+    }
     renderList() {
         const flat = this.flattenVisible();
         this.rowsContainer.innerHTML = '';
@@ -86,14 +91,12 @@ export class TreeListViewer {
         fragment.appendChild(placeholder);
         this.rowsContainer.appendChild(fragment);
         this.bindRowEvents();
-        this.updateBadge();
         this.onAfterRender?.();
     }
     buildPlaceholderRow() {
         const row = document.createElement('div');
         row.className = 'item-row drop-placeholder';
         row.dataset.uuid = String(TreeListViewer.PLACEHOLDER_ID);
-        row.dataset.type = 'placeholder';
         row.style.setProperty('--depth', '0');
         for (let i = 0; i < 4; i++) {
             const cell = document.createElement('div');
@@ -140,7 +143,6 @@ export class TreeListViewer {
         const row = document.createElement('div');
         row.className = `item-row ${isFolderNode ? 'folder-row' : ''}`;
         row.dataset.uuid = String(id);
-        row.dataset.type = node.type;
         row.style.setProperty('--depth', String(depth));
         row.draggable = true;
         // ---- 名称列 ----
@@ -164,7 +166,7 @@ export class TreeListViewer {
         if (isPlaceholder) {
             row.classList.add("activePlaceholder");
             const parent = this.findNode(node?.parentId);
-            const parentName = parent ? `'${this.renderName(parent)}'` : LangMgr.text.rootList;
+            const parentName = parent ? `'${parent.name || this.renderName(parent)}'` : LangMgr.text.rootList;
             contentCell.innerText = LangMgr.formalize.activePlaceholder(parentName);
             return row;
         }
@@ -240,6 +242,9 @@ export class TreeListViewer {
         this.rowsContainer.querySelectorAll('.item-row').forEach(row => {
             if (row.dataset.uuid === String(TreeListViewer.PLACEHOLDER_ID))
                 return;
+            // 点击整行（供外部回调，如d命令选择命题/规则）
+            row.removeEventListener('click', this.rowClickHandler);
+            row.addEventListener('click', this.rowClickHandler);
             // 鼠标拖拽
             row.removeEventListener('dragstart', this.dragStartHandler);
             row.removeEventListener('dragend', this.dragEndHandler);
@@ -458,11 +463,29 @@ export class TreeListViewer {
         e.stopPropagation();
         this.closeAllMenus();
         if (action === 'rename') {
-            this.startRenameItem(id);
+            const node = this.findNode(id);
+            if (node && isFolder(node))
+                this.startRenameFolder(id);
+            else
+                this.startRenameItem(id);
         }
         else {
             this.onMenuAction(this.findNode(id), action);
         }
+    };
+    // 点击整行：过滤交互控件（菜单/折叠箭头/输入框）与占位行，回调逻辑对象
+    rowClickHandler = (e) => {
+        const t = e.target;
+        if (t.closest('.cell-actions') || t.closest('.toggle-icon') || t.closest('input'))
+            return;
+        const row = e.currentTarget;
+        const id = Number(row.dataset.uuid);
+        if (!id || id === TreeListViewer.PLACEHOLDER_ID)
+            return;
+        const node = this.findNode(id);
+        if (!node)
+            return;
+        this.onRowClick(node);
     };
     closeAllMenus() {
         document.querySelectorAll('.dropdown-menu.open').forEach(el => el.classList.remove('open'));
@@ -517,9 +540,14 @@ export class TreeListViewer {
             this.clearDropTarget(targetRow);
             return;
         }
+        const sourceNode = this.findNode(sourceId);
+        if (!sourceNode) {
+            this.clearDropTarget(targetRow);
+            return;
+        }
         // 占位符
         if (targetId === TreeListViewer.PLACEHOLDER_ID) {
-            const allowed = this.allowDrop(sourceId, targetId, 'before');
+            const allowed = this.allowDrop(sourceNode, null, 'before');
             this.clearDropTarget(targetRow);
             if (allowed) {
                 targetRow.classList.add('drop-before');
@@ -544,7 +572,7 @@ export class TreeListViewer {
         else {
             position = (y / height) < 0.5 ? 'before' : 'after';
         }
-        const allowed = this.allowDrop(sourceId, targetId, position);
+        const allowed = this.allowDrop(sourceNode, targetNode, position);
         this.clearDropTarget(targetRow);
         if (allowed) {
             e.dataTransfer.dropEffect = 'move';
@@ -584,9 +612,14 @@ export class TreeListViewer {
             this.dragEndHandler(e);
             return;
         }
+        const sourceNode = this.findNode(sourceId);
+        if (!sourceNode) {
+            this.dragEndHandler(e);
+            return;
+        }
         // 占位符
         if (targetId === TreeListViewer.PLACEHOLDER_ID) {
-            const allowed = this.allowDrop(sourceId, targetId, 'before');
+            const allowed = this.allowDrop(sourceNode, null, 'before');
             if (!allowed) {
                 this.dragEndHandler(e);
                 return;
@@ -626,17 +659,18 @@ export class TreeListViewer {
             else
                 position = (y / height) < 0.5 ? 'before' : 'after';
         }
-        const allowed = this.allowDrop(sourceId, targetId, position);
-        if (!allowed) {
+        const targetNode = this.findNode(targetId);
+        if (!targetNode) {
             this.dragEndHandler(e);
             return;
         }
-        let success = this.allowDrop(sourceId, targetId, position);
-        if (success) {
-            this.moveNode(sourceId, targetId, position);
-            this.onAfterChange();
-            this.renderList();
+        if (!this.allowDrop(sourceNode, targetNode, position)) {
+            this.dragEndHandler(e);
+            return;
         }
+        this.moveNode(sourceId, targetId, position);
+        this.onAfterChange();
+        this.renderList();
         this.dragEndHandler(e);
     };
     // ---- 触摸拖拽（长按触发） ----
@@ -686,8 +720,11 @@ export class TreeListViewer {
                 if (targetId) {
                     const sourceId = this.dragState.uuid;
                     if (sourceId && sourceId !== targetId) {
+                        const sourceNode = this.findNode(sourceId);
+                        if (!sourceNode)
+                            return;
                         if (targetId === TreeListViewer.PLACEHOLDER_ID) {
-                            const allowed = this.allowDrop(sourceId, targetId, 'before');
+                            const allowed = this.allowDrop(sourceNode, null, 'before');
                             this.clearDragHighlights();
                             if (allowed) {
                                 targetRow.classList.add('drop-before');
@@ -710,7 +747,7 @@ export class TreeListViewer {
                         else {
                             position = (y / height) < 0.5 ? 'before' : 'after';
                         }
-                        const allowed = this.allowDrop(sourceId, targetId, position);
+                        const allowed = this.allowDrop(sourceNode, targetNode, position);
                         this.clearDragHighlights();
                         if (allowed) {
                             if (position === 'inside')
@@ -761,56 +798,59 @@ export class TreeListViewer {
                 const targetId = Number(targetRow.dataset.uuid);
                 const sourceId = this.dragState.uuid;
                 if (targetId && sourceId && sourceId !== targetId) {
-                    if (targetId === TreeListViewer.PLACEHOLDER_ID) {
-                        const allowed = this.allowDrop(sourceId, targetId, 'before');
-                        if (allowed) {
-                            const srcInfo = this.findParentAndIndex(sourceId);
-                            if (srcInfo) {
-                                const parent = srcInfo.parent;
-                                const idx = srcInfo.index;
-                                const node = parent[idx];
-                                parent.splice(idx, 1);
-                                parent.push(node);
-                                this.onAfterChange();
-                                this.renderList();
+                    const sourceNode = this.findNode(sourceId);
+                    if (sourceNode) {
+                        if (targetId === TreeListViewer.PLACEHOLDER_ID) {
+                            const allowed = this.allowDrop(sourceNode, null, 'before');
+                            if (allowed) {
+                                const srcInfo = this.findParentAndIndex(sourceId);
+                                if (srcInfo) {
+                                    const parent = srcInfo.parent;
+                                    const idx = srcInfo.index;
+                                    const node = parent[idx];
+                                    parent.splice(idx, 1);
+                                    parent.push(node);
+                                    this.onAfterChange();
+                                    this.renderList();
+                                }
                             }
+                            this.clearDragHighlights();
+                            if (this.dragState.sourceElement) {
+                                this.dragState.sourceElement.classList.remove('dragging');
+                            }
+                            this.dragState = null;
+                            this.isDraggingTouch = false;
+                            document.removeEventListener('touchmove', this.preventScroll);
+                            return;
                         }
-                        this.clearDragHighlights();
-                        if (this.dragState.sourceElement) {
-                            this.dragState.sourceElement.classList.remove('dragging');
-                        }
-                        this.dragState = null;
-                        this.isDraggingTouch = false;
-                        document.removeEventListener('touchmove', this.preventScroll);
-                        return;
-                    }
-                    let position = 'before';
-                    if (targetRow.classList.contains('drop-inside') || targetRow.classList.contains('drop-inside-disallowed')) {
-                        position = 'inside';
-                    }
-                    else if (targetRow.classList.contains('drop-before') || targetRow.classList.contains('drop-before-disallowed')) {
-                        position = 'before';
-                    }
-                    else if (targetRow.classList.contains('drop-after') || targetRow.classList.contains('drop-after-disallowed')) {
-                        position = 'after';
-                    }
-                    else {
-                        const rect = targetRow.getBoundingClientRect();
-                        const y = touch.clientY - rect.top;
-                        const height = rect.height;
-                        const targetNode = this.findNode(targetId);
-                        const isFolderTarget = targetNode && isFolder(targetNode);
-                        const isExpanded = isFolderTarget && this.expandedFolders.has(targetId);
-                        if (isExpanded && (y / height) > 0.5)
+                        let position = 'before';
+                        if (targetRow.classList.contains('drop-inside') || targetRow.classList.contains('drop-inside-disallowed')) {
                             position = 'inside';
-                        else
-                            position = (y / height) < 0.5 ? 'before' : 'after';
-                    }
-                    const allowed = this.allowDrop(sourceId, targetId, position);
-                    if (allowed) {
-                        this.moveNode(sourceId, targetId, position);
-                        this.onAfterChange();
-                        this.renderList();
+                        }
+                        else if (targetRow.classList.contains('drop-before') || targetRow.classList.contains('drop-before-disallowed')) {
+                            position = 'before';
+                        }
+                        else if (targetRow.classList.contains('drop-after') || targetRow.classList.contains('drop-after-disallowed')) {
+                            position = 'after';
+                        }
+                        else {
+                            const rect = targetRow.getBoundingClientRect();
+                            const y = touch.clientY - rect.top;
+                            const height = rect.height;
+                            const targetNode = this.findNode(targetId);
+                            const isFolderTarget = targetNode && isFolder(targetNode);
+                            const isExpanded = isFolderTarget && this.expandedFolders.has(targetId);
+                            if (isExpanded && (y / height) > 0.5)
+                                position = 'inside';
+                            else
+                                position = (y / height) < 0.5 ? 'before' : 'after';
+                        }
+                        const allowed = this.allowDrop(sourceNode, this.findNode(targetId), position);
+                        if (allowed) {
+                            this.moveNode(sourceId, targetId, position);
+                            this.onAfterChange();
+                            this.renderList();
+                        }
                     }
                 }
             }
@@ -832,6 +872,12 @@ export class TreeListViewer {
     clearDragHighlights() {
         document.querySelectorAll('.item-row.drop-before, .item-row.drop-after, .item-row.drop-inside, .item-row.drop-before-disallowed, .item-row.drop-after-disallowed, .item-row.drop-inside-disallowed')
             .forEach(el => el.classList.remove('drop-before', 'drop-after', 'drop-inside', 'drop-before-disallowed', 'drop-after-disallowed', 'drop-inside-disallowed'));
+    }
+    startRename(node) {
+        if (isFolder(node))
+            this.startRenameFolder(node.uuid);
+        else
+            this.startRenameItem(node.uuid);
     }
     // ---- 操作 ----
     startRenameItem(id) {
@@ -871,11 +917,44 @@ export class TreeListViewer {
             }
         });
     }
+    // 文件夹就地改名：在内容列（inner 的位置）内联编辑，名字随意不检查（不是真正的规则）
     startRenameFolder(id) {
         const node = this.findNode(id);
         if (!node || !isFolder(node))
             return;
-        this.onRename(node, null);
+        const row = this.rowsContainer.querySelector(`.item-row[data-uuid="${id}"]`);
+        if (!row)
+            return;
+        const inner = row.querySelector('.cell-content .inner');
+        if (!inner)
+            return;
+        const currentName = node.name;
+        const input = document.createElement('input');
+        input.className = 'name-input folder-name-input';
+        input.value = currentName;
+        input.dataset.uuid = String(id);
+        inner.replaceWith(input);
+        input.focus();
+        input.select();
+        const finish = () => {
+            const newName = input.value.trim();
+            // 文件夹名很随意，不校验；空则保留原名
+            if (newName && newName !== currentName) {
+                this.renameNode(id, newName);
+                this.onAfterChange();
+            }
+            this.renderList();
+        };
+        input.addEventListener('blur', finish);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                input.blur();
+            }
+            else if (e.key === 'Escape') {
+                input.value = currentName;
+                input.blur();
+            }
+        });
     }
     renameNode(id, newName) {
         const node = this.findNode(id);
@@ -883,11 +962,6 @@ export class TreeListViewer {
             return false;
         node.name = newName;
         return true;
-    }
-    // todo
-    updateBadge() {
-        const count = this.data.length;
-        this.badgeEl.textContent = count.toString();
     }
     destroy() {
         document.removeEventListener('mousemove', this._mouseMove);

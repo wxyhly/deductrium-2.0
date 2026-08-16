@@ -1,4 +1,5 @@
 const CURRENT_VERSION = 0;
+
 interface SavePackage {
     version: number;
     mode: string;
@@ -29,6 +30,12 @@ export class SaveLoad {
     private compressor: ICompressor;
     deserialize: (data: any) => void;
     serialize: () => any;
+
+    static getSavedLang(){
+        const savedLang = localStorage.getItem("lang");
+        if (savedLang === "zh" || savedLang === "en") return savedLang;
+        return undefined;
+    }
 
     constructor(mode: string, serialize: () => any, deserialize: (data: any) => void) {
         this.mode = mode;
@@ -81,10 +88,11 @@ export class SaveLoad {
             const decompressed = this.compressor.decompress(raw);
             const pkg = JSON.parse(decompressed) as SavePackage;
 
-            // 2. ★ 模式校验（拒绝跨模式加载）
+            // 2. ★ 模式校验：存档模式与当前 URL 不符时跳转到对应模式（确保模式正确），不在此新建进度
             if (pkg.mode !== this.mode) {
-                console.warn(`拒绝加载：存档模式(${pkg.mode}) 不等于 当前模式(${this.mode})`);
-                return false;
+                console.warn(`存档模式(${pkg.mode}) 与当前模式(${this.mode}) 不符，跳转到 ${pkg.mode} 模式`);
+                this.redirectToMode(pkg.mode);
+                return true; // 已处理（页面即将跳转，避免调用方继续执行 firstLoad 逻辑）
             }
 
             // 3. ★ 版本迁移（如果旧版本，在这里修正数据结构）
@@ -98,6 +106,16 @@ export class SaveLoad {
         } catch (e) {
             console.error('[Load] 加载失败:', e);
             return false;
+        }
+    }
+    // 跳转到存档对应的模式 URL：creative → ?creative；survival → 去掉 query 参数
+    private redirectToMode(mode: string) {
+        if (mode === "creative") {
+            if (window.location.search !== "?creative") {
+                window.location.href = window.location.pathname + "?creative" + window.location.hash;
+            }
+        } else if (window.location.search) {
+            window.location.href = window.location.pathname + window.location.hash;
         }
     }
 
@@ -125,6 +143,51 @@ export class SaveLoad {
             return this.load();
         } catch (e) {
             console.error('导入失败:', e);
+            return false;
+        }
+    }
+
+    // ---------- 进度槽位（单独 key 保存压缩存档） ----------
+    // 序列化当前状态并压缩保存到指定 key（槽位）
+    public saveToKey(key: string): string {
+        const rawData = this.serialize();
+        const pkg: SavePackage = {
+            version: CURRENT_VERSION,
+            mode: this.mode,
+            timestamp: Date.now(),
+            data: rawData,
+        };
+        const json = JSON.stringify(pkg);
+        const compressed = this.compressor.compress(json);
+        localStorage.setItem(key, compressed);
+        return compressed;
+    }
+    // 从指定 key 读取槽位数据；无则返回 null
+    public readKey(key: string): string | null {
+        return localStorage.getItem(key);
+    }
+    // 槽位元数据（用于显示时间戳/模式/大小）；无则 null
+    public keyMeta(key: string): { timestamp: number; mode: string; size: number } | null {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        try {
+            const pkg = JSON.parse(this.compressor.decompress(raw)) as SavePackage;
+            return { timestamp: pkg.timestamp, mode: pkg.mode, size: raw.length };
+        } catch { return null; }
+    }
+    // 从压缩字符串加载（槽位/导入共用）：模式不符时跳转到对应模式 URL（与 load 一致）
+    public loadFromString(compressed: string): boolean {
+        try {
+            const pkg = JSON.parse(this.compressor.decompress(compressed)) as SavePackage;
+            if (pkg.mode !== this.mode) {
+                console.warn(`槽位/导入存档模式(${pkg.mode}) 与当前模式(${this.mode}) 不符，跳转到 ${pkg.mode} 模式`);
+                this.redirectToMode(pkg.mode);
+                return true; // 已处理（页面即将跳转）
+            }
+            localStorage.setItem(this.storageKey, compressed);
+            return this.load();
+        } catch (e) {
+            console.error('加载失败:', e);
             return false;
         }
     }

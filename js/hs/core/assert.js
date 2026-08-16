@@ -457,7 +457,7 @@ export class AtomSolver {
         if (ast.name === "dt") {
             const vs = new Set(ast.nodes.map(e => e.name));
             if (vs.size !== ast.nodes.length)
-                throw HSError.distinctFail();
+                throw HSError.distinctFail;
             return { type: "dt", vs };
         }
         throw "can't reach here";
@@ -583,11 +583,11 @@ export class Assertion {
     /** this function will modify ast, reduce all #sb fns if it can do that */
     static reduceSbFn(premises, mut_ast) {
         if (mut_ast.type === NodeType.SB) {
-            const [body, src, dst, ...qs] = mut_ast.nodes;
+            const [body, src, dst, qs] = mut_ast.nodes;
             this.reduceSbFn(premises, body);
             this.reduceSbFn(premises, dst);
             this.unwrapSbFn(mut_ast);
-            return this.reduceSbFnInside(premises, mut_ast, src.name, dst, new Set(qs.map(q => q.name)));
+            return this.reduceSbFnInside(premises, mut_ast, src.name, dst, new Set(qs.nodes.map(q => q.name)));
         }
         if (mut_ast.nodes) {
             for (const n of mut_ast.nodes)
@@ -601,7 +601,8 @@ export class Assertion {
         mut_ast.nodes = sub.nodes;
     }
     static wrapSbFn(mut_ast, src, dst, qs) {
-        mut_ast.nodes = [mut_ast.clone(), new AST(NodeType.ATOM_ITEM, src), dst, ...Array.from(qs).map(n => new AST(NodeType.ATOM_ITEM, n))];
+        mut_ast.nodes = [mut_ast.clone(), new AST(NodeType.ATOM_ITEM, src), dst,
+            new AST(NodeType.FN, " ", ...Array.from(qs).map(n => new AST(NodeType.ATOM_ITEM, n)))];
         mut_ast.type = NodeType.SB;
         mut_ast.name = "";
     }
@@ -814,7 +815,7 @@ export class DTAssertion extends Assertion {
         const length = this.vs.size;
         this.vs = Assertion.replaceVarsetByMatchTable(this.vs, mt);
         if (this.vs.size !== length)
-            throw HSError.distinctFail();
+            throw HSError.distinctFail;
         return this;
     }
     reduce(res = { asts: [], atoms: [] }) {

@@ -103,3 +103,10 @@ body {
         font-size: 1rem;
     }
 }
+
+/* ===== 几何层画布 ===== */
+#hyper {
+    display: block;
+    width: 100%;
+    height: 90vh;
+}

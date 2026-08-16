@@ -1,3 +1,17 @@
+.hide {
+  display: none !important;
+}
+
+/* ===== 加载动画（脚本加载前即可显示） ===== */
+#loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  font-size: 1.2rem;
+  color: #5b6a7e;
+}
+
 /* ===== 高度调整手柄 ===== */
 .resize-handle {
   height: 6px;
@@ -36,6 +50,18 @@
   opacity: 0.8;
   background: #4f46e5;
 }
+
+/* 卡片（推理表/规则表）底部手柄：绝对定位固定在卡片底缘。
+   否则卡片高度被拖得很小时，sheet页签等flex项（flex-shrink:0）会把
+   手柄顶到可视区下方并被overflow:hidden裁掉，导致再也无法拖动。 */
+.manager-card>.resize-handle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin-top: 0;
+}
+
 /* ===== 底部命令面板 ===== */
 .cmd-footer {
   position: fixed;

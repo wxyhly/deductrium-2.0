@@ -10,21 +10,68 @@ import { AtomSolver } from "./core/assert.js";
 import { NodeType } from "../asttype.js";
 import { LangMgr } from "../lang.js";
 import { Serde } from "./serde.js";
+import { SheetGui } from "./gui/sheet.js";
+
 export class HSLayer {
     private hilbertSystem = new HilbertSystem;
     private ruleList: ListNode[] = [];
+    private activeRuleFolder: ListNode | null = null;
     private ruleListView = new TreeListViewer(this.ruleList, document.getElementById('ruleList')!);
     private propListView = new TreeListViewer(this.hilbertSystem.props, document.getElementById('propList')!);
     private cmdEngine = new ExecutionEngine();
     private cmdInput = new SyntaxEditor(document.getElementById('hs-cmd-input')!, new HSParser, "", 'cmds');
     private cmdUIMgr: CommandUIManager;
     private serde = new Serde(this, this.hilbertSystem, this.ruleList, this.propListView, this.ruleListView);
+    private sheetGui = new SheetGui(this.hilbertSystem);
     onchange?: () => void;
-    saveContext() {
+    getSheetGui() { return this.sheetGui; }
 
+    // [p]门判定：任意sheet满足（无断言/假设 + 某步骤wrap后ast等于目标）
+    // 步骤在 c/v 文件夹内时，ast 需包上相应条件/量词（captureScope 得层级再 wrap）
+    checkPropGate(ast: AST): boolean {
+        const gui = this.sheetGui;
+        gui.saveCurrentSheet(); // 激活sheet ctx 最新
+        const saved = this.hilbertSystem.saveContext();
+        try {
+            for (const sheet of gui.sheets) {
+                this.hilbertSystem.loadContext(sheet.ctx);
+                // 1. 无 hyp 命令（断言 a / 假设 h 都不能有）
+                const hasHyp = (list: Proposition[]): boolean => list.some(
+                    p => p.from.type === "a" || p.from.type === "h" || (p.children ? hasHyp(p.children) : false)
+                );
+                if (hasHyp(sheet.ctx.props)) continue;
+                // 2. 存在某步骤（d）wrap 后 ast 与目标 equal
+                const iter = (list: Proposition[]): boolean => {
+                    for (const p of list) {
+                        if (p.from.type === "d") {
+                            try {
+                                const wrapped = this.hilbertSystem.ref_addCaptureScopeToAST(
+                                    p.ast, this.hilbertSystem.captureScope(null, p, [])
+                                );
+                                if (wrapped.equal(ast)) return true;
+                            } catch { /* 层级捕获失败（如v作用域缺断言）跳过 */ }
+                        }
+                        if (p.children && iter(p.children)) return true;
+                    }
+                    return false;
+                };
+                if (iter(sheet.ctx.props)) return true;
+            }
+            return false;
+        } finally {
+            this.hilbertSystem.loadContext(saved);
+        }
     }
-    loadContext() {
-
+    // [d]门判定：规则表中（忽略文件夹结构，全部规则）存在文本等价规则
+    checkRuleGate(ast: AST): boolean {
+        for (const rule of this.hilbertSystem.rules.values()) {
+            if (rule.error) continue;
+            try {
+                const ruleAst = new HSParser().parse(rule.toString(), "rule");
+                if (ruleAst && ruleAst.equal(ast)) return true;
+            } catch { }
+        }
+        return false;
     }
     constructor() {
 
@@ -35,47 +82,127 @@ export class HSLayer {
             return span;
         }
         this.ruleListView.renderContent = (it, span) => {
+            if (this.hilbertSystem.rules.get(it.name)?.error) {
+                span.parentElement?.parentElement?.classList.add("invalid");
+            }
             if (it.children) { span.innerText = "📂 " + it.name; return; }
             new SyntaxViewer(span, new HSParser, this.hilbertSystem.rules.get(it.name)!.toString() || "", 'rule')
         };
+        this.ruleListView.renderName = it => it.children ? "" : it.name;
         this.ruleListView.onRename = (r, name) => {
+            if (r.children) return true;
             if (!name?.trim()) return false;
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning()); return false; }
+            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
             try { this.hilbertSystem.renameD(r.name, name) } catch (e) { this.cmdEngine.reportError(e as any); return false; };
+            // 推理表各sheet里引用该规则的步骤也要同步改名（renameD只改了规则表的step）
+            this.sheetGui.saveCurrentSheet(); // 保证当前sheet ctx最新
+            for (const sheet of this.sheetGui.sheets) {
+                this.hilbertSystem.renameDnameInProps(sheet.ctx.props, r.name, name);
+            }
+            this.propListView.refresh();
             return true;
         };
         this.ruleListView.menuItems = r => {
             const arr: any[] = [
                 { label: LangMgr.text.rename, action: "rename", icon: '✏️' },
             ];
-            if (this.hilbertSystem.rules.get(r.name)?.step) {
-                arr.push({ label: LangMgr.text.loadMacro, action: "load", icon: '📋' },);
+            if (r.children) {
+                if (r === this.activeRuleFolder) {
+                    arr.push({ label: LangMgr.text.clearActiveFolder, action: "clearActiveFolder", icon: '⭐' },);
+                } else {
+                    arr.push({ label: LangMgr.text.setActiveFolder, action: "setActiveFolder", icon: '⭐' },);
+                }
+                arr.push({ label: LangMgr.text.delete, action: "delete", icon: '🗑️', danger: true });
+                return arr;
+            }
+            const rule = this.hilbertSystem.rules.get(r.name);
+            if (rule?.error) {
+                arr.push({ label: LangMgr.text.errorRule, action: "errorInfo", icon: '⚠️' },);
+                arr.push({ label: LangMgr.text.delete, action: "delete", icon: '🗑️', danger: true });
+            } else if (rule?.step) {
+                arr.push({ label: LangMgr.text.loadMacro, action: "load", icon: '📥' },);
+                arr.push({ label: LangMgr.text.copyCode, action: "copy", icon: '📋' },);
                 arr.push({ label: LangMgr.text.delete, action: "delete", icon: '🗑️', danger: true });
             }
             return arr;
         };
         this.ruleListView.onMenuAction = (r, action) => {
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning()); return; }
-            if (action === "delete") {
+            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return; }
+            if (action === "setActiveFolder" || action === "clearActiveFolder") {
+                // 清除所有文件夹的 active 标记，再设置/取消目标
+                const clearAll = (list: ListNode[]) => {
+                    for (const n of list) {
+                        if (n.children) { delete n.active; clearAll(n.children); }
+                    }
+                };
+                clearAll(this.ruleList);
+                if (action === "setActiveFolder") {
+                    r.active = true;
+                    this.activeRuleFolder = r;
+                } else {
+                    this.activeRuleFolder = null;
+                }
+                this.ruleListView.refresh();
+                return;
+            }
+            if (action === "errorInfo") {
+                const rule = this.hilbertSystem.rules.get(r.name);
+                if (!rule?.error) return;
+                // 先显示错误原因（reportError 会重置输入框），再把原始cmd填入供修改
+                // cause 直接透传（unknown），渲染交给 LangMgr（HSErrorInfo 递归翻译、字符串原样、其他 String()）
+                this.cmdEngine.reportError(HSError.expandFail(HSError.errRuleUsed(r.name, rule.error.cause)));
+                this.cmdInput.setValue(rule.error.cmds || "");
+            } else if (action === "delete") {
                 if (this.ruleListView.deleteNode(r.uuid)) {
+                    if (r === this.activeRuleFolder) this.activeRuleFolder = null;
                     this.hilbertSystem.rules.delete(r.name);
                     this.ruleListView.refresh();
                 }
             } else if (action === "load") {
-                if (this.hilbertSystem.props.length) { this.cmdEngine.reportError(HSError.pListIsntEmpty()); return; }
-                this.hilbertSystem.props.length = 0;
-                this.hilbertSystem.props.push(...this.hilbertSystem.rules.get(r.name)!.step!);
+                if (this.hilbertSystem.props.length) {
+                    this.sheetGui.addSheet();
+                    // 把名称设为当前规则名，方便用户识别
+                    this.sheetGui.sheets[this.sheetGui.activeIndex].name = r.name;
+                    this.sheetGui.render();
+                }
+                // 重放规则step的cmd生成全新props：不直接共享step的Proposition引用
+                // （后续在推理表中expand会修改命题对象，若与规则step共享会导致规则自身被污染）；
+                // fromCmd会重新走addP/d()创建对象，跨c/v层级的依赖也由cd命令正确重建
+                const step = this.hilbertSystem.rules.get(r.name)!.step!;
+                const cmds = this.hilbertSystem.genCmd(step).map(e => new HSParser().parse(e, "cmd"));
+                this.hilbertSystem.fromCmd(cmds);
                 this.hilbertSystem.updatePropIdx();
                 this.propListView.refresh();
+            } else if (action === "copy") {
+                this.cmdInput.setValue(this.hilbertSystem.genCmd(this.hilbertSystem.rules.get(r.name)!.step!).join(";"));
             }
         }
+        document.getElementById("ruleAddFolder")!.addEventListener("click", () => {
+            // 新文件夹添加到活动文件夹末尾（无活动则为根目录末尾），并立即激活就地改名
+            const folder: ListNode = { name: LangMgr.text.newFolder, uuid: 0, children: [] };
+            if (this.activeRuleFolder) this.activeRuleFolder.children!.push(folder);
+            else this.ruleList.push(folder);
+            this.ruleListView.refresh();
+            this.ruleListView.startRename(folder);
+        });
 
         this.ruleListView.onAfterRender = this.propListView.onAfterRender = () => this.onchange?.();
 
         // 定理表
         this.propListView.renderName = it => it.name || String(it.id);
         this.propListView.wideToggleFolderRange = it => it.from.type === "f";
-        this.propListView.allowDrop = (src, dst, pos) => !this.cmdEngine.isExecuting() && this.hilbertSystem.allowReorder(src, dst, pos);
+        this.propListView.allowDrop = (src, dst, pos) => {
+            if (this.cmdEngine.isExecuting()) return false;
+            // dst为null表示拖到列表末尾的占位符：等价于移动到src所在父级的末尾
+            if (!dst) {
+                const parent = src.parent;
+                const siblings = parent?.children ?? this.hilbertSystem.props;
+                const last = siblings.length ? siblings[siblings.length - 1] : null;
+                if (!last || last === src) return true;
+                return this.hilbertSystem.allowReorder(src.id, last.id, "after");
+            }
+            return this.hilbertSystem.allowReorder(src.id, dst.id, pos);
+        };
         this.propListView.onAfterChange = () => this.hilbertSystem.updatePropIdx();
         this.propListView.renderContent = (it, span) => {
             if (it.from.type === "f") { span.innerText = "📂"; return; }
@@ -89,7 +216,7 @@ export class HSLayer {
                 // ouuter用于高亮bounded vars，层级为root(null)
                 try { outters = this.hilbertSystem.captureScope(null, it); } catch (e) { span.parentElement?.parentElement?.classList.add("invalid"); }
                 // layers为相对activy的层级添加前缀用
-                if (it.id < (scope as any)?.id) try { layers = this.hilbertSystem.captureScope(scope, it); } catch (e) { if (it.from.type !== "v") span.parentElement?.parentElement?.classList.add("invalid"); }
+                try { layers = this.hilbertSystem.captureScope(scope, it); } catch (e) { if (it.from.type !== "v") span.parentElement?.parentElement?.classList.add("invalid"); }
                 if (it.from.type === "v") layers.shift();
                 const ast = this.hilbertSystem.ref_addCaptureScopeToAST(mainAST, layers);
                 const dummyVars = outters.filter(p => p.from.type === "v").map(
@@ -146,7 +273,7 @@ export class HSLayer {
         this.propListView.onRename = (p, name) => {
             if (name === "") return true;
             if (!name?.trim()) return false;
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning()); return false; }
+            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
             try { this.hilbertSystem.checkPname(name); } catch (e) { this.cmdEngine.reportError(e as HSErrorInfo); return false; }
             return true;
         };
@@ -155,14 +282,38 @@ export class HSLayer {
                 { label: LangMgr.text.copyCode, action: "copy", icon: '📋' },
                 { label: LangMgr.text.rename, action: "rename", icon: '✏️' },
             ];
+            if (p.from.type === "d") {
+                try {
+                    if (this.hilbertSystem.getD(p.from.data.deduction).step?.length) {
+                        arr.push({ label: LangMgr.text.expand, action: "expand", icon: '🔧' });
+                    }
+                } catch { }
+            } else if (p.from.type === "f" || p.from.type === "c" || p.from.type === "v") {
+                if (p.children?.length) {
+                    arr.push({ label: LangMgr.text.expand, action: "expand", icon: '🔧' });
+                }
+            }
             if (!p.relyAfter?.length) arr.push({ label: LangMgr.text.delete, action: "delete", icon: '🗑️', danger: true });
             return arr;
         };
         this.propListView.onMenuAction = (p, action) => {
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning()); return; }
+            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return; }
             if (action === "delete") {
                 try {
                     this.hilbertSystem.delP(p);
+                    this.propListView.refresh();
+                } catch (e) {
+                    this.cmdEngine.reportError(e as HSErrorInfo);
+                    return false;
+                }
+            } else if (action === "expand") {
+                try {
+                    const newFolders = this.hilbertSystem.expand(p) || [];
+                    // 肢解新建的文件夹默认展开，避免全部收起
+                    for (const f of newFolders) {
+                        if (!f.uuid) f.uuid = this.propListView.idCounter++;
+                        this.propListView.expandedFolders.add(f.uuid);
+                    }
                     this.propListView.refresh();
                 } catch (e) {
                     this.cmdEngine.reportError(e as HSErrorInfo);
@@ -175,6 +326,10 @@ export class HSLayer {
         this.propListView.onFolderActiveCancel = () => {
             this.hilbertSystem.clearActiveDir();
         }
+        // 规则表文件夹收起时若取消活动文件夹，同步清 activeRuleFolder（否则菜单状态不更新）
+        this.ruleListView.onFolderActiveCancel = () => {
+            this.activeRuleFolder = null;
+        }
 
         // 命令栏
         makeResizable(document.getElementById("cmdFooter")!, document.getElementById("cmdResizeHandle")!, true);
@@ -185,8 +340,50 @@ export class HSLayer {
         this.cmdUIMgr = new CommandUIManager(
             this.cmdEngine, this.cmdInput,
             document.getElementById('cmd-error')! as HTMLDivElement,
-            document.getElementById('cmd-prompt')! as HTMLDivElement
+            document.getElementById('cmd-prompt')! as HTMLDivElement,
+            // 命令结束/取消时清除列表行的点击回调（d命令选择模式专用）
+            () => {
+                this.propListView.onRowClick = () => { };
+                this.ruleListView.onRowClick = () => { };
+            }
         );
+
+        // 推理表sheet：SheetGui内部处理全部sheet操作，HSLayer只注入刷新/变更/守卫/展开状态回调
+        this.sheetGui.guard = () => {
+            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
+            return true;
+        };
+        this.sheetGui.onRefresh = () => this.propListView.setData(this.hilbertSystem.props);
+        this.sheetGui.onChange = () => this.onchange?.();
+        // 展开状态：expandedFolders按uuid存储，持久化用逻辑id（uuid为listview内部生成，不入存档）
+        this.sheetGui.captureExpanded = () => {
+            const uuidToId = new Map<number, number>();
+            const iter = (arr: Proposition[]) => {
+                for (const p of arr) {
+                    uuidToId.set(p.uuid, p.id);
+                    if (p.children) iter(p.children);
+                }
+            };
+            iter(this.hilbertSystem.props);
+            return Array.from(this.propListView.expandedFolders)
+                .map(u => uuidToId.get(u))
+                .filter((x): x is number => x !== undefined);
+        };
+        this.sheetGui.restoreExpanded = (ids: number[]) => {
+            const idToUuid = new Map<number, number>();
+            const iter = (arr: Proposition[]) => {
+                for (const p of arr) {
+                    if (!p.uuid) p.uuid = this.propListView.idCounter++;
+                    idToUuid.set(p.id, p.uuid);
+                    if (p.children) iter(p.children);
+                }
+            };
+            iter(this.hilbertSystem.props);
+            this.propListView.expandedFolders = new Set(
+                ids.map(id => idToUuid.get(id)).filter((x): x is number => x !== undefined)
+            );
+        };
+        this.sheetGui.render();
     }
     executeCmd(cmd: string) {
         this.cmdEngine.run(cmd);
@@ -204,6 +401,9 @@ export class HSLayer {
             if (args.length === 0) {
                 this.cmdInput.setParserArgs("dname");
                 SyntaxViewer.onClickAst = null;
+                // 点击规则表行 = 把规则名作为参数继续（相当于输入 d <规则名>，立即进入下一步）
+                this.propListView.onRowClick = () => { };
+                this.ruleListView.onRowClick = r => { if (!(r as any).children) this.cmdEngine.run(r.name); };
 
                 return {
                     prompt: LangMgr.text.plsEnterRuleName, default: "", parse: e => {
@@ -233,7 +433,10 @@ export class HSLayer {
             if (condsLength < deduction.conditions.length) {
                 mode = "prop";
                 prompt += `<br>${LangMgr.formalize.plsEnterCond(highlightHTML(deduction.conditions[condsLength].toString(), "wff"))}`;
-                SyntaxViewer.onClickAst = (t, e) => this.cmdEngine.run((e.target as HTMLElement).closest("[data-id]")?.getAttribute("data-id") || "");
+                // 点击定理表整行 = 用该命题的逻辑id作为参数继续（不再依赖onClickAst/data-id）
+                SyntaxViewer.onClickAst = null;
+                this.propListView.onRowClick = p => { if (p.from.type !== "f") this.cmdEngine.run(String(p.id)); };
+                this.ruleListView.onRowClick = () => { };
             } else {
                 for (let i = 1 + condsLength; i < args.length; i++) {
                     const [varname, isItem] = deduction.replaceNames[i - 1 - condsLength];
@@ -249,6 +452,9 @@ export class HSLayer {
                     defaultValue = varname;
                     SyntaxViewer.onClickAst = this.cmdUIMgr.insertText;
                 }
+                // 替换值输入模式：清除列表行点击回调（仅保留提示里AST点击插入）
+                this.propListView.onRowClick = () => { };
+                this.ruleListView.onRowClick = () => { };
                 this.cmdInput.setParserArgs(mode === "prop" ? "ast" : mode);
             }
             return {
@@ -266,6 +472,9 @@ export class HSLayer {
                 }
             };
         }, async (args) => {
+            // 参数齐了执行时也清一下行点击回调（正常情况下clearState已清，这里兜底）
+            this.propListView.onRowClick = () => { };
+            this.ruleListView.onRowClick = () => { };
             const deduction = this.hilbertSystem.getD(args[0]);
             const conds = args.slice(1, 1 + deduction.conditions.length).map((e, idx) => {
                 const p = this.hilbertSystem.getP(e.name);
@@ -295,7 +504,7 @@ export class HSLayer {
             }
             return null;
         }, async (args) => {
-            if (!args[0]) throw HSError.emptyValue();
+            if (!args[0]) throw HSError.emptyValue;
             const n = args[0].name;
             const p = this.hilbertSystem.getP(n);
             if (!p) throw HSError.pname404(n);
@@ -319,7 +528,7 @@ export class HSLayer {
             }
             return null;
         }, async (args) => {
-            if (!args[0]) throw HSError.emptyValue();
+            if (!args[0]) throw HSError.emptyValue;
             const n = args[0].name;
             const p = this.hilbertSystem.getP(n);
             if (!p) throw HSError.pname404(n);
@@ -353,9 +562,12 @@ export class HSLayer {
             }
             return null;
         }, async (args) => {
-            if (!args[0]) throw HSError.emptyValue();
+            if (!args[0]) throw HSError.emptyValue;
             this.hilbertSystem.m(args[0].name);
-            this.ruleList.push({ name: args[0].name, uuid: 0 });
+            // 新规则添加到活动文件夹末尾（无活动则为根目录末尾）
+            const node = { name: args[0].name, uuid: 0 };
+            if (this.activeRuleFolder) this.activeRuleFolder.children!.push(node);
+            else this.ruleList.push(node);
             this.propListView.refresh();
             this.ruleListView.refresh();
         });
@@ -376,7 +588,7 @@ export class HSLayer {
             }
             return null;
         }, async (args) => {
-            if (!args[0]) throw HSError.emptyValue();
+            if (!args[0]) throw HSError.emptyValue;
             this.hilbertSystem.hyp(args[0]);
             this.propListView.refresh();
         });
@@ -400,7 +612,7 @@ export class HSLayer {
             }
             return null;
         }, async (args) => {
-            if (!args[0]) throw HSError.emptyValue();
+            if (!args[0]) throw HSError.emptyValue;
             this.hilbertSystem[type](args[0]);
             this.propListView.refresh();
         });
@@ -424,7 +636,7 @@ export class HSLayer {
             }
             return null;
         }, async (args) => {
-            if (!args[0]) throw HSError.emptyValue();
+            if (!args[0]) throw HSError.emptyValue;
             const n = args[0].name;
             if (n === "/" || n === "0" || n === "\\") {
                 this.hilbertSystem.clearActiveDir();
@@ -440,35 +652,95 @@ export class HSLayer {
             this.propListView.refresh();
         });
     }
+    // 解析文件夹名：{ 后跟 [语言]名称 序列（如 {[zh]中文[en]English），按当前语言选择；
+    // 找不到当前语言则回退第一个；无语言标记则整段作名
+    private resolveFolderName(raw: string): string {
+        const s = raw.replace(/^\{/, "").trim();
+        const segs: [string, string][] = [];
+        const re = /\[([a-zA-Z]+)\]([^\[]*)/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(s))) {
+            segs.push([m[1], m[2].trim()]);
+        }
+        if (!segs.length) return s || "folder";
+        const hit = segs.find(([lang]) => lang === LangMgr.lang);
+        return (hit ? hit[1] : segs[0][1]) || "folder";
+    }
     addRules(data: string) {
-        data.split("\n").filter(e => e && e.trim() && !e.trim().startsWith("//")).map(e => {
-            const name = e.slice(0, e.indexOf(":")).trim();
-            let rest = e.slice(e.indexOf(":") + 1).trim();
-            let ax = false;
-            let steps = "";
-            if (rest.startsWith("ax:")) {
-                ax = true;
-                rest = rest.slice(3);
-            } else {
-                steps = rest.slice(rest.indexOf(";") + 1);
-                rest = rest.slice(0, rest.indexOf(";"));
+        const context = this.hilbertSystem.saveContext();
+        this.hilbertSystem.loadContext(this.hilbertSystem.createEmptyContext());
+        const lines = data.split("\n").filter(e => e && e.trim() && !e.trim().startsWith("//"));
+        // 文件夹栈：栈顶为当前容器（ListNode[]）；根为 this.ruleList
+        const stack: ListNode[][] = [this.ruleList];
+        // 逐条解析：单条规则出错只标记该规则（占位规则 error），不中断整体加载
+        for (const raw of lines) {
+            const trimmed = raw.trim();
+            // 行首可选 (uuid) 前缀（存档格式用；规则名不含括号所以无歧义）
+            let uuid = 0;
+            let content = trimmed;
+            const um = trimmed.match(/^\((\d+)\)(.*)$/);
+            if (um) { uuid = parseInt(um[1], 10); content = um[2].trim(); }
+            // 文件夹开始：{ 后跟文件夹名（支持 [zh]...[en]... 语言选择）
+            if (content.startsWith("{")) {
+                const folder: ListNode = { name: this.resolveFolderName(content), uuid, children: [] };
+                stack[stack.length - 1].push(folder);
+                stack.push(folder.children!);
+                continue;
             }
-            const ast = new HSParser().parse(rest, 'rule');
-            // 分离assertion和condition
-            const assertions = ast.nodes.filter(e => e.type === NodeType.ASSERT).map(e => AtomSolver.fromAST(e));
-            ast.nodes = ast.nodes.filter(e => e.type !== NodeType.ASSERT);
-            const rule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), assertions, ast.nodes, ast.nodes.pop()!);
-            this.hilbertSystem.rules.set(name, rule);
-            this.ruleList.push({
-                name: name,
-                uuid: 0,
-            });
-            if (!ax) {
-                
-                this.hilbertSystem.fromCmd(steps.split(";").filter(e => e).map(e => new HSParser().parse(e, "cmd")));
-                rule.step = this.hilbertSystem.props.slice(0);
+            // 文件夹结束
+            if (content.startsWith("}")) {
+                if (stack.length > 1) stack.pop();
+                continue;
             }
-        });
+            const name = content.slice(0, content.indexOf(":")).trim();
+            const container = stack[stack.length - 1];
+            try {
+                let rest = content.slice(content.indexOf(":") + 1).trim();
+                let ax = false;
+                let steps = "";
+                if (rest.startsWith("ax:")) {
+                    ax = true;
+                    rest = rest.slice(3);
+                } else {
+                    steps = rest.slice(rest.indexOf(";") + 1);
+                    rest = rest.slice(0, rest.indexOf(";"));
+                }
+                const ast = new HSParser().parse(rest, 'rule');
+                // 分离assertion和condition
+                const assertions = ast.nodes.filter(e => e.type === NodeType.ASSERT).map(e => AtomSolver.fromAST(e));
+                ast.nodes = ast.nodes.filter(e => e.type !== NodeType.ASSERT);
+                const rule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), assertions, ast.nodes, ast.nodes.pop()!);
+                this.hilbertSystem.rules.set(name, rule);
+                container.push({ name, uuid });
+                if (!ax) {
+                    // 步骤重放失败只标记 error（保留原始cmd供调试），不中断
+                    try {
+                        // 自动补 hyp：从断言和条件推导（与serde存档逻辑一致，step中无需写hyp）
+                        const hyps: AST[] = [];
+                        for (const n of rule.assertions) hyps.push(new HSParser().parse("hyp " + AtomSolver.print(n), "cmd"));
+                        for (const n of rule.conditions) hyps.push(new HSParser().parse("hyp " + n, "cmd"));
+                        this.hilbertSystem.fromCmd(hyps);
+                        this.hilbertSystem.fromCmd(steps.split(";").filter(e => e).map(e => new HSParser().parse(e, "cmd")));
+                        if (!this.hilbertSystem.checkConclusionInPropList().conclusion.equal(rule.conclusion)) {
+                            rule.error = { cause: HSError.replayConclusionMismatch, cmds: steps };
+                        } else {
+                            rule.step = this.hilbertSystem.props.slice(0);
+                        }
+                    } catch (e) {
+                        rule.error = { cause: e, cmds: steps };
+                    } finally {
+                        this.hilbertSystem.clear();
+                    }
+                }
+            } catch (e) {
+                // 规则头解析失败：注册占位规则，仅保留 error 供调试
+                const errRule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), [], [], new AST(NodeType.ATOM_WFF, "?"));
+                errRule.error = { cause: e, cmds: raw };
+                this.hilbertSystem.rules.set(name, errRule);
+                container.push({ name, uuid });
+            }
+        }
+        this.hilbertSystem.loadContext(context);
         this.ruleListView.refresh();
     }
     refresh() {

@@ -10,12 +10,18 @@ export class Deduction {
     name: AST; assertions: AtomicAssertion[]; conditions: AST[]; conclusion: AST;
     step?: Proposition[];
     replaceNames: [string, boolean][];
-    constructor(dependence: Set<string>, name: AST, assertions: AtomicAssertion[], conditions: AST[], conclusion: AST, step?: Proposition[]) {
+    // 组合规则专用：原规则replaceNames变量名 -> 组合后最终表达式（用于外部映射rv键）
+    nameMap?: MatchTable;
+    // 从存档加载失败时记录：错误原因 + 存档原始cmd序列（用于"错误规则"菜单调试）
+    // cause 为原始异常（unknown），渲染交给 LangMgr（HSErrorInfo 递归翻译、字符串原样、其他 String()）
+    error?: { cause: unknown; cmds: string };
+    constructor(dependence: Set<string>, name: AST, assertions: AtomicAssertion[], conditions: AST[], conclusion: AST, step?: Proposition[], nameMap?: MatchTable) {
         try {
             this.dependence = dependence;
             this.name = name; this.assertions = assertions;
             this.conditions = conditions; this.conclusion = conclusion;
             this.step = step;
+            this.nameMap = nameMap;
             const conclusionReplvars = conclusion.getReplvars();
             const conditionReplvars = new Map<string, boolean>();
             conditions.forEach(c => c.getReplvars(conditionReplvars));
@@ -36,36 +42,33 @@ export class Deduction {
         return this.assertions.map(e => AtomSolver.print(e)).concat(this.conditions as any).join(",") + "⊢" + this.conclusion;
     }
     getNewReplName(type: 'wff' | 'var') {
-        const vars = new Map<string, boolean>();
-        this.conditions.forEach(c => c.getReplvars(vars));
-        this.conclusion.getReplvars(vars);
-        if (type === 'wff') {
-            let name = "$0", i = 0;
-            while (vars.has(name)) {
-                name = "$" + (i++);
-            }
-            return new AST(NodeType.ATOM_WFF, name);
+        const vars = new Set<string>();
+        this.conditions.forEach(c => c.getReplvars().forEach((_, n) => vars.add(n)));
+        this.conclusion.getReplvars().forEach((_, n) => vars.add(n));
+        return new AST(type === 'wff' ? NodeType.ATOM_WFF : NodeType.ATOM_ITEM, Deduction.freshReplName(vars, type === 'var'));
+    }
+    // 生成不与vars中已有变量重名的替换变量名（wff: $0,$1..；var: $a,$b..$z,$aa..字典序）
+    static freshReplName(vars: Set<string>, isItem: boolean): string {
+        if (!isItem) {
+            let i = 0;
+            while (vars.has("$" + i)) i++;
+            return "$" + i;
         }
-        if (type === 'var') {
-            let name = "$a", i = ['a'.charCodeAt(0)];
-            while (vars.has(name)) {
-                // 生成字典顺序：a-z,然后aa~az ba~bz ...zz，然后aaa...
-                for (let j = i.length - 1; j >= 0; j--) {
-                    if (i[j] < 'z'.charCodeAt(0)) {
-                        i[j]++;
-                        break;
-                    } else {
-                        i[j] = 'a'.charCodeAt(0);
-                        if (j === 0) {
-                            i.push('a'.charCodeAt(0));
-                        }
-                    }
+        // 字典序：$a..$z,然后$aa~$az $ba~$bz ...$zz，然后$aaa...
+        for (let len = 1; ; len++) {
+            const arr = new Array(len).fill('a'.charCodeAt(0));
+            while (true) {
+                const name = "$" + arr.map(c => String.fromCharCode(c)).join("");
+                if (!vars.has(name)) return name;
+                let i = len - 1;
+                while (i >= 0) {
+                    if (arr[i] < 'z'.charCodeAt(0)) { arr[i]++; break; }
+                    arr[i] = 'a'.charCodeAt(0);
+                    i--;
                 }
-                name = "$" + (i.map(e => String.fromCharCode(e)).join(""));
+                if (i < 0) break;
             }
-            return new AST(NodeType.ATOM_ITEM, name);
         }
-        throw "can't reach";
     }
 }
 

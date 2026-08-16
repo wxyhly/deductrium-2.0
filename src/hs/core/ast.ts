@@ -142,6 +142,13 @@ export class AST {
         this.nodes.forEach(node => node.mut_replaceByMatchTable(mt));
         return this;
     }
+    // 把ast中所有局部变量（#开头）按映射重命名，返回新的AST（不修改原ast）
+    renameLocalVars_mut(map: Map<string, string>): AST {
+        if (this.isLocalvar() && map.has(this.name)) {
+            this.name = map.get(this.name)!;
+        } else this.nodes.map(e => e.renameLocalVars_mut(map));
+        return this;
+    }
     checkVAR() {
         if ((this.type !== NodeType.ATOM_UKNOWN && this.type !== NodeType.ATOM_ITEM) || !this.name.match(/^[a-z\$\#]/)) throw HSError.isNotVar(this);
     }
@@ -173,8 +180,8 @@ export class AST {
             this.nodes[0].checkITEM();
             this.nodes[1].checkVAR();
             this.nodes[2].checkITEM();
-            for (let i = 3; i < this.nodes.length; i++) {
-                this.nodes[i].checkVAR();
+            for (const q of this.nodes[3].nodes) {
+                q.checkVAR();
             }
             return;
         }
@@ -221,8 +228,8 @@ export class AST {
             this.nodes[0].checkWFF();
             this.nodes[1].checkVAR();
             this.nodes[2].checkITEM();
-            for (let i = 3; i < this.nodes.length; i++) {
-                this.nodes[i].checkVAR();
+            for (const q of this.nodes[3].nodes) {
+                q.checkVAR();
             }
             return;
         }

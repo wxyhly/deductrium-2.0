@@ -1,0 +1,224 @@
+/* ===== 进度层（P-layer）样式：与推理层 manager-card 风格统一 ===== */
+/* 按钮复用 list.css 的 .btn-sm；这里只做布局，不重写按钮 */
+.pg-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.pg-card {
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.pg-card .card-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #0f172a;
+    margin: 0.4rem 0;
+}
+
+.pg-body {
+    padding: 0.8rem 1rem;
+}
+
+.pg-hint {
+    font-size: 0.85rem;
+    color: #f44338;
+    margin: 0.3rem 0;
+}
+
+/* 子栏（当前进度 / 槽位） */
+.pg-section {
+    border-top: 1px solid #eef2f6;
+    padding-top: 0.2rem;
+}
+.pg-section:first-child {
+    border-top: none;
+}
+.pg-section-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #475569;
+    padding: 0.5rem 1rem 0;
+}
+
+/* 当前进度 + 语言：左右两栏，窄屏上下 */
+.pg-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.pg-split-item {
+    min-width: 0;
+}
+.pg-lang-col {
+    border-left: 1px solid #eef2f6;
+    padding-left: 8px;
+}
+@media (max-width: 600px) {
+    .pg-split {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+    .pg-lang-col {
+        border-left: none;
+        padding-left: 0;
+    }
+
+    .pg-split-item + .pg-split-item {
+        margin-top: 0;
+    }
+}
+
+/* 当前进度 */
+.pg-mode-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-bottom: 0.5rem;
+}
+.pg-mode {
+    color: #4f46e5;
+    font-weight: 600;
+}
+.pg-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* 语言选择 */
+.pg-select {
+    font-size: 0.9rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 6px;
+    border: 1px solid #d1d9e6;
+    background: white;
+    color: #1e293b;
+    outline: none;
+    min-width: 160px;
+    font-family: inherit;
+}
+
+.pg-select:focus {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+/* 联系作者 */
+.pg-contact p {
+    margin: 0.3rem 0;
+    font-size: 0.9rem;
+    color: #1e293b;
+}
+.pg-contact a {
+    color: #4f46e5;
+    font-weight: 600;
+}
+.pg-contact .pg-qq {
+    color: #64748b;
+}
+
+/* 槽位网格 */
+.pg-slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.pg-slot {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.7rem 0.8rem;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color 0.15s;
+}
+
+.pg-slot:hover {
+    border-color: #c7d2fe;
+}
+
+.pg-slot.empty {
+    border-style: dashed;
+    opacity: 0.8;
+}
+
+.pg-slot-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #4f46e5;
+}
+
+.pg-slot-info {
+    font-size: 0.75rem;
+    color: #64748b;
+    word-break: break-all;
+    /* 固定两行高度，保证信息长短不一时按钮对齐 */
+    min-height: 2.4em;
+    line-height: 1.2;
+    display: flex;
+    align-items: flex-start;
+}
+
+.pg-slot-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.pg-slot-actions .btn-sm {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    height: 1.7rem;
+    box-sizing: border-box;
+}
+
+/* 删除按钮：红色弱化 */
+.pg-slot-actions .btn-sm.pg-slot-delete {
+    background: #fef2f2;
+    color: #dc2626;
+}
+.pg-slot-actions .btn-sm.pg-slot-delete:hover {
+    background: #fee2e2;
+}
+
+/* 统计面板 */
+.pg-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.pg-stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: #334155;
+    padding: 0.2rem 0;
+    border-bottom: 1px dashed #eef2f6;
+}
+.pg-stat-row:last-child {
+    border-bottom: none;
+}
+.pg-stat-row strong {
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}

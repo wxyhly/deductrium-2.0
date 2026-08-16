@@ -1,0 +1,77 @@
+===== test 1: .t expand =====
+before expand:
+1:A→B[h]
+2:B→C[h]
+3:A→C[d] conds=1:A→B,2:B→C rv={}
+p3 ast: A→C conclusion should be A→C
+after expand:
+1:A→B[h]
+2:B→C[h]
+3:A[c] children=2
+  4:B[d] conds=1:A→B,3:A rv={}
+  5:C[d] conds=2:B→C,4:B rv={}
+ids: 1:A→B | 2:B→C | 3:A
+last prop ast: A (expect C)
+flatProps last: A
+
+===== test 2: .i expand =====
+before expand:
+1:A→A[h]
+2:(D→D)→D→D[d] conds= rv={"$":"D→D"}
+after expand:
+1:A→A[h]
+2:(D→D)→(D→D)→D→D[d] conds= rv={"$1":"D→D","$2":"D→D"}
+3:(D→D)→((D→D)→D→D)→D→D[d] conds= rv={"$1":"D→D","$2":"(D→D)→D→D"}
+4:((D→D)→((D→D)→D→D)→D→D)→((D→D)→(D→D)→D→D)→(D→D)→D→D[d] conds= rv={"$1":"D→D","$2":"(D→D)→D→D","$3":"D→D"}
+5:((D→D)→(D→D)→D→D)→(D→D)→D→D[d] conds=4:((D→D)→((D→D)→D→D)→D→D)→((D→D)→(D→D)→D→D)→(D→D)→D→D,3:(D→D)→((D→D)→D→D)→D→D rv={}
+6:(D→D)→D→D[d] conds=5:((D→D)→(D→D)→D→D)→(D→D)→D→D,2:(D→D)→(D→D)→D→D rv={}
+last ast: (D→D)→D→D (expect D→D)
+
+===== test 3: relyAfter fix =====
+
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+{
+  type: 'deductFail',
+  ruleName: 'mp',
+  cause: {
+    type: 'matchCond',
+    conditionIndex: 2,
+    cause: {
+      type: 'matchFail',
+      expected: AST {
+        type: 4,
+        nodes: [
+          AST {
+            type: 1,
+            nodes: [],
+            name: 'A',
+            start: undefined,
+            end: undefined
+          },
+          AST {
+            type: 1,
+            nodes: [],
+            name: 'C',
+            start: undefined,
+            end: undefined
+          }
+        ],
+        name: '>',
+        start: undefined,
+        end: undefined
+      },
+      actual: AST {
+        type: 1,
+        nodes: [],
+        name: 'A',
+        start: undefined,
+        end: undefined
+      },
+      metaVarName: '$1'
+    }
+  }
+}
+
+Node.js v22.18.0

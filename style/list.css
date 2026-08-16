@@ -95,9 +95,137 @@ body {
     -webkit-overflow-scrolling: touch;
 }
 
+/* ===== 推理表sheet页签（类似excel，位于卡片底部） ===== */
+.sheet-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 0 0 4px;
+    background: #f8fafc;
+    border-top: 1px solid #eef2f6;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-shrink: 0;
+}
+
+.sheet-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 65px;
+    max-width: 180px;
+    height: 32px;
+    box-sizing: border-box;
+    line-height: 1.3;
+    padding: 4px 6px 4px 10px;
+    background: #eef2f6;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    font-size: 0.75rem;
+    color: #475569;
+    cursor: pointer;
+    user-select: none;
+    -webkit-touch-callout: none;
+    /* 必须none：真机上manipulation允许平移，浏览器会把手势判为滚动而发touchcancel
+       （而非touchend），导致释放时drop逻辑不执行（换位/复制失效）；
+       与 .cell-name 拖拽同一套真机验证过的模式 */
+    touch-action: none;
+    white-space: nowrap;
+    transition: background 0.1s;
+}
+
+.sheet-tab:hover {
+    background: #e2e8f0;
+}
+
+.sheet-tab.active {
+    background: white;
+    border-color: #c7d2fe;
+    color: #4f46e5;
+    font-weight: 600;
+    box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.sheet-tab-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+
+.sheet-tab-close {
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0 2px;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.sheet-tab-close:hover {
+    background: #fecaca;
+    color: #dc2626;
+}
+
+.sheet-tab-add {
+    border: 1px dashed #cbd5e1;
+    background: transparent;
+    color: #64748b;
+    width: 32px;
+    height: 32px;
+    box-sizing: border-box;
+    border-radius: 4px;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-bottom: 0;
+}
+
+.sheet-tab-add:hover {
+    background: #eef2ff;
+    color: #4f46e5;
+    border-color: #c7d2fe;
+}
+
+.sheet-tab-input {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    border: 1px solid #c7d2fe;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    padding: 1px 4px;
+    outline: none;
+    background: white;
+    color: #1e293b;
+}
+
+/* ===== sheet页签拖拽排序/复制 ===== */
+.sheet-tab.dragging {
+    opacity: 0.45;
+    cursor: grabbing;
+}
+.sheet-tab.drop-left {
+    box-shadow: inset 2px 0 0 #6366f1;
+}
+.sheet-tab.drop-right {
+    box-shadow: inset -2px 0 0 #6366f1;
+}
+.sheet-tab-add.drop-copy {
+    background: #eef2ff;
+    color: #4f46e5;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+}
+
 /* ===== 行 ===== */
 #ruleListWrapper .item-row {
     --col-extra: 40px;
+    --col-name: 60px;
 }
 
 #propListWrapper .item-row {
@@ -114,7 +242,7 @@ body {
     border-radius: 4px;
     margin: 1px 0;
     position: relative;
-    touch-action: none;
+    /* touch-action: none; */
 }
 .item-row.activePlaceholder{
     display: grid;
@@ -347,7 +475,7 @@ body {
     align-items: center;
     justify-content: center;
     position: relative;
-    touch-action: manipulation;
+    /* touch-action: manipulation; */
 }
 
 .dropdown-trigger {
@@ -471,6 +599,16 @@ body {
 
 .name-input:focus {
     outline: 2px solid #4f46e5;
+}
+
+/* 文件夹就地改名输入框（在内容列 inner 的位置） */
+.cell-content .name-input.folder-name-input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    font-weight: 500;
+    font-size: 0.85rem;
+    padding: 0.15rem 0.4rem;
 }
 
 .item-row.active {

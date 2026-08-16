@@ -1,0 +1,7 @@
+
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+{ type: 'dname404', ruleName: 'a2' }
+
+Node.js v22.18.0

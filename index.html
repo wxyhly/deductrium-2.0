@@ -9,6 +9,7 @@
     <link href="style/token.css" rel="stylesheet" type="text/css">
     <link href="style/list.css" rel="stylesheet" type="text/css">
     <link href="style/editor.css" rel="stylesheet" type="text/css">
+    <link href="style/progress.css" rel="stylesheet" type="text/css">
 </head>
 <script src="lib/lz-string.min.js"></script>
 <script src="js/game.js" type="module"></script>
@@ -17,53 +18,130 @@
     <div class="layer-nav">
         <div class="layer-title">Deductrium<sup>v2.0</sup></div>
         <div class="layer-buttons">
-            <button>几何层</button>
-            <button class="active">推理层</button>
-            <button>类型层</button>
-            <button>进度层</button>
+            <button data-layer="G-layer" class="hide">几何层</button>
+            <button data-layer="D-layer" class="hide" data-i18n="layerD">推理层</button>
+            <!-- <button>类型层</button> -->
+            <button data-layer="P-layer" class="hide" data-i18n="layerP">进度层</button>
         </div>
     </div>
-    <div class="manager-card" id="ruleList">
-        <div class="card-header">
-            <h2>规则表 <span class="badge" id="ruleBadge">0</span></h2>
-            <div class="actions">
-                <button class="btn-sm primary addfolder" id="ruleAddFolder">+ 文件夹</button>
-            </div>
-        </div>
-        <div class="list-wrapper" id="ruleListWrapper">
-            <div class="rows-container" id="ruleRows"></div>
-        </div>
-    </div>
-
-    <div class="manager-card" id="propList">
-        <div class="card-header">
-            <h2>推理表 <span class="badge" id="propBadge">0</span></h2>
-            <div class="actions">
-                <!-- <button class="btn-sm primary" id="propAddFolder">+ 文件夹</button> -->
-                <!-- <button class="btn-sm primary" id="propAddItem">+ 假设</button> -->
-            </div>
-        </div>
-        <div class="list-wrapper" id="propListWrapper">
-            <div class="rows-container" id="propRows"></div>
-        </div>
-    </div>
-    <div class="cmd-footer" id="cmdFooter" style="height:150px;">
-        <div class="resize-handle" id="cmdResizeHandle"></div>
-        <div class="cmd-content">
+    <div id="loading">加载中…</div>
+    <div data-layer="G-layer" class="hide"><canvas id="hyper"></canvas></div>
+    <div data-layer="D-layer" class="hide">
+        <div class="manager-card" id="ruleList">
             <div class="card-header">
-                <h2>命令栏</h2>
+                <h2 data-i18n="ruleList">规则表</h2>
                 <div class="actions">
-                    <button class="btn-sm primary" id="cmd-ok-btn">OK</button>
-                    <button class="btn-sm" id="cmd-esc-btn">ESC</button>
+                    <button class="btn-sm primary addfolder hide" id="ruleAddFolder" data-i18n="addFolder">+ 文件夹</button>
                 </div>
             </div>
-            <div id="cmd-output"></div>
-            <div id="cmd-error" style="color:red; display:none;"></div>
-            <div id="cmd-prompt" style="display:none;"></div>
-            <div id="hs-cmd-input"></div>
+            <div class="list-wrapper" id="ruleListWrapper">
+                <div class="rows-container" id="ruleRows"></div>
+            </div>
         </div>
+
+        <div class="manager-card" id="propList">
+            <div class="card-header">
+                <h2 data-i18n="propList">推理表</h2>
+                <div class="actions">
+                    <!-- <button class="btn-sm primary" id="propAddFolder">+ 文件夹</button> -->
+                    <!-- <button class="btn-sm primary" id="propAddItem">+ 假设</button> -->
+                </div>
+            </div>
+            <div class="list-wrapper" id="propListWrapper">
+                <div class="rows-container" id="propRows"></div>
+            </div>
+            <div class="sheet-tabs hide" id="propSheetTabs"></div>
+        </div>
+        <div class="cmd-footer" id="cmdFooter" style="height:150px;">
+            <div class="resize-handle" id="cmdResizeHandle"></div>
+            <div class="cmd-content">
+                <div class="card-header">
+                    <h2 data-i18n="cmdBar">命令栏</h2>
+                    <div class="actions">
+                        <button class="btn-sm primary" id="cmd-ok-btn">OK</button>
+                        <button class="btn-sm" id="cmd-esc-btn">ESC</button>
+                    </div>
+                </div>
+                <div id="cmd-output"></div>
+                <div id="cmd-error" style="color:red; display:none;"></div>
+                <div id="cmd-prompt" style="display:none;"></div>
+                <div id="hs-cmd-input"></div>
+            </div>
+        </div>
+        <div style="width: 100%;height: 300px;"></div>
     </div>
-    <div style="width: 100%;height: 300px;"></div>
+    <div data-layer="P-layer" class="hide">
+        <div class="pg-panel">
+            <!-- 存档管理 -->
+            <div class="manager-card pg-card">
+                <div class="card-header">
+                    <h2 data-i18n="saveMgmt">存档管理</h2>
+                </div>
+                <!-- 子栏一：当前游戏模式 + 语言（左右两栏，窄屏上下） -->
+                <div class="pg-section">
+                    <div class="pg-split">
+                        <div class="pg-split-item pg-progress-col">
+                            <div class="pg-section-title pg-mode-title">
+                                <span data-i18n="currentGameMode">当前游戏模式：</span><strong id="pg-mode"
+                                    class="pg-mode">生存</strong>
+                            </div>
+                            <div class="pg-body">
+                                <div class="pg-actions">
+                                    <button class="btn-sm" id="pg-export" data-i18n="exportFile">导出文件</button>
+                                    <button class="btn-sm" id="pg-import" data-i18n="importFile">导入文件</button>
+                                    <button class="btn-sm warning" id="pg-reset" data-i18n="resetProgress">重置进度</button>
+                                    <input type="file" id="pg-import-file" accept=".dt" style="display:none;" />
+                                </div>
+                                <p class="pg-hint" data-i18n="modeShareHint">不同模式之间不共享游戏进度；一个存档文件只保存一份进度，不含槽位信息。</p>
+                            </div>
+                        </div>
+                        <div class="pg-split-item pg-lang-col">
+                            <div class="pg-section-title" data-i18n="language">语言</div>
+                            <div class="pg-body">
+                                <select id="pg-lang" class="pg-select">
+                                    <option value="auto" data-i18n="langAuto">跟随系统</option>
+                                    <option value="zh">中文</option>
+                                    <option value="en">English</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 子栏二：槽位 -->
+                <div class="pg-section">
+                    <div class="pg-section-title" data-i18n="saveSlots">槽位</div>
+                    <div class="pg-body pg-slots" id="pg-slots">
+                        <!-- 4 个槽位卡片由 ProgressLayer 渲染 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 统计 -->
+            <div class="manager-card pg-card">
+                <div class="card-header">
+                    <h2 data-i18n="pgStats">统计</h2>
+                </div>
+                <div class="pg-body pg-stats">
+                    <div class="pg-stat-row"><span data-i18n="statDeductrium">拥有推理素</span><strong id="pg-stat-deductrium">0</strong></div>
+                    <div class="pg-stat-row"><span data-i18n="statConsumed">累计消耗推理素</span><strong id="pg-stat-consumed">0</strong></div>
+                    <div class="pg-stat-row"><span data-i18n="statParcours">总方块步数</span><strong id="pg-stat-parcours">0</strong></div>
+                </div>
+            </div>
+
+            <!-- 联系作者 -->
+            <div class="manager-card pg-card">
+                <div class="card-header">
+                    <h2 data-i18n="contact">若遇Bug或其它任何问题：</h2>
+                </div>
+                <div class="pg-body pg-contact">
+                    <p><span data-i18n="contactAuthor">欢迎联系游戏作者</span> <a href="https://wxyhly.github.io/about/"
+                            target="_blank">Hqak</a></p>
+                    <p class="pg-qq" data-qq-line>游戏QQ交流群：975918698</p>
+                </div>
+            </div>
+        </div>
+        <div style="width: 100%;height: 300px;"></div>
+    </div>
 </body>
 
 </html>
