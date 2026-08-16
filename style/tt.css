@@ -1,0 +1,123 @@
+/* ===== 类型层（T-layer）样式 ===== */
+/* 系统表：只读，行样式同推理层但更紧凑；prefix 列显示方括号内前缀 */
+#ttSysWrapper .item-row {
+    --col-name: 70px;
+    --col-extra: 20px;
+    --col-actions: 10px;
+}
+/* 定理表：name 列只显示行号，较窄 */
+#ttWrapper .item-row {
+    --col-name: 45px;
+    --col-extra: 20px;
+    --col-actions: 10px;
+}
+
+/* 系统表行：可读不可编辑（无拖拽光标） */
+#ttSysWrapper .item-row {
+    cursor: default;
+}
+#ttSysWrapper .cell-name {
+    cursor: default;
+}
+/* 系统表 prefix（name 列） */
+#ttSysWrapper .cell-name .name-text {
+    font-family: Consolas, "Courier New", monospace;
+    color: #4f46e5;
+}
+
+/* 定理表 name 列：行号 */
+#ttWrapper .cell-name .name-text {
+    font-family: Consolas, "Courier New", monospace;
+    color: #94a3b8;
+}
+
+/* 类型层内容列（SyntaxViewer 显示）与就地编辑器换行行为一致：
+   pre-wrap 保留空格/换行 + break-all 长 token 折断（white-space 需设在 cell-content 上，
+   inner 是 inline 元素 white-space 继承父级）；line-height 固定与编辑器一致；
+   去掉 inner 的 0.1rem 上下 padding（list.css 默认），否则显示比编辑高 2px */
+#ttWrapper .item-row .cell-content,
+#ttSysWrapper .item-row .cell-content {
+    white-space: pre-wrap;
+    word-break: break-all;
+    word-wrap: break-word;
+    line-height: 1.3;
+}
+#ttWrapper .cell-content .inner,
+#ttSysWrapper .cell-content .inner {
+    padding: 0;
+}
+
+/* cell-extra 不遮住内容列右侧（编辑框边框） */
+#ttWrapper .cell-extra {
+    overflow: hidden;
+    min-width: 0;
+    background: transparent;
+}
+#ttWrapper .cell-content.tt-inline-edit {
+    /* 给就地编辑框右侧留出空隙，避免与 cell-extra 重叠遮住边框 */
+    padding-right: 2px;
+    margin-right: 0;
+    overflow: visible;
+}
+
+/* 就地编辑（SyntaxEditor）在内容列内：编辑器高度由 textarea 撑开，pre 同步跟随
+   （grid 同格重叠：ta 与 pre 在同一网格单元，高度取 max 天然同步）
+   换行行为与显示层（SyntaxViewer，.cell-content .inner word-break: break-all）保持一致：
+   ta 与 pre 都必须 break-all + pre-wrap，否则两者错位 */
+.tt-inline-edit .editor-container {
+    position: relative;
+    width: 100%;
+    height: auto;
+    border: 1px solid #c7d2fe;
+    border-radius: 4px;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+    overflow: visible;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+}
+.tt-inline-edit .editor-container .editor-textarea,
+.tt-inline-edit .editor-container .editor-pre {
+    grid-area: 1 / 1;
+    position: relative;
+    height: auto;
+    width: 100%;
+    margin: 0;
+    padding: 0 4px;
+    overflow: hidden;
+    resize: none;
+    /* 与显示层一致：长 token 任意处折断 */
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    word-break: break-all;
+    box-sizing: border-box;
+    /* 行间距与 SyntaxViewer 显示匹配（显示层 cell-content 行高 ≈ 20.7px @16px；
+       用固定 line-height 保证两处一致，不受字体 metrics 影响） */
+    line-height: 1.3;
+}
+.tt-inline-edit .editor-container .editor-pre {
+    z-index: 1;
+}
+.tt-inline-edit .editor-container .editor-textarea {
+    z-index: 2;
+    min-height: 1.5em;
+}
+.tt-inline-edit .editor-container .editor-pre code {
+    white-space: inherit;
+    word-wrap: inherit;
+    word-break: inherit;
+    line-height: inherit;
+}
+
+/* 活动文件夹高亮（复用推理层 active 样式） */
+#ttWrapper .item-row.active {
+    background: #eef2ff;
+}
+#ttWrapper .item-row.active .cell-content {
+    font-weight: 600;
+}
+
+/* 系统表不允许操作列显示（菜单禁用），直接隐藏下拉触发器 */
+#ttSysWrapper .cell-actions .dropdown-trigger {
+    visibility: hidden;
+}

@@ -25,7 +25,8 @@ export class HWorld {
     onPassGate: (name: string, tile: TileBlock, hash: string) => boolean = () => false;
     onGetReward: (hash: string, tile: TileBlock, isLoading?: boolean) => void = () => { };
     onStateChange = () => { };
-    onStepToAnotherTile = () => { };
+    // 换格成功回调：hash = 新到达的方块 hash（供 game.ts 检查该方块成就等）
+    onStepToAnotherTile = (hash: string) => { };
     // 渲染回调（由 game.ts 注入，参数为 tile）：按 tile.data/type 决定颜色与显示文本
     onTileColor?: (block: TileBlock, highLightGetD: boolean) => string;
     onTextColor?: (block: TileBlock) => string;
@@ -151,7 +152,7 @@ export class HWorld {
                 this.localCamMat = Rotor.move(xx, yy).mul(this.localCamMat);
                 this.updateCharactor(xx, yy);
             } else {
-                this.onStepToAnotherTile();
+                this.onStepToAnotherTile(newHash.join(","));
                 const r = this.atlasTile.getNeighborMatrix(dir, newDomain);
                 this.atlasTile.generateRotors(newHash);
                 this.localCamMat = this.localCamMat.mul(r);

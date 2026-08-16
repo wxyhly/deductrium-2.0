@@ -30,8 +30,8 @@ export class LangMgr {
         plsEnterProp: { zh: '请输入或点选推理步骤：', en: "Please enter or click deduction step: " },
         rootList: { zh: '根列表', en: " root list " },
         // 推理层静态标题
-        ruleList: { zh: '规则表', en: "Rules" },
-        propList: { zh: '推理表', en: "Deduction Table" },
+        ruleList: { zh: '规则表', en: "Rule Table" },
+        propList: { zh: '推理表', en: "Deduction Steps" },
         cmdBar: { zh: '命令栏', en: "Command" },
         addFolder: { zh: '+ 文件夹', en: "+ Folder" },
         // 菜单
@@ -44,9 +44,19 @@ export class LangMgr {
         setActiveFolder: { zh: '设为活动文件夹', en: "Set Active Folder" },
         clearActiveFolder: { zh: '取消活动', en: "Clear Active" },
         newFolder: { zh: '文件夹', en: "Folder" },
+        // 类型层
+        layerT: { zh: '类型层', en: "Type" },
+        sysTable: { zh: '系统定义', en: "System Defs" },
+        ttTable: { zh: '定理表', en: "Theorems" },
+        ttAddFolder: { zh: '+ 文件夹', en: "+ Folder" },
+        ttAddItem: { zh: '+ 命题', en: "+ Item" },
+        // 类型层系统表 prefix 翻译（name 列显示方括号内的前缀）
+        ttType: { zh: '类型', en: "TYPE" },
+        ttCtor: { zh: '构造', en: "CTOR" },
         // 进度层
         progressLayer: { zh: '进度', en: "Progress" },
         layerD: { zh: '推理层', en: "Deduction" },
+        layerG: { zh: '几何层', en: "Geometry" },
         layerP: { zh: '进度层', en: "Progress" },
         pgStats: { zh: '统计', en: "Stats" },
         statDeductrium: { zh: '拥有推理素', en: "Deductrium Owned" },
@@ -79,7 +89,6 @@ export class LangMgr {
         langAuto: { zh: '跟随系统', en: "System" },
         contact: { zh: '若遇Bug或其它任何问题：', en: "Found a bug or any issue?" },
         contactAuthor: { zh: '欢迎联系游戏作者', en: "Contact the author" },
-        contactQQ: { zh: '游戏QQ交流群', en: "Game QQ group" },
         // 几何层 tile 渲染
         delGate: { zh: '(此门已拆除)', en: '(Destructed gate)' },
         dstrPrefix: { zh: '拆除门', en: 'Destruct Gate ' },
@@ -92,6 +101,20 @@ export class LangMgr {
         defaultSheetName: { zh: '表', en: "Sheet" },
         deleteSheet: { zh: '删除推理表', en: "Delete Sheet" },
         confirmDeleteSheet: { zh: '确定删除该推理表吗？', en: "Delete this sheet?" },
+        // 成就
+        achievements: { zh: '成就', en: "Achievements" },
+        achUnlocked: { zh: '获得成就：', en: "Achievement Unlocked: " },
+        achGainDeductrium: { zh: '推理素 +', en: "Deductrium +" },
+        achPayDeductrium: { zh: '推理素 -', en: "Deductrium -" },
+        achTotal: { zh: '（共', en: " (total " },
+        achTotalEnd: { zh: '）', en: ")" },
+        // 知识库
+        knowledgeBase: { zh: '知识库', en: "Knowledge Base" },
+        symbols: { zh: '符号', en: "Symbols" },
+        kbNotes: { zh: '笔记', en: "Notes" },
+        inputWay: { zh: '输入方式', en: "Input" },
+        kbEmpty: { zh: '暂无笔记。在游戏中通过相应方块或获得对应奖励以解锁知识。', en: "No notes yet. Unlock knowledge by passing tiles or obtaining matching rewards in game." },
+        kbEmptyCreative: { zh: '（创造模式应显示全部知识，此提示不应出现）', en: "(Creative mode should show all notes; this message should not appear)" },
     };
     static formalize: Record<string, (...args: any[]) => string> = {
         plsEnterCond: cond => this.lang === "zh" ? `请输入条件${cond}的命题编号，或点选命题` : `Please enter the proposition number for condition ${cond}, or click the proposition`,
@@ -106,7 +129,151 @@ export class LangMgr {
         // 槽位加载确认：slotMode=槽位存档模式，curMode=当前模式（相同则覆盖当前；不同则跳转后覆盖目标模式）
         loadSlotConfirm: (slotMode, curMode) => this.lang === "zh"
             ? `将覆盖${slotMode}模式的进度${slotMode !== curMode ? `并跳转到${slotMode}模式（当前${curMode}模式的进度不受影响）` : ""}，是否继续？`
-            : `This will overwrite the ${slotMode} mode progress${slotMode !== curMode ? ` and switch to ${slotMode} mode (current ${curMode} mode progress is not affected)` : ""}. Continue?`
+            : `This will overwrite the ${slotMode} mode progress${slotMode !== curMode ? ` and switch to ${slotMode} mode (current ${curMode} mode progress is not affected)` : ""}. Continue?`,
+        // 成就 toast：获得成就 / 获得推理素 / 消耗推理素
+        achToast: name => this.lang === "zh" ? `获得成就：${name}` : `Achievement Unlocked: ${name}`,
+        gainDeductriumToast: (amt, total) => this.lang === "zh" ? `推理素 +${amt}（共${total}）` : `Deductrium +${amt} (total ${total})`,
+        payDeductriumToast: (amt, total) => this.lang === "zh" ? `推理素 -${amt}（共${total}）` : `Deductrium -${amt} (total ${total})`,
+    }
+    // 成就名称字典：identifier → {zh,en}（identifier 与 tile.data.ac 对应）
+    static achievements: Record<string, Record<string, string>> = {
+        // 行1：入门
+        progL: { zh: '解锁了成就', en: "Achievement Unlocked" },
+        aa: { zh: '我推出我', en: "I Proved Me" },
+        delgate: { zh: '收费站拆除', en: "Crash Toll Gate" },
+        ".i": { zh: '你推出你，他推出他（⊢$0>$0）', en: "You Proved you, He Proved Him (⊢$0>$0)" },
+        hyp: { zh: 'If I were..', en: "If I were.." },
+        mdt: { zh: '会跑的"⊢"（演绎元定理）', en: "Running '⊢' (Deduction Metatheorem)" },
+        // 行2：否定入门
+        firstEat: { zh: '吃素啦', en: "Gather Deductrium" },
+        firstPay: { zh: '第一次消费', en: "First Consume" },
+        neg: { zh: '敢于说不', en: "The Courage to Deny" },
+        ".dne": { zh: '负负得正', en: "Double Negation Elimination" },
+        exfalso1: { zh: '否定爆炸', en: "Explosion Principle (exfalso)" },
+        iff: { zh: '我推出你，你推出我（<>）', en: "I Proved You, You Proved Me (<>)" },
+        // 行3：命题逻辑
+        vegan40: { zh: '素食主义者（累计获40µg推理素）', en: "Deductriumist (Accumulated 40µg of Deductrium)" },
+        andor: { zh: '逻辑门（与/或）', en: "Logic Gates (AND/OR)" },
+        lem: { zh: '排中律是真的！(p|~p)', en: "LEM is True! (p|~p)" },
+        contra: { zh: '没毛病！~( p & ~p )', en: "No Problem! ~( p & ~p )" },
+        pierce: { zh: '皮尔士定律((p>q)>p)>p', en: "Peirce's Law ((p>q)>p)>p" },
+        mcpt: { zh: '命题逻辑自动推理', en: "Automated Propositional Reasoning" },
+        // 行4：一阶逻辑
+        "1st": { zh: '一阶逻辑', en: "1st-Order Logic" },
+        nf: { zh: '约束与自由', en: "Bound and Free Variables" },
+        rp: { zh: '丢掉量词，尽情替换！', en: "Drop Quantifiers, Replace Freely!" },
+        a7: { zh: '众生平等', en: "Equality for All" },
+        mvt: { zh: '概括一切（概括元定理）', en: "Generalize Everything (Metatheorem)" },
+        ".prop": { zh: '命题逻辑大礼包', en: "Propositional Logic Toolkit" },
+        // 行5：元定理
+        mifft: { zh: '替换一切（互推替换元定理）', en: "Replace Everything (IFF Metatheorem)" },
+        terr1: { zh: '割让量词的领土', en: "Quantifier Relinquishment" },
+        ".1st": { zh: '一阶逻辑大礼包', en: "1st-Order Logic Toolkit" },
+        elV1: { zh: '量词连连消消乐', en: "Quantifier Elimination Challenge" },
+        mnt: { zh: '准备改名换姓', en: "Ready for α-Conversion" },
+        dose1mg: { zh: '加大剂量（累计获1mg推理素）', en: "Dose Increased (Accumulated 1mg of Deductrium)" },
+        // 行6：皮亚诺
+        peano: { zh: '皮亚诺公理', en: "Peano Axioms" },
+        "1+1": { zh: '1+1=2', en: "1+1=2" },
+        "2x2": { zh: '2×2=4', en: "2×2=4" },
+        "commu+": { zh: '加法交换律', en: "Commutativity of Addition" },
+        xdistr: { zh: '乘法分配率', en: "Distributivity of Multiplication" },
+        dose1g: { zh: '致死剂量（累计获1g推理素）', en: "Lethal Dose (Accumulated 1g of Deductrium)" },
+        // 行7：数论
+        "3<4": { zh: '3小于4', en: "3 is Less Than 4" },
+        "5R6": { zh: '5不整除6', en: "5 Does Not Divide 6" },
+        dPrime: { zh: '解锁素数', en: "Prime Number Unlocked" },
+        prm7: { zh: '7是素数', en: "7 is Prime" },
+        "ex!": { zh: '任何数都有阶乘', en: "Factorials for All Numbers" },
+        infprm: { zh: '质数有无穷个', en: "Infinitely Many Primes" },
+        // 行8：类型论入门
+        type: { zh: '类型论', en: "Type Theory" },
+        ttrue: { zh: '真理之门', en: "Gate of Truth" },
+        ttsimplFn: { zh: '简化依赖函数', en: "Simplify Dependent Functions" },
+        ttactic1: { zh: '证明助手上线！', en: "Proof Assistant Hired!" },
+        ttEq: { zh: '相等类型', en: "Identity Types" },
+        ttindnat: { zh: '自然数的归纳法', en: "Induction on Natural Numbers" },
+        // 行9：类型论进阶
+        AllTrue: { zh: 'True的值都是true', en: "All Values of True are true" },
+        "tt1+1": { zh: '1+1=2类型论版', en: "1+1=2 in Type Theory" },
+        ttindeq: { zh: '相等的归纳法', en: "Induction on Equality" },
+        "0+x": { zh: '代入方程即可', en: "Substitution Solves It" },
+        "1neq2": { zh: '1就是1，2就是2（not (eq 1 2)）', en: "1 is 1, 2 is 2 (not (eq 1 2))" },
+        tt5R7: { zh: '数论达人(5不整除7)', en: "Number Theory Master (5 Does Not Divide 7)" },
+        // 行10：高阶同伦
+        S1S1: { zh: '顺时针一圈逆时针一圈，还是回到原点', en: "CW plus CCW Returns to Origin" },
+        eqvid: { zh: '我等价我', en: "I Am Equivalent to Me" },
+        ttua: { zh: '泛等公理（ua）', en: "Univalence Axiom (ua)" },
+        looprfl: { zh: '圆圈跟圆点不同伦（loop不是rfl）', en: "Circle and Point Are Not Homotopic (loop is not rfl)" },
+        ttpierce: { zh: '原来皮尔士跟他们是一伙的', en: "Peirce Is One of Them" },
+        lemlie: { zh: '排中律是个谎言！？', en: "LEM Is a Lie!?" },
+        // 行11：类型论进阶2
+        ttEven: { zh: '又是偶数', en: "Even Again" },
+        ttList: { zh: 'cons cons cons nil', en: "cons cons cons nil" },
+        ttZ: { zh: '类型论版整数', en: "Integers in Type Theory" },
+        ":=factorial2": { zh: '双阶乘！！', en: "Double factorial!!" },
+        tteven0: { zh: 'Even 0只有even0', en: "Even 0 has only even0" },
+        ttWnat: { zh: 'W自然数', en: "W-nat" },
+        // 行12：fnext
+        ttfnext: { zh: '外延公理(fnext)', en: "function extensionality axiom (fnext)" },
+        ttNoFnext: { zh: '我不要外延公理了', en: "I don't need fnext anymore" },
+        "Bool=Bool=Bool": { zh: 'Bool=Bool=Bool', en: "Bool=Bool=Bool" },
+        isequivP: { zh: 'isProp(是双射)', en: "isProp (is bijective)" },
+        infhotel: { zh: '来了无穷位客人住旅馆', en: "Infinite number of guests arrive at the hotel" },
+        permMaster: { zh: '排列大师', en: "Master of permutation" },
+        // 行13：路径消消乐
+        ttPathElim: { zh: '路径消消乐', en: "Path Elimination" },
+        ttPoint: { zh: '零维的点', en: "0D point" },
+        ttSetNat: { zh: '无数个点', en: "Infinite 0D points" },
+        ttdrawS1: { zh: '徒手画圆(Sus Bool=S1)', en: "Drawing a circle freehand (Sus Bool=S1)" },
+        pi1S1: { zh: 'π₁(S¹)=Z', en: "π₁(S¹)=Z" },
+        hopf1: { zh: 'Hopf纤维丛', en: "Hopf fibration" },
+        // 行14：ZFC
+        aExt: { zh: 'ZFC集合论', en: "ZFC Set Theory" },
+        ".<i": { zh: '我包含我', en: "I Contain Myself" },
+        empty: { zh: '千里之行，始于空集', en: "All things Begin with Empty Set" },
+        ".zfc": { zh: 'ZFC简化大礼包', en: "Simplified ZFC Toolkit" },
+        UUII: { zh: '交交并并', en: "Intersections and Unions" },
+        w2: { zh: 'ω^ω', en: "ω^ω" },
+        // 行15：序数/整数
+        "d()": { zh: '确定坐标，精确制导', en: "Target coordinates!" },
+        dSd0: { zh: '皮亚诺，你被解雇啦！', en: "Peano, you are fired!" },
+        dX: { zh: '笛卡尔：积，故我在', en: "Descartes: Product, donc je suis" },
+        dZ: { zh: '正正负负(Z)', en: "Positive & Negative (Z)" },
+        dQ: { zh: '乘乘除除(Q)', en: "Multiply & Divide (Q)" },
+        dR: { zh: '完完备备(R)', en: "Completed! (R)" },
+        // 行16：终极
+        "a@a": { zh: '我给且只给所有不自己理发的人理发', en: "Russell's Barber Paradox" },
+        allZFC: { zh: '集齐所有ZFC公理', en: "Collect All ZFC Axioms" },
+        delAl: { zh: '不可数', en: "Uncountable" },
+        vwo: { zh: '一切皆可良序', en: "Everything Is Well-Ordered" },
+        w4: { zh: 'ω^ω^ω^ω', en: "ω^ω^ω^ω" },
+        critical: { zh: '临界质量（累计获50.1kg推理素）', en: "Critical Mass (Accumulated 50.1kg of Deductrium)" },
+        // 补充方块成就（与上面共享格子/无格子）：terr2/elV2/elV3/x+x/exfalso2/ttisContr/tteq2027/hopf2/ttS2
+        exfalso2: { zh: '否定爆炸', en: "Explosion Principle (exfalso)" },
+        terr2: { zh: '割让量词的领土', en: "Quantifier Relinquishment" },
+        elV2: { zh: '量词连连消消乐', en: "Quantifier Elimination Challenge" },
+        elV3: { zh: '量词连连消消乐', en: "Quantifier Elimination Challenge" },
+        "x+x": { zh: '代入方程即可', en: "Substitution Solves It" },
+        ttisContr: { zh: '零维的点', en: "0D point" },
+        tteq2027: { zh: '无数个点', en: "Infinite 0D points" },
+        hopf2: { zh: 'Hopf纤维丛', en: "Hopf fibration" },
+        ttS2: { zh: '吹气球(S2)', en: "Blow up a balloon (S2)" },
+    };
+    // 按 identifier 取成就名（当前语言）；未知 identifier 原样返回
+    static achName(id: string): string {
+        return LangMgr.achievements[id]?.[LangMgr.lang] ?? id;
+    }
+    // 解析 "[zh]... [en]..." 双语文本（类似地图文本格式），返回当前语言部分；
+    // 无语言标记则原样返回
+    static trBilingual(text: string): string {
+        const zhMatch = text.match(/\[zh\]([\s\S]*?)(?=\[en\]|$)/);
+        const enMatch = text.match(/\[en\]([\s\S]*?)(?=\[zh\]|$)/);
+        if (zhMatch || enMatch) {
+            return LangMgr.lang === "zh" ? (zhMatch?.[1] ?? enMatch?.[1] ?? text)
+                : (enMatch?.[1] ?? zhMatch?.[1] ?? text);
+        }
+        return text;
     }
     static renderAssertionFailReason(res: AssertionCheckResult["counterexample"]) {
         const zh = this.lang === "zh";

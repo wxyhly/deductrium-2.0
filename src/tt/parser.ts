@@ -11,10 +11,26 @@ const symbolMap: Record<string, string> = {
 const constMap: Record<string, string> = {
     "ℕ": "\\N", "ℤ": "\\Z", "ℚ": "\\Q", "ℝ": "\\R", "𝒰": "\\u",
 };
-export const asciiToUnicode: Record<string, string> = Object.fromEntries(
-    Object.entries(symbolMap).map(([uni, asc]) => [asc, uni]).concat(
-        Object.entries(constMap).map(([uni, asc]) => [asc, uni])).sort((b, a) => b[1].length - a[1].length)
-);
+const strMap = Object.assign({}, symbolMap, constMap);
+// 生成 ASCII → Unicode 输入替换表（含组合替换，同 HS 的 genAscii2unicodeTable）：
+// 例如 ~= → ≃，但 ~ 会先被替换成 ¬，故额外生成 ¬= → ≃；
+// 返回 [ascii, unicode][] 按 ascii 长度降序（最长优先，如 ¬= 先于 ~）
+function genAscii2unicodeTable(strMap: Record<string, string>): [string, string][] {
+    const arr = Array.from(Object.entries(strMap)).sort((a, b) => a[1].length - b[1].length);
+    const res: Record<string, string> = {};
+    for (let i = 0; i < arr.length; i++) {
+        const [u, a] = arr[i];
+        res[a] = u;
+        for (let j = 0; j < i; j++) {
+            const na = a.replace(arr[j][1], arr[j][0]);
+            if (na !== a && na !== u) res[na] = u;
+        }
+    }
+    return Array.from(Object.entries(res)).sort((a, b) => b[0].length - a[0].length);
+}
+// 组合替换表（[ascii, unicode][]，含 ¬=→≃ 等）
+const asciiToUnicodeArr: [string, string][] = genAscii2unicodeTable(strMap);
+export const asciiToUnicode: Record<string, string> = Object.fromEntries(asciiToUnicodeArr);
 const charSeps = '()[]{},;.~|:=+* \t\n';
 
 export class TypeParser implements IParser {
@@ -22,7 +38,8 @@ export class TypeParser implements IParser {
     private tokensWithSpaces: Token[] = [];
     private cursor: number = 0;
     private token!: Token;
-    inputReplacements: [string, string][] = Object.entries(symbolMap).concat(Object.entries(constMap)).sort((a, b) => b[1].length - a[1].length);
+    // 输入替换：ASCII 输入 → Unicode 显示（含组合替换，如 ~= → ≃、¬= → ≃）
+    inputReplacements: [string, string][] = asciiToUnicodeArr;
 
     // ---- 词法分析（保持原有，但注意空格 token） ----
     private tokenize(unicodeText: string): Token[] {

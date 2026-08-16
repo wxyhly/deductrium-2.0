@@ -1,5 +1,69 @@
 import { LangMgr } from "../lang.js";
 import { SaveLoad } from "../saveload.js";
+import { knowledgeBase } from "../kb.js";
+import { HSParser } from "../hs/core/parser.js";
+import { SyntaxViewer } from "../astrender.js";
+
+// ==================== 成就列表 ====================
+// identifier 二维数组：每行 6 个（GUI 中一行；窄屏自动换列，逻辑不变）
+// identifier 与 tile.data.ac 对应；方块成就通过"通过该方块"触发；
+// 非方块成就（经济/序数等）由 game.ts 单独调用 finishAchievement
+export const achievementRows: string[][] = [
+    ["progL", "aa", "delgate", ".i", "hyp", "mdt"],
+    ["firstEat", "firstPay", "neg", ".dne", "exfalso1", "iff"],
+    ["vegan40", "andor", "lem", "contra", "pierce", "mcpt"],
+    ["1st", "nf", "rp", "a7", "mvt", ".prop"],
+    ["mifft", "terr1", ".1st", "elV1", "mnt", "dose1mg"],
+    ["peano", "1+1", "2x2", "commu+", "xdistr", "dose1g"],
+    ["3<4", "5R6", "dPrime", "prm7", "ex!", "infprm"],
+    ["type", "ttrue", "ttsimplFn", "ttactic1", "ttEq", "ttindnat"],
+    ["AllTrue", "tt1+1", "ttindeq", "0+x", "1neq2", "tt5R7"],
+    ["S1S1", "eqvid", "ttua", "looprfl", "ttpierce", "lemlie"],
+    ["ttEven", "ttList", "ttZ", ":=factorial2", "tteven0", "ttWnat"],
+    ["ttfnext", "ttNoFnext", "Bool=Bool=Bool", "isequivP", "infhotel", "permMaster"],
+    ["ttPathElim", "ttPoint", "ttSetNat", "ttdrawS1", "pi1S1", "hopf1"],
+    ["aExt", ".<i", "empty", ".zfc", "UUII", "w2"],
+    ["d()", "dSd0", "dX", "dZ", "dQ", "dR"],
+    ["a@a", "allZFC", "delAl", "vwo", "w4", "critical"],
+];
+// 全部成就 identifier 集合（供判定行是否解锁）
+const achievementFlat = new Set(achievementRows.flat());
+
+// ==================== 知识库 identifier ====================
+// 知识库条目统一 identifier：符号 → "sym:xxx"，机制 → "mec:xxx"
+// 也接受裸 identifier（如 "#p"、"→"、"dG"），自动映射到对应前缀
+export function kbFullId(id: string): string {
+    if (id.startsWith("sym:") || id.startsWith("mec:")) return id;
+    if (id in knowledgeBase.syms) return "sym:" + id;
+    if (id in knowledgeBase.mecanism) return "mec:" + id;
+    return id; // 未知 identifier 原样返回
+}
+// 知识库条目完整 identifier 列表
+export const kbAllIds: string[] = [
+    ...Object.keys(knowledgeBase.syms).map(k => "sym:" + k),
+    ...Object.keys(knowledgeBase.mecanism).map(k => "mec:" + k),
+];
+
+// 从 "[zh]标题：正文 [en]Title: body" 解析当前语言的标题与正文：
+// 标题 = 第一个"："（或英文":"）前的内容；无冒号则标题为空、整段为正文
+export function kbSplitTitle(bilingual: string): { title: string; body: string } {
+    const seg = (lang: string) => {
+        const m = bilingual.match(new RegExp(`\\[${lang}\\]([\\s\\S]*?)(?=\\[(?:zh|en)\\]|$)`));
+        return m ? m[1] : "";
+    };
+    const split = (s: string) => {
+        const m = s.match(/^(.+?)[：:]\s*/);
+        return m ? { title: m[1], body: s.slice(m[0].length) } : { title: "", body: s };
+    };
+    const primary = seg(LangMgr.lang === "zh" ? "zh" : "en");
+    const other = seg(LangMgr.lang === "zh" ? "en" : "zh");
+    const r = split(primary);
+    if (r.title) return r;
+    const ro = split(other);
+    // 标题从另一语言取，正文用当前语言
+    if (ro.title) return { title: ro.title, body: primary || ro.body };
+    return r;
+}
 
 // ==================== 进度层（P-layer） ====================
 // 功能：
@@ -12,10 +76,16 @@ export class ProgressLayer {
     private slotKeys: string[] = [];
     private refreshTimer: number | null = null;
     private mode: string;
+    // 查询回调（game.ts 注入，替代 window 全局变量）：
+    // isAchievementGot: 成就是否已获得；isInfoGot: 知识库 identifier 是否已解锁
+    private isAchievementGot: (id: string) => boolean;
+    private isInfoGot: (id: string) => boolean;
 
-    constructor(saveload: SaveLoad, mode: string) {
+    constructor(saveload: SaveLoad, mode: string, isAchievementGot?: (id: string) => boolean, isInfoGot?: (id: string) => boolean) {
         this.saveload = saveload;
         this.mode = mode;
+        this.isAchievementGot = isAchievementGot ?? (() => false);
+        this.isInfoGot = isInfoGot ?? (() => false);
         this.slotKeys = [0, 1, 2, 3].map(i => `deductrium2_slot${i}`);
         this.init();
     }
@@ -24,7 +94,55 @@ export class ProgressLayer {
         this.renderMode();
         this.renderLanguage();
         this.renderSlots();
+        this.renderAchievements();
+        this.renderSymbols();
+        this.renderKnowledge();
         this.bindEvents();
+        this.initCollapsibleCards();
+    }
+
+    // ===== 卡片折叠/展开 =====
+    // 点击 .pg-card 的 .card-header 折叠/展开卡片（带过渡动画，参考推理层面板逻辑；
+    // 不需要拖动 resize）。用 max-height 过渡（.pg-card 是 flex 子项，height 会被
+    // 父容器 stretch 覆盖，max-height 不受影响）。点击 header 内按钮等不触发。
+    private initCollapsibleCards() {
+        const collapsedHeight = 54; // 折叠后只露出 header
+        document.querySelectorAll<HTMLElement>(".pg-card").forEach(card => {
+            const header = card.querySelector<HTMLElement>(".card-header");
+            const toggleHandle = header?.querySelector("h2");
+            if (!toggleHandle) return;
+            let isCollapsed = false;
+            const toggle = () => {
+                card.classList.add("smooth-height");
+                if (isCollapsed) {
+                    // 展开：max-height 恢复到内容高度（大值），过渡后清除
+                    card.style.maxHeight = "1000px";
+                    card.classList.remove("pg-card-collapsed");
+                    isCollapsed = false;
+                } else {
+                    // 收起：先设内容高度上限，下一帧再折叠（触发过渡；无动画环境也应用最终值）
+                    card.style.maxHeight = "1000px";
+                    setTimeout(() => {
+                        card.style.maxHeight = collapsedHeight + "px";
+                        isCollapsed = true;
+                        card.classList.add("pg-card-collapsed");
+                    }, 10);
+                }
+                // 过渡结束后清理（transitionend + setTimeout 兜底，兼容无动画环境）
+                const done = () => {
+                    if (!isCollapsed) card.style.maxHeight = "";
+                    card.classList.remove("smooth-height");
+                };
+                card.addEventListener("transitionend", done, { once: true });
+                setTimeout(done, 350);
+            };
+            toggleHandle.addEventListener("click", (e) => {
+                const target = e.target as HTMLElement;
+                // 点击 header 内按钮/下拉/操作区不触发展开/收起
+                if (target.closest(".btn-sm, .dropdown-trigger, .actions, .dropdown-menu, button, input, select")) return;
+                toggle();
+            });
+        });
     }
 
     private renderMode() {
@@ -160,6 +278,195 @@ export class ProgressLayer {
             }
             card.append(title, info, actions);
             container.appendChild(card);
+        });
+    }
+
+    // ===== 成就 =====
+    // 渲染成就列表（每行6个）：行内任一成就已获得 → 整行显示（已获得项加 achieved）；
+    // 否则整行 locked（显示问号）。响应式换列由 CSS 处理（6列/3列/2列），逻辑不变。
+    renderAchievements() {
+        const container = document.getElementById("pg-achievements");
+        if (!container) return;
+        container.innerHTML = "";
+        achievementRows.forEach(row => {
+            const rowEl = document.createElement("div");
+            rowEl.className = "achievement";
+            // 行是否解锁：任一 identifier 已获得
+            const anyGot = row.some(id => this.isAchievementGot(id));
+            if (!anyGot) rowEl.classList.add("locked");
+            row.forEach(id => {
+                const cell = document.createElement("div");
+                cell.className = "pg-ach-cell";
+                cell.setAttribute("data-ach", id);
+                cell.textContent = LangMgr.achName(id);
+                if (this.isAchievementGot(id)) cell.classList.add("achieved");
+                rowEl.appendChild(cell);
+            });
+            container.appendChild(rowEl);
+        });
+    }
+    // 重新渲染成就区（获得新成就后由 game.ts 调用，保持 GUI 同步）
+    refreshAchievements() {
+        this.renderAchievements();
+    }
+
+    // ===== 符号面板 =====
+    // ===== 符号子面板 =====
+    // 只渲染已解锁的符号（未解锁不显示占位）。每个符号一个小按钮，横向 flex-wrap 排多行。
+    // 点击符号弹出不占排版的气泡（tooltip），显示"输入方式：xxx"与解释。
+    renderSymbols() {
+        const container = document.getElementById("pg-symbols");
+        if (!container) return;
+        container.innerHTML = "";
+        let any = false;
+        for (const [sym, entry] of Object.entries(knowledgeBase.syms)) {
+            const id = kbFullId(sym);
+            if (!this.isInfoGot(id)) continue; // 只渲染已解锁
+            any = true;
+            const btn = document.createElement("button");
+            btn.className = "pg-sym-btn";
+            btn.setAttribute("data-sym", sym);
+            const symSpan = document.createElement("span");
+            symSpan.className = "pg-sym-glyph";
+            symSpan.textContent = sym;
+            const asciiSpan = document.createElement("span");
+            asciiSpan.className = "pg-sym-ascii";
+            asciiSpan.textContent = entry.ascii;
+            btn.append(symSpan, asciiSpan);
+            btn.addEventListener("click", () => this.showSymBubble(btn, sym, entry));
+            container.appendChild(btn);
+        }
+        // 空态（一个符号都没解锁）
+        if (!any) {
+            const empty = document.createElement("div");
+            empty.className = "pg-kb-empty";
+            empty.textContent = this.mode === "creative" ? LangMgr.text.kbEmptyCreative : LangMgr.text.kbEmpty;
+            container.appendChild(empty);
+        }
+    }
+    // 符号气泡：绝对定位在按钮旁，不占排版；点击其它处自动关闭
+    private showSymBubble(btn: HTMLElement, sym: string, entry: { ascii: string; name: string }) {
+        // 若已存在该气泡则关闭
+        const bubble = document.getElementById("pg-sym-bubble");
+        if (bubble && bubble.dataset.sym === sym) {
+            bubble.remove();
+            return;
+        }
+        // 移除旧气泡
+        document.getElementById("pg-sym-bubble")?.remove();
+        const el = document.createElement("div");
+        el.className = "pg-sym-bubble";
+        el.id = "pg-sym-bubble";
+        el.setAttribute("data-sym", sym);
+        const name = LangMgr.trBilingual(entry.name);
+        el.innerHTML = `
+            <div class="pg-sym-bubble-head">${sym} <span class="pg-sym-bubble-ascii">${LangMgr.text.inputWay}：${entry.ascii}</span></div>
+            <div class="pg-sym-bubble-desc">${name}</div>
+        `;
+        document.body.appendChild(el);
+        // 定位到按钮下方
+        const rect = btn.getBoundingClientRect();
+        el.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - el.offsetWidth - 8)) + "px";
+        el.style.top = (rect.bottom + 6) + "px";
+        // 点击别处关闭
+        const close = (e: MouseEvent) => {
+            if (!el.contains(e.target as Node) && !btn.contains(e.target as Node)) {
+                el.remove();
+                document.removeEventListener("mousedown", close);
+            }
+        };
+        setTimeout(() => document.addEventListener("mousedown", close), 0);
+    }
+    // 重绘符号面板（解锁新符号后调用）
+    refreshSymbols() {
+        this.renderSymbols();
+    }
+
+    // ===== 知识库（笔记库） =====
+    // 只显示已解锁的笔记：未解锁的不占位（不断丰富的笔记库）。
+    // 响应式网格布局（类似成就：3/2/1列）。标题取字符串"标题："前缀（不渲染 identifier）。
+    renderKnowledge() {
+        const container = document.getElementById("pg-knowledge");
+        if (!container) return;
+        container.innerHTML = "";
+        for (const [id, text] of Object.entries(knowledgeBase.mecanism)) {
+            const fullId = kbFullId(id);
+            if (!this.isInfoGot(fullId)) continue; // 未解锁不显示
+            const { title, body: bodyText } = kbSplitTitle(text);
+            const note = document.createElement("div");
+            note.className = "pg-kb-note";
+            const head = document.createElement("div");
+            head.className = "pg-kb-note-head";
+            head.textContent = title || id; // 标题为空时兜底显示 identifier
+            const body = document.createElement("div");
+            body.className = "pg-kb-note-body";
+            body.innerHTML = bodyText;
+            note.append(head, body);
+            container.appendChild(note);
+            this.enhanceKbHtml(body);
+        }
+        // 空提示（一条都没解锁时）
+        if (!container.children.length) {
+            const empty = document.createElement("div");
+            empty.className = "pg-kb-empty";
+            empty.textContent = this.mode === "creative"
+                ? LangMgr.text.kbEmptyCreative
+                : LangMgr.text.kbEmpty;
+            container.appendChild(empty);
+        }
+    }
+    // 重绘知识库（解锁新笔记后调用）
+    refreshKnowledge() {
+        this.renderKnowledge();
+    }
+    // 将知识库面板中的 [wff][/wff] [rule][/rule] [cmds][/cmds] [dname][/dname]
+    // 标记内容替换为语法高亮 span（SyntaxViewer 渲染）
+    private enhanceKbHtml(panel: HTMLElement) {
+        const patterns: Array<[RegExp, string]> = [
+            [/\[wff\]([\s\S]*?)\[\/wff\]/g, "wff"],
+            [/\[rule\]([\s\S]*?)\[\/rule\]/g, "rule"],
+            [/\[cmds\]([\s\S]*?)\[\/cmds\]/g, "cmd"],
+            [/\[dname\]([\s\S]*?)\[\/dname\]/g, "dname"],
+        ];
+        // 递归处理文本节点，避免破坏已有 HTML
+        const walk = (node: Node) => {
+            for (const child of Array.from(node.childNodes)) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    const text = child.textContent ?? "";
+                    let html = "";
+                    let last = 0;
+                    let changed = false;
+                    for (const [re, mode] of patterns) {
+                        re.lastIndex = 0;
+                        const m = re.exec(text);
+                        if (!m) continue;
+                        changed = true;
+                        html = text.slice(0, m.index)
+                            + `<span data-kb-highlight="${mode}" data-kb-code="${encodeURIComponent(m[1])}"></span>`
+                            + text.slice(re.lastIndex);
+                        break;
+                    }
+                    if (changed) {
+                        const span = document.createElement("span");
+                        span.innerHTML = html;
+                        node.replaceChild(span, child);
+                        // 继续遍历新节点（处理后续标记）
+                        walk(span);
+                        return;
+                    }
+                } else if (child.nodeType === Node.ELEMENT_NODE) {
+                    walk(child);
+                }
+            }
+        };
+        walk(panel);
+        // 对每个 data-kb-highlight 元素用 SyntaxViewer 渲染高亮
+        panel.querySelectorAll<HTMLElement>("span[data-kb-highlight]").forEach(el => {
+            const mode = el.getAttribute("data-kb-highlight")!;
+            const code = decodeURIComponent(el.getAttribute("data-kb-code") ?? "");
+            el.removeAttribute("data-kb-highlight");
+            el.removeAttribute("data-kb-code");
+            new SyntaxViewer(el, new HSParser, code, mode);
         });
     }
 

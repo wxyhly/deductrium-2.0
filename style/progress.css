@@ -20,11 +20,17 @@
     margin-bottom: 10px;
 }
 
-.pg-card .card-header h2 {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #0f172a;
-    margin: 0.4rem 0;
+/* 卡片折叠/展开：max-height 过渡动画（点击 card-header 触发；height 会被 flex 父容器覆盖，故用 max-height） */
+.pg-card.smooth-height {
+    transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pg-card.pg-card-collapsed {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+/* header 折叠：仅 h2 可点击（cursor 由 list.css .card-header h2 提供），
+   header 空白区域不显示手形避免误导 */
+.pg-card .card-header {
+    user-select: none;
 }
 
 .pg-body {
@@ -221,4 +227,262 @@
 .pg-stat-row strong {
     color: #0f172a;
     font-variant-numeric: tabular-nums;
+}
+
+/* ===== 成就 ===== */
+/* 响应式列数：宽屏6列，中屏3列，窄屏2列（一行6个在窄屏自动换行，行逻辑不变） */
+.pg-achievements {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.achievement {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+}
+.pg-ach-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 2.6em;
+    padding: 0.3rem 0.4rem;
+    border-radius: 8px;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: #475569;
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+/* 已解锁：高亮徽章风格 */
+.pg-ach-cell.achieved {
+    background: linear-gradient(135deg, #fef9c3, #fde68a);
+    border-color: #facc15;
+    color: #713f12;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(250, 204, 21, 0.35);
+}
+/* 整行锁定：全部显示问号 */
+.achievement.locked .pg-ach-cell {
+    font-size: 0;
+    color: transparent;
+}
+.achievement.locked .pg-ach-cell::before {
+    content: "?";
+    font-size: 1.1rem;
+    color: #94a3b8;
+    font-weight: 700;
+}
+@media (max-width: 900px) {
+    .achievement {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+@media (max-width: 520px) {
+    .achievement {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* ===== Toast 提示（获得成就/推理素变化） ===== */
+#pg-toast-container {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+    width: min(92vw, 420px);
+}
+.pg-toast {
+    background: #0f172a;
+    color: #f1f5f9;
+    padding: 0.55rem 1.1rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.35);
+    animation: pg-toast-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both, pg-toast-out 0.4s ease-in 2.6s both;
+    border-left: 4px solid #4f46e5;
+    max-width: 100%;
+    text-align: center;
+    line-height: 1.4;
+}
+.pg-toast.ach {
+    background: linear-gradient(135deg, #713f12, #b45309);
+    border-left-color: #fde68a;
+    font-weight: 600;
+}
+.pg-toast.gain {
+    border-left-color: #22c55e;
+}
+.pg-toast.pay {
+    border-left-color: #ef4444;
+}
+@keyframes pg-toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(-16px) scale(0.92);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+@keyframes pg-toast-out {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-12px);
+    }
+}
+
+/* ===== 符号子面板 ===== */
+/* 符号按钮：小尺寸、横向 flex-wrap 排多行（不整行拉通）；只渲染已解锁 */
+.pg-symbols {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0.5rem 1rem 0.9rem;
+}
+.pg-sym-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.28rem 0.55rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #f8fafc;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.pg-sym-btn:hover {
+    border-color: #c7d2fe;
+    background: #eef2ff;
+    box-shadow: 0 1px 4px rgba(79, 70, 229, 0.15);
+}
+.pg-sym-glyph {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+.pg-sym-ascii {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-family: Consolas, "Courier New", monospace;
+}
+/* 符号气泡：绝对定位不占排版；点击别处关闭 */
+.pg-sym-bubble {
+    position: fixed;
+    z-index: 999;
+    max-width: 320px;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid #c7d2fe;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+    font-size: 0.82rem;
+    color: #1e293b;
+    line-height: 1.5;
+    animation: pg-sym-bubble-in 0.15s ease-out both;
+}
+.pg-sym-bubble::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: 16px;
+    width: 10px;
+    height: 10px;
+    background: #ffffff;
+    border-left: 1px solid #c7d2fe;
+    border-top: 1px solid #c7d2fe;
+    transform: rotate(45deg);
+}
+.pg-sym-bubble-head {
+    font-weight: 600;
+    color: #4f46e5;
+    margin-bottom: 2px;
+}
+.pg-sym-bubble-ascii {
+    color: #64748b;
+    font-weight: 400;
+    font-family: Consolas, "Courier New", monospace;
+}
+.pg-sym-bubble-desc {
+    color: #334155;
+}
+@keyframes pg-sym-bubble-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ===== 知识库（笔记库） ===== */
+/* 只显示已解锁笔记；未解锁不占位。响应式网格（类似成就：6/3/2列） */
+.pg-knowledge {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 0.6rem 1rem 0.9rem;
+}
+@media (max-width: 900px) {
+    .pg-knowledge {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+@media (max-width: 520px) {
+    .pg-knowledge {
+        grid-template-columns: 1fr;
+    }
+}
+.pg-kb-note {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+}
+.pg-kb-note-head {
+    padding: 0.45rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #4f46e5;
+    background: #eef2ff;
+    border-bottom: 1px solid #e2e8f0;
+}
+.pg-kb-note-body {
+    padding: 0.55rem 0.8rem 0.65rem;
+    font-size: 0.85rem;
+    color: #1e293b;
+    line-height: 1.65;
+}
+.pg-kb-empty {
+    font-size: 0.82rem;
+    color: #94a3b8;
+    text-align: center;
+    padding: 0.8rem 0;
+    grid-column: 1 / -1;
+}
+/* 语法高亮容器 */
+.pg-kb-note-body .ast {
+    display: inline-block;
+    background: #eef2f6;
+    border-radius: 4px;
+    padding: 0 4px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.82rem;
 }

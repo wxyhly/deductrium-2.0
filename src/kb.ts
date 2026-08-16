@@ -1,0 +1,62 @@
+// ==================== 知识库（Knowledge Base） ====================
+// 进度层"知识库"栏的数据：符号解释 + 游戏机制解释。
+// 格式：
+//   syms: { 符号: { ascii: 输入方式, name: "[zh]... [en]..." } }
+//   mecanism: { identifier: "[zh]标题：正文 [en]Title: body" }
+// 字符串中"标题："前的部分（冒号前）作为笔记标题；identifier（如 #p）只作解锁 key。
+// 文本支持 HTML，以及语法高亮标记：
+//   [wff]表达式[/wff]      → 用 wff 模式高亮（命题/公式）
+//   [rule]规则[/rule]      → 用 rule 模式高亮（推理规则）
+//   [cmds]命令[/cmds]      → 用 cmd 模式高亮（命令）
+//   [dname]规则名[/dname]  → 用 rulename 模式高亮（规则名）
+// 解锁：tile.data.info = identifier 的方块通过后解锁；或获得同名 reward 解锁；
+// 创造模式全部显示。
+export type KbEntry = { ascii: string; name: string };
+export type KbText = string;
+
+export const knowledgeBase = {
+    // ===== 符号解释 =====
+    syms: {
+        "→": { ascii: ">", name: "[zh]逻辑蕴含符号：若前件成立则后件成立[en]Logic implication: if antecedent holds then consequent holds" },
+        "↔": { ascii: "<>", name: "[zh]逻辑等价：双向蕴含，二者同真同假[en]Logical equivalence: mutual implication, both true or both false" },
+        "¬": { ascii: "~", name: "[zh]逻辑否定：对命题取反[en]Logical negation: invert a proposition" },
+        "∧": { ascii: "/\\", name: "[zh]逻辑与：两者都成立[en]Logical AND: both hold" },
+        "∨": { ascii: "\\/", name: "[zh]逻辑或：至少一个成立[en]Logical OR: at least one holds" },
+        "∀": { ascii: "\\a", name: "[zh]全称量词：对…的所有取值都成立[en]Universal quantifier: holds for all values of..." },
+        "∃": { ascii: "\\e", name: "[zh]存在量词：存在…使得成立[en]Existential quantifier: there exists ... such that" },
+        "∃!": { ascii: "\\e!", name: "[zh]唯一存在量词：存在唯一…使得成立[en]Unique existence quantifier: there exists a unique ..." },
+        "∈": { ascii: "@", name: "[zh]属于关系：元素属于集合[en]Membership: element belongs to a set" },
+        "⊂": { ascii: "\\c", name: "[zh]真子集：集合被另一集合严格包含[en]Proper subset: strictly contained in" },
+        "∪": { ascii: "\\u", name: "[zh]并集：两集合所有元素之并[en]Union: all elements of both sets" },
+        "∩": { ascii: "\\i", name: "[zh]交集：两集合共有元素[en]Intersection: common elements of both sets" },
+        "＼": { ascii: "\\\\", name: "[zh]差集：从一集合中删去另一集合元素[en]Set difference: remove elements of the other set" },
+        "×": { ascii: "\\x", name: "[zh]笛卡尔积：有序对集合[en]Cartesian product: set of ordered pairs" },
+        "≤": { ascii: "\\<=", name: "[zh]小于等于[en]Less than or equal" },
+        "≥": { ascii: "\\>=", name: "[zh]大于等于[en]Greater than or equal" },
+        "∣": { ascii: "/|", name: "[zh]整除：a∣b 表示 a 整除 b[en]Divides: a∣b means a divides b" },
+        "⊢": { ascii: "|-", name: "[zh]推出符号：左边条件成立可推出右边结论[en]Turnstile: from left conditions derive right conclusion" },
+        "λ": { ascii: "L", name: "[zh]λ 抽象：类型论中的函数构造[en]Lambda abstraction: function construction in type theory" },
+        "Π": { ascii: "P", name: "[zh]依赖积类型（全称函数类型）[en]Dependent product type (for-all function type)" },
+        "Σ": { ascii: "S", name: "[zh]依赖和类型（存在对类型）[en]Dependent sum type (exists-pair type)" },
+        "ℕ": { ascii: "\\N", name: "[zh]自然数集[en]Set of natural numbers" },
+        "ℤ": { ascii: "\\Z", name: "[zh]整数集[en]Set of integers" },
+        "ℚ": { ascii: "\\Q", name: "[zh]有理数集[en]Set of rational numbers" },
+        "ℝ": { ascii: "\\R", name: "[zh]实数集[en]Set of real numbers" },
+        "ω": { ascii: "\\o", name: "[zh]最小无穷序数（自然数集）[en]Smallest infinite ordinal (set of naturals)" },
+        "∅": { ascii: "{}", name: "[zh]空集[en]Empty set" },
+    },
+    // ===== 游戏机制解释 =====
+    mecanism: {
+        "#p": "[zh]命题门：当推理层的[P]定理表中出现门上字符串（即你已推出该定理）时才能通过。[en]Proposition gate: passable when the theorem string on the gate appears in the [P] list.",
+        "#d": "[zh]规则门：当推理层的[D]规则表中出现门上字符串（即你已拥有该规则）时才能通过。[en]Rule gate: passable when the rule string on the gate appears in the [D] list.",
+        "#t": "[zh]类型门（类型论）：在类型层证明相应命题（构造出该类型的值）后通过。[en]Type gate: passable after proving the proposition in the type layer.",
+        "#nf": "[zh]不自由出现断言：[wff]#nf($0,$1)[/wff] 表示变量 $1 不在表达式 $0 中自由出现。[en]Non-free assertion: [wff]#nf($0,$1)[/wff] asserts variable $1 does not occur freely in $0.",
+        "#rp": "[zh]替换断言：[wff]#rp($0,$1,$2)[/wff] 将 $0 中自由出现的 $1 全部替换为 $2。[en]Replace assertion: [wff]#rp($0,$1,$2)[/wff] replaces all free $1 in $0 with $2.",
+        "#sb": "[zh]代入断言：[wff]#sb($0,$x,$1)[/wff] 验证 $1 对 $0 中 $x 可代入（无变量被量词捕获）。[en]Substitution assertion: [wff]#sb($0,$x,$1)[/wff] verifies $1 is substitutable for $x in $0.",
+        "dG": "[zh]拆门技能：解锁后可通过的门会被自动拆除变为路。[en]Gate destruction: unlocked gates are demolished into roads after passing.",
+        "hyp": "[zh]假设：在定理表中以假设开始（用于录制宏），注意存在假设时不可开启命题门。[en]Hypothesis: begin with a hypothesis in [P] list (for macro recording); gates cannot open with hypotheses present.",
+        "meta": "[zh]元规则：以 c、v、f、>、<、: 等前缀调用，对规则本身进行操作（条件化、量化、组合等）。[en]Metarules: invoked by prefixes like c, v, f, >, <, : to operate on rules themselves.",
+        "getD": "[zh]推理素：通过带有获取推理素的方块获得，用于通过收费门与购买提示。[en]Deductrium: obtained from reward tiles, used to pass toll gates and buy hints.",
+        "payD": "[zh]收费门：通过此门需要消耗指定数量的推理素。[en]Toll gate: passing consumes the specified amount of deductrium.",
+    },
+};

@@ -34,6 +34,8 @@ export class TreeListViewer {
     initialHeight = '30vh';
     onFolderActiveCancel = () => { };
     data;
+    // 是否显示"默认在...中操作"占位行（推理表用 true；只读列表如类型层系统表设 false）
+    showActivePlaceholder = true;
     static PLACEHOLDER_ID = -2;
     constructor(data, container, initialHeight) {
         this.container = container;
@@ -131,7 +133,7 @@ export class TreeListViewer {
         for (const child of this.data) {
             traverse(child, 0);
         }
-        if (hasFolder && !hasActiveFolder) {
+        if (this.showActivePlaceholder && hasFolder && !hasActiveFolder) {
             result.push({ node: { uuid: 0, name: "", parentId: ROOT_ID }, depth: 0 });
         }
         return result;
@@ -879,7 +881,63 @@ export class TreeListViewer {
         else
             this.startRenameItem(node.uuid);
     }
+    // 就地编辑内容列（叶子命题编辑 content / 文件夹编辑显示名）：
+    // 在内容列内联输入框，失焦/Enter 提交，Esc 取消。提交走 renameItem/renameFolder 钩子
+    // （类型层等显示名在 content 的列表用它），否则回退到 renameNode 改 name。
+    startContentEdit(id) {
+        const node = this.findNode(id);
+        if (!node)
+            return;
+        const row = this.rowsContainer.querySelector(`.item-row[data-uuid="${id}"]`);
+        if (!row)
+            return;
+        const inner = row.querySelector('.cell-content .inner');
+        if (!inner)
+            return;
+        const isFld = isFolder(node);
+        const currentName = isFld
+            ? (this.folderNameOf ? this.folderNameOf(node) : node.name)
+            : (this.itemNameOf ? this.itemNameOf(node) : node.name);
+        const input = document.createElement('input');
+        input.className = 'name-input folder-name-input';
+        input.value = currentName;
+        input.dataset.uuid = String(id);
+        inner.replaceWith(input);
+        input.focus();
+        input.select();
+        const finish = () => {
+            const newName = input.value.trim();
+            const renamer = isFld ? this.renameFolder : this.renameItem;
+            if (renamer) {
+                if (newName && newName !== currentName) {
+                    renamer(node, newName);
+                    this.onAfterChange();
+                }
+            }
+            else if (newName && newName !== currentName) {
+                this.renameNode(id, newName);
+                this.onAfterChange();
+            }
+            this.renderList();
+        };
+        input.addEventListener('blur', finish);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                input.blur();
+            }
+            else if (e.key === 'Escape') {
+                input.value = currentName;
+                input.blur();
+            }
+        });
+    }
     // ---- 操作 ----
+    // 自定义改名钩子：默认用 node.name；类型层等把显示名放 content 时覆写
+    itemNameOf;
+    folderNameOf;
+    // 自定义改名提交：返回 true 表示已处理（不再改 node.name）；默认走 onRename + renameNode
+    renameItem;
+    renameFolder;
     startRenameItem(id) {
         const node = this.findNode(id);
         if (!node)
@@ -890,7 +948,7 @@ export class TreeListViewer {
         const nameEl = row.querySelector('.cell-name .name-text');
         if (!nameEl)
             return;
-        const currentName = node.name;
+        const currentName = this.itemNameOf ? this.itemNameOf(node) : node.name;
         const input = document.createElement('input');
         input.className = 'name-input';
         input.value = currentName;
@@ -900,7 +958,13 @@ export class TreeListViewer {
         input.select();
         const finish = () => {
             const newName = input.value.trim();
-            if (newName !== currentName && this.onRename(node, newName)) {
+            if (this.renameItem) {
+                if (newName && newName !== currentName) {
+                    this.renameItem(node, newName);
+                    this.onAfterChange();
+                }
+            }
+            else if (newName !== currentName && this.onRename(node, newName)) {
                 this.renameNode(id, newName);
                 this.onAfterChange();
             }
@@ -928,7 +992,7 @@ export class TreeListViewer {
         const inner = row.querySelector('.cell-content .inner');
         if (!inner)
             return;
-        const currentName = node.name;
+        const currentName = this.folderNameOf ? this.folderNameOf(node) : node.name;
         const input = document.createElement('input');
         input.className = 'name-input folder-name-input';
         input.value = currentName;
@@ -938,8 +1002,15 @@ export class TreeListViewer {
         input.select();
         const finish = () => {
             const newName = input.value.trim();
-            // 文件夹名很随意，不校验；空则保留原名
-            if (newName && newName !== currentName) {
+            if (this.renameFolder) {
+                // 自定义提交（如类型层文件夹名存 content）
+                if (newName && newName !== currentName) {
+                    this.renameFolder(node, newName);
+                    this.onAfterChange();
+                }
+            }
+            else if (newName && newName !== currentName) {
+                // 文件夹名很随意，不校验；空则保留原名
                 this.renameNode(id, newName);
                 this.onAfterChange();
             }

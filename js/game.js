@@ -1,10 +1,11 @@
-import { initialRules } from "./hs/core/initial.js";
+import { initialCreativeRules, initialSurvivalRules } from "./hs/core/initial.js";
 import { HSLayer } from "./hs/main.js";
+import { TTLayer } from "./tt/main.js";
 import { HSParser } from "./hs/core/parser.js";
 import { HyLayer } from "./hy/gui.js";
 import { blockMap, nameMap, TileBlockType } from "./hy/maploader.js";
 import { LangMgr } from "./lang.js";
-import { ProgressLayer } from "./pg/main.js";
+import { ProgressLayer, kbFullId } from "./pg/main.js";
 import { SaveLoad } from "./saveload.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
@@ -12,24 +13,29 @@ class Game {
     gotRewards = new Set;
     destructedGates = new Set;
     gotAchievements = new Set;
+    // 知识库解锁：tile.data.info 或同名 reward 解锁的 identifier 集合（创造模式全部解锁）
+    unlockedInfos = new Set;
     // 经济/进度数据（仅生存模式；单位 µg）
     deductrium = 0; // 拥有推理素
     deductriumConsumed = 0; // 累计消耗推理素
     tilesParcour = 0; // 总方块步数
     langMgr = new LangMgr(SaveLoad.getSavedLang());
     hsLayer = new HSLayer;
+    ttLayer = new TTLayer;
     hyLayer = new HyLayer;
     saveload = new SaveLoad(gameMode, () => {
-        // 创造模式目前只有推理层（hs）；几何层/奖励/成就/经济仅生存模式
+        // 创造模式目前只有推理层（hs）+ 类型层（tt）；几何层/奖励/成就/经济仅生存模式
         if (gameMode === "creative")
-            return { hs: this.hsLayer.serialize(), ly: this.getCurrentLayer() };
+            return { hs: this.hsLayer.serialize(), tt: this.ttLayer.serialize(), ly: this.getCurrentLayer() };
         return {
             hs: this.hsLayer.serialize(),
+            tt: this.ttLayer.serialize(),
             hy: this.hyLayer.serialize(),
             ly: this.getCurrentLayer(),
             rw: Array.from(this.gotRewards),
             dg: Array.from(this.destructedGates),
             ac: Array.from(this.gotAchievements),
+            in: Array.from(this.unlockedInfos),
             D: this.deductrium,
             DC: this.deductriumConsumed,
             tp: this.tilesParcour,
@@ -37,29 +43,32 @@ class Game {
     }, (data) => {
         if (data.hs)
             this.hsLayer.deserialize(data.hs);
+        if (data.tt)
+            this.ttLayer.deserialize(data.tt);
         if (gameMode === "survival") {
             if (data.hy)
                 this.hyLayer.deserialize(data.hy);
             this.gotRewards = new Set(data.rw);
             this.destructedGates = new Set(data.dg);
             this.gotAchievements = new Set(data.ac);
-            // 直接恢复总量（加载时不再对 getD 奖励重复加钱）
+            this.unlockedInfos = new Set(data.in);
             this.deductrium = data.D ?? 0;
             this.deductriumConsumed = data.DC ?? 0;
             this.tilesParcour = data.tp ?? 0;
         }
         this.switchLayer(data.ly);
     });
-    progressLayer = new ProgressLayer(this.saveload, gameMode);
+    progressLayer = new ProgressLayer(this.saveload, gameMode, (id) => this.isAchievementGot(id), (id) => this.isInfoUnlocked(id));
     constructor() {
         this.initHyGUI();
         this.initLayerGUI();
         const firstLoad = !this.saveload.load();
         if (gameMode === "creative") {
+            this.showLayerButton("T-layer", true);
             this.showLayerButton("D-layer", true);
             this.showLayerButton("P-layer", true);
             if (firstLoad) {
-                this.hsLayer.addRules(initialRules);
+                this.hsLayer.addRules(initialCreativeRules);
                 this.switchLayer("P-layer");
             }
             this.hsLayer.unlockBasicPropCmd();
@@ -70,17 +79,24 @@ class Game {
         }
         else if (gameMode === "survival") {
             this.showLayerButton("G-layer", true);
-            if (firstLoad)
+            if (firstLoad) {
+                this.hsLayer.addRules(initialSurvivalRules);
                 this.switchLayer("G-layer");
+            }
             this.hsLayer.unlockBasicPropCmd();
             // 加载后：恢复已获得奖励的 got 标记，并执行对应的解锁效果（层按钮显示等）
             this.applyGotRewards();
         }
         // 恢复/初始化后刷新统计面板
         this.updateStats();
+        // 加载完成后重绘成就区/符号面板/知识库（ProgressLayer 构造时存档尚未恢复）
+        this.progressLayer.refreshAchievements();
+        this.progressLayer.refreshSymbols();
+        this.progressLayer.refreshKnowledge();
         // 脚本就绪，隐藏加载动画
         document.getElementById("loading")?.classList.add("hide");
         this.hsLayer.onchange = () => this.saveload.notifySave();
+        this.ttLayer.onchange = () => this.saveload.notifySave();
         this.hyLayer.onchange = () => this.saveload.notifySave();
     }
     getCurrentLayer() {
@@ -96,10 +112,93 @@ class Game {
         document.querySelector(`.layer-buttons button[data-layer="${layer}"]`)?.classList.toggle("hide", !show);
     }
     // ===== 解锁/奖励的处理逻辑（可扩展） =====
-    // 推理素增减（旧版 addDeductriums 的经济部分；成就/提示暂不接入）
+    // 推理素增减（旧版 addDeductriums 的经济部分；含提示与成就）
     addDeductrium(amount) {
         this.deductrium += amount;
         this.updateStats();
+        // 变化提示（获得 +、消耗 -）
+        this.showToast(amount >= 0
+            ? LangMgr.formalize.gainDeductriumToast(stringifyDeductriumAmout(amount), stringifyDeductriumAmout(this.deductrium))
+            : LangMgr.formalize.payDeductriumToast(stringifyDeductriumAmout(-amount), stringifyDeductriumAmout(this.deductrium)), amount >= 0 ? "gain" : "pay");
+        this.checkEconAchievements();
+    }
+    // 经济类成就：首次获得/首次消耗/累计获得里程碑（旧版 addDeductriums 中逻辑）
+    checkEconAchievements() {
+        if (this.deductrium > 0)
+            this.finishAchievement("firstEat");
+        if (this.deductriumConsumed > 0)
+            this.finishAchievement("firstPay");
+        const totalObtained = this.deductrium + this.deductriumConsumed;
+        if (totalObtained >= 40)
+            this.finishAchievement("vegan40");
+        if (totalObtained >= 1e3)
+            this.finishAchievement("dose1mg");
+        if (totalObtained >= 1e6)
+            this.finishAchievement("dose1g");
+        if (totalObtained >= 50.1e9)
+            this.finishAchievement("critical");
+    }
+    // ===== 成就系统 =====
+    // 完成成就（公开方法：方块成就由 tile.data.ac 自动触发；
+    // 非方块成就（如累计推理素、序数等）由外部按条件调用此方法）
+    finishAchievement(id) {
+        if (this.gotAchievements.has(id))
+            return;
+        this.gotAchievements.add(id);
+        this.showToast(LangMgr.formalize.achToast(LangMgr.achName(id)), "ach");
+        this.progressLayer.refreshAchievements();
+        this.saveload.notifySave();
+    }
+    // 是否已获得某成就（供 pg/main.ts 渲染查询）
+    isAchievementGot(id) {
+        return this.gotAchievements.has(id);
+    }
+    // ===== 知识库解锁 =====
+    // 某知识 identifier 是否已解锁（创造模式全部解锁；生存模式看 unlockedInfos 或同名 reward）
+    isInfoUnlocked(id) {
+        if (gameMode === "creative")
+            return true;
+        const full = kbFullId(id);
+        // unlockedInfos 存全 id（mec:#p）；gotRewards 存裸名（dG、hyp 等）
+        if (this.unlockedInfos.has(full))
+            return true;
+        // 奖励名匹配：裸 id 或（去掉前缀后的）裸名
+        if (this.gotRewards.has(id))
+            return true;
+        if (full.startsWith("sym:") || full.startsWith("mec:")) {
+            if (this.gotRewards.has(full.slice(4)))
+                return true;
+        }
+        return false;
+    }
+    // 解锁知识（通过带 data.info 的方块或获得同名 reward 时调用）
+    unlockInfo(id) {
+        if (gameMode === "creative")
+            return;
+        const full = kbFullId(id);
+        // 仅接受知识库条目（sym:/mec: 前缀）；未知 identifier 忽略
+        if (!full.startsWith("sym:") && !full.startsWith("mec:"))
+            return;
+        if (this.unlockedInfos.has(full))
+            return;
+        this.unlockedInfos.add(full);
+        this.progressLayer.refreshSymbols();
+        this.progressLayer.refreshKnowledge();
+        this.saveload.notifySave();
+    }
+    // 底部居中 toast 提示（成就/推理素变化），自动消失，带进场/退场动画
+    showToast(text, kind = "gain") {
+        const container = document.getElementById("pg-toast-container");
+        if (!container)
+            return;
+        const el = document.createElement("div");
+        el.className = "pg-toast " + kind;
+        el.textContent = text;
+        container.appendChild(el);
+        // 同一时刻最多保留 3 条
+        while (container.children.length > 3)
+            container.removeChild(container.firstChild);
+        setTimeout(() => el.remove(), 3200);
     }
     // 刷新进度层统计面板
     updateStats() {
@@ -112,7 +211,7 @@ class Game {
         setText("pg-stat-consumed", stringifyDeductriumAmout(this.deductriumConsumed));
         setText("pg-stat-parcours", String(this.tilesParcour));
     }
-    // 已获得的奖励：按 gotRewards 里的 key（name 或 hash）直查砖块，置 got=true 并执行解锁效果
+    // 已获得的奖励：按 gotRewards 里的 key（name 或 hash）直查砖块，置 got=true、type→road 并执行解锁效果
     applyGotRewards() {
         for (const key of this.gotRewards) {
             // key 可能是 name（经 nameMap 转 hash）或 hash 本身
@@ -122,6 +221,8 @@ class Game {
                 continue; // 地图改版后砖块可能不存在
             block.data ??= {};
             block.data.got = true;
+            if (block.type === TileBlockType.Reward)
+                block.type = TileBlockType.Road;
             this.applyUnlockEffect(block);
         }
     }
@@ -190,6 +291,14 @@ class Game {
             this.applyUnlockEffect(block);
             if (block.type === TileBlockType.Reward)
                 block.type = TileBlockType.Road;
+            // 成就：方块带 data.ac 则通过即完成（奖励/路/门都算）
+            if (!isLoading && block.data.ac)
+                this.finishAchievement(block.data.ac);
+            // 知识库：方块带 data.info 解锁该 identifier；奖励名匹配也解锁
+            if (!isLoading && block.data.info)
+                this.unlockInfo(block.data.info);
+            if (block.name)
+                this.unlockInfo(block.name);
             if (!isLoading && block.data.getD !== undefined) {
                 this.addDeductrium(block.data.getD);
             }
@@ -226,6 +335,12 @@ class Game {
             };
             if (!gateTest())
                 return false;
+            // 成就：通过门（data.ac）即完成
+            if (tile.data?.ac)
+                this.finishAchievement(tile.data.ac);
+            // 知识库：门带 data.info 解锁
+            if (tile.data?.info)
+                this.unlockInfo(tile.data.info);
             // dG（拆门技能）：能通过的门拆除，变为 road（旧版 delgate 逻辑）
             if (this.gotRewards.has("dG") && tile.type !== TileBlockType.Ordinal) {
                 tile.data ??= {};
@@ -235,19 +350,26 @@ class Game {
             }
             return true;
         };
-        // 换格：累计方块步数（旧版 parcours 逻辑）
-        this.hyLayer.world.onStepToAnotherTile = () => {
+        // 换格：累计方块步数 + 检查到达方块成就（旧版 parcours 逻辑）
+        this.hyLayer.world.onStepToAnotherTile = (hash) => {
             this.tilesParcour++;
             this.updateStats();
+            // 方块成就/知识库：踩上路/奖励/门（通过后换格）都算"通过该方块"
+            const block = this.hyLayer.world.getBlock(hash);
+            if (block?.data?.ac)
+                this.finishAchievement(block.data.ac);
+            if (block?.data?.info)
+                this.unlockInfo(block.data.info);
             this.hyLayer.onchange?.(); // 保留存档通知
         };
     }
 }
-new Game;
+// 暴露游戏实例：外部代码（如非方块成就触发、调试）可通过 window.game.finishAchievement(id) 完成成就
+window.game = new Game;
 // ===== 门文本解析辅助 =====
 // 门文本 → AST：门文本已是 unicode（地图脚本转换），直接 parse；失败返回 null
 function parseGateAst(block, mode) {
-    const text = typeof block.text === "string" ? block.text : "";
+    const text = (typeof block.text === "string" ? block.text : "").replaceAll("\n", "");
     if (!text.trim?.())
         return null;
     const parser = new HSParser();

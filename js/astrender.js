@@ -432,14 +432,9 @@ export class SyntaxEditor extends BaseSyntaxViewer {
             if (replaced !== val) {
                 const prefixOld = val.substring(0, cursor);
                 const prefixNew = this.replaceText(prefixOld);
-                ta.setSelectionRange(0, val.length);
-                if (document.execCommand) {
-                    document.execCommand('insertText', false, replaced);
-                }
-                else {
-                    ta.value = replaced;
-                }
-                ta.selectionStart = ta.selectionEnd = prefixNew.length;
+                // 直接赋值最可靠（execCommand 在非用户手势/某些环境会静默失败）
+                ta.value = replaced;
+                ta.selectionStart = ta.selectionEnd = Math.min(prefixNew.length, replaced.length);
             }
         }
         this.render(ta.value);

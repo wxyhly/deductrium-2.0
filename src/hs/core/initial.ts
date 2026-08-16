@@ -1,7 +1,10 @@
 
-export const initialRules =
+export const initialSurvivalRules =
+`mp:ax: $1→$2, $1 ⊢ $2;
+a1:ax: ⊢$1→$2→$1;
+a2:ax: ⊢($1→$2→$3)→($1→$2)→($1→$3);`;
+export const initialCreativeRules =
     `
-
 mp:ax: $1→$2, $1 ⊢ $2;
 a1:ax: ⊢$1→$2→$1;
 a2:ax: ⊢($1→$2→$3)→($1→$2)→($1→$3);

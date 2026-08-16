@@ -10,6 +10,7 @@
     <link href="style/list.css" rel="stylesheet" type="text/css">
     <link href="style/editor.css" rel="stylesheet" type="text/css">
     <link href="style/progress.css" rel="stylesheet" type="text/css">
+    <link href="style/tt.css" rel="stylesheet" type="text/css">
 </head>
 <script src="lib/lz-string.min.js"></script>
 <script src="js/game.js" type="module"></script>
@@ -18,13 +19,14 @@
     <div class="layer-nav">
         <div class="layer-title">Deductrium<sup>v2.0</sup></div>
         <div class="layer-buttons">
-            <button data-layer="G-layer" class="hide">几何层</button>
+            <button data-layer="G-layer" class="hide" data-i18n="layerG">几何层</button>
             <button data-layer="D-layer" class="hide" data-i18n="layerD">推理层</button>
-            <!-- <button>类型层</button> -->
+            <button data-layer="T-layer" class="hide" data-i18n="layerT">类型层</button>
             <button data-layer="P-layer" class="hide" data-i18n="layerP">进度层</button>
         </div>
     </div>
     <div id="loading">加载中…</div>
+    <div id="pg-toast-container"></div>
     <div data-layer="G-layer" class="hide"><canvas id="hyper"></canvas></div>
     <div data-layer="D-layer" class="hide">
         <div class="manager-card" id="ruleList">
@@ -66,6 +68,33 @@
                 <div id="cmd-error" style="color:red; display:none;"></div>
                 <div id="cmd-prompt" style="display:none;"></div>
                 <div id="hs-cmd-input"></div>
+            </div>
+        </div>
+        <div style="width: 100%;height: 300px;"></div>
+    </div>
+    <div data-layer="T-layer" class="hide">
+        <!-- 系统表（相当于类型层的规则表）：只读，True:U 文件夹内装 true:True -->
+        <div class="manager-card" id="ttSysTable">
+            <div class="card-header">
+                <h2 data-i18n="sysTable">系统表</h2>
+                <div class="actions"></div>
+            </div>
+            <div class="list-wrapper" id="ttSysWrapper">
+                <div class="rows-container" id="ttSysRows"></div>
+            </div>
+        </div>
+
+        <!-- 定理表（相当于类型层的推理表）：可编辑、可管理文件夹 -->
+        <div class="manager-card" id="ttTable">
+            <div class="card-header">
+                <h2 data-i18n="ttTable">定理表</h2>
+                <div class="actions">
+                    <button class="btn-sm primary" id="ttAddFolder" data-i18n="ttAddFolder">+ 文件夹</button>
+                    <button class="btn-sm primary" id="ttAddItem" data-i18n="ttAddItem">+ 命题</button>
+                </div>
+            </div>
+            <div class="list-wrapper" id="ttWrapper">
+                <div class="rows-container" id="ttRows"></div>
             </div>
         </div>
         <div style="width: 100%;height: 300px;"></div>
@@ -125,6 +154,37 @@
                     <div class="pg-stat-row"><span data-i18n="statDeductrium">拥有推理素</span><strong id="pg-stat-deductrium">0</strong></div>
                     <div class="pg-stat-row"><span data-i18n="statConsumed">累计消耗推理素</span><strong id="pg-stat-consumed">0</strong></div>
                     <div class="pg-stat-row"><span data-i18n="statParcours">总方块步数</span><strong id="pg-stat-parcours">0</strong></div>
+                </div>
+            </div>
+
+            <!-- 成就 -->
+            <div class="manager-card pg-card">
+                <div class="card-header">
+                    <h2 data-i18n="achievements">成就</h2>
+                </div>
+                <div class="pg-body pg-achievements" id="pg-achievements">
+                    <!-- 成就列表由 ProgressLayer.renderAchievements 渲染 -->
+                </div>
+            </div>
+
+            <!-- 知识库（符号子面板 + 笔记） -->
+            <div class="manager-card pg-card">
+                <div class="card-header">
+                    <h2 data-i18n="knowledgeBase">知识库</h2>
+                </div>
+                <!-- 子栏一：符号（仅渲染已解锁，小按钮排多行） -->
+                <div class="pg-section">
+                    <div class="pg-section-title" data-i18n="symbols">符号</div>
+                    <div class="pg-body pg-symbols" id="pg-symbols">
+                        <!-- 符号按钮由 ProgressLayer.renderSymbols 渲染 -->
+                    </div>
+                </div>
+                <!-- 子栏二：笔记（响应式网格，仅渲染已解锁） -->
+                <div class="pg-section">
+                    <div class="pg-section-title" data-i18n="kbNotes">笔记</div>
+                    <div class="pg-body pg-knowledge" id="pg-knowledge">
+                        <!-- 知识库笔记由 ProgressLayer.renderKnowledge 渲染（只显示已解锁） -->
+                    </div>
                 </div>
             </div>
 

@@ -16,7 +16,7 @@ export const mapData = `
 1,1#[[#ω]]
 2@
 3,2@
-:%,4$[[pL]][=unl:{layer:"P-layer"}][zh]进度层[en]progress layer
+:%,4$[[pL]][=ac:"progL"][=unl:{layer:"P-layer"}][zh]进度层[en]progress layer
 
 2,2$[[dL]][=unl:{layer:"D-layer"}][zh]推理层[n]与符号“→”（>）[n]注：为方便输入特殊符号[n]可用括号中的字符“>”[n]来代替字符“→”[en]deduct layer [n]and symbol “→” (>)[n]Note: For convenience,[n] you can use the symbol “>”[n] to replace the symbol “→”
 1,3#[=payD:1e9]
@@ -26,19 +26,19 @@ export const mapData = `
 
 :dL,5@[zh][D]表中推理规则都是这样的形式：[n]( A1, A2, ...An ⊢ C )[n]它代表若A1、A2、... An[n]都是[P]定理表中的定理[n]则执行该规则后[n]就能把C加入到定理表[P]中[en]Deduction rules in table [D][n]have the following form:[n]( A1, A2, ...An ⊢ C )[n]This means that if A1, A2, ... An[n]are all theorems in theorem table [P][n]then after applying the rule[n]C can be added to theorem table [P]
 :%*,3@[zh]$开头的东西叫替换变量[n]它可以替换成任何表达式[n]系统会根据你选择的条件[n]尝试自动匹配出它们的值[n]无法确定时会让你直接输入表达式[en]Items beginning with $[n]are called substitution variables[n]They may be replaced by any expression[n]The system will try to infer their values[n]automatically from the premises you select[n]If it cannot determine them[n]you will be asked to enter an expression manually
-:%*,3,2@[zh]请尝试使用某个推理规则[n]得到定理a>(a>a)[n]从而可以通过门[n]a>(a>a)[n]#p[en]Try using a deduction rule[n]to derive the theorem a>(a>a)[n]so that you can pass the gate[n]a>(a>a)[n]#p
+:%*,3,2@[zh]请尝试使用某个推理规则[n]得到定理A>(A>A)[n]从而可以通过门[n]A>(A>A)[n]#p[en]Try using a deduction rule[n]to derive the theorem A>(A>A)[n]so that you can pass the gate[n]A>(A>A)[n]#p
 :%*,3,4@[zh]提示：系统等待你输入表达式时[n]可以点击定理中的表达式[n]来快速复制插入到命令框[en]Hint: When the system is waiting[n]for you to enter an expression[n]you can click an expression[n]inside a theorem[n]to quickly copy it into the command box
 :%,5@[zh]要执行某个推理规则[n]可在底部命令框中输入规则名[n]或直接点击[D]表中的推理规则[n]然后系统将提示你[n]在[P]定理表中选择条件定理[en]To apply a deduction rule[n]you may enter its name[n]in the command box at the bottom[n]or click the rule directly in table [D][n]The system will then prompt you[n]to select premise theorems[n]from theorem table [P]
 :%*,3@[zh]什么是表达式？[n]小写字母组成的单词是表达式[n](表达式1 > 表达式2)也是表达式[n]在没有歧义时括号可以随意增删[en]What is an expression?[n]A word consisting of lowercase letters[n]is an expression[n](expression1 > expression2)[n]is also an expression[n]Parentheses may be added or removed[n]whenever there is no ambiguity
 :%*,5@[zh][D]中有些规则直接以 ⊢ 开头[n]它们能够无条件产生定理[n]我们称之为“公理”[en]Some rules in [D][n]begin directly with ⊢[n]They generate theorems unconditionally[n]We call them "axioms"
 
-// a>a 与推理宏引导
+// A>A 与推理宏引导
 
 :dL,3@[zh]#p闸门开启方法：[n]当推理层的定理列表中[n]包含闸门上的字符串时[n]才能通过闸门[en]Method to unlock Gate #p:[n] you can pass through it[n]When the [P] list in the deduct layer[n]contains the string on the gate
-:dL,4#[[aa]][p]a→a
-:%,4#[p]b→b
+:dL,4#[[aa]][=ac:"aa"][p]A→A
+:%,4#[p]B→B
 :%*,1$[=getD:1]
-:%,5#[p](a→b)→(a→b)
+:%,5#[p](A→B)→(A→B)
 :%,5$[=getD:1]
 :aa,2@[[否定/宏分路]][zh]提示：每通过一次[n]推理素“收费站”[n]你就得交一次过路费！[n]跟本格子的某顶点[n]相邻的另一个格子能够[n]解锁拆门技能[n]赶快去解锁它吧！[en]Hint: Every time you pass[n]through a Deductrium toll gate[n]you must pay![n]A neighboring cell[n]sharing a vertex with this one[n]can unlock the gate destruction skill[n]Go unlock it NOW!
 :%,1#[[宏门]][=payD:1]
@@ -47,16 +47,16 @@ export const mapData = `
 :%*,4,1$[=getD:2]
 :%,1@[[nd]][zh]#d闸门开启方法：[n]当推理层的推理规则列表中[n]包含闸门上的字符串时[n]才能通过闸门[en]Method to unlock Gate #d:[n] you can pass through it[n]When the [D] list in the deduct layer[n]contains the string on the gate
 :%*,3$[=getD:1]
-:aa,1#[p]a→(c→(b→a))
+:aa,1#[p]A→(C→(B→A))
 :%,2$[=getD:8]
-:dL,2#[p]a→(a→a)
+:dL,2#[p]A→(A→A)
 :%*,3#[[preord]][zh]健身俱乐部会员：[n]进度层中累计的[n]总方块步数达到[n]256步才能通过此门[en]Jogging Club Member:[n]To pass through this gate[n]The total block steps in progress layer[n]must reach 256 steps
 :%*,3,1$[[omega]][=dstr:"#ω"]
 :%,4@[zh]提示：解锁符号“~”后[n]才能开这些门[n]另外：[n]大写字母为系统保留[n]建议输入小写字母[en]Hint: You can only open these[n] gates after unlocking the symbol "~"[n]Other Hints: Uppercase[n] letters are reserved by the system[n]Lowercase letters are recommended
-:%,4@[zh]向前走，有推出[n]a>a[n]的提示[en]Go forward for a hint[n] on deriving a>a
+:%,4@[zh]向前走，有推出[n]A>A[n]的提示[en]Go forward for a hint[n] on deriving A>A
 :%,5@
-:%,5#[p]a→((a→a)→a)
-:%,4@[zh]要想推出a>a[n]尝试使用a2公理看看[n]a>((a>a)>a)[n]能推出什么[n]然后再尝试使用[n]两次推理规则mp[en]To derive a>a[n]Try using Axiom a2 on[n]a>((a>a)>a)[n] to see what you can derive[n]Then try using[n]the deduction rule MP twice
+:%,5#[p]A→((A→A)→A)
+:%,4@[zh]要想推出A>A[n]尝试使用a2公理看看[n]A>((A>A)>A)[n]能推出什么[n]然后再尝试使用[n]两次推理规则mp[en]To derive A>A[n]Try using Axiom a2 on[n]A>((A>A)>A)[n] to see what you can derive[n]Then try using[n]the deduction rule MP twice
 :%,3$[=getD:1]
 :omega,4;3;1;4;5;3;1;3;3;1;4;2;3;2;3@
 :omega,4;3;1;4;5;3;2;2;3;4;5;5;4;3@
@@ -73,24 +73,24 @@ export const mapData = `
 :omega,4@[zh]向前走寻找指南针[en]Go forward to find the compass
 :否定/宏分路,2;1;2;1;1;1@
 :否定/宏分路,4#[[否定门]][=payD:2]
-:%,5$[[neg]][=unl:true][zh]否定公理a3[n]即符号“¬”（~）[en]Negation Axiom a3 [n] and symbol “¬” (~)
+:%,5$[[neg]][=ac:"neg"][=unl:true][zh]否定公理a3[n]即符号“¬”（~）[en]Negation Axiom a3 [n] and symbol “¬” (~)
 :%,2;1;1;1;1;1;1@
 
 // 引导 a>b,b>c > a>c
 
 :否定/宏分路,3#[d]($0→($1→$2)),($0→$1)⊢($0→$2)
 :%*,3$[=getD:1]
-:macro,5#[[.i]][d]⊢($0→$0)
+:macro,5#[[.i]][=ac:".i"][d]⊢($0→$0)
 :%*,2@[zh]提示：录制宏会将[n]整个定理列表[n]保存到推理规则表中[n]“$xxx”可被任意替换使用[en]Hint: Recording macro will save[n]the entire [P] list[n]to the deduction rule table[n]“$xxx” can be replaced with anything
 :%,5#[d](¬$0→¬$1)⊢($1→$0)
 :%*,5$[=getD:1]
 :%,0#[d]($0→($1→$2))⊢(($0→$1)→($0→$2))
 :%*,5$[=getD:1]
 
-:.i,4$[[hyp]][=unl:true][zh]假设[n]注意：定理表中若有假设[n]不可开启对应门#p[n]假设是用来录制宏的[en]Hypotheses[n]Note: If there are hypotheses in [P] list[n]the Gate #p cannot be opened[n]Hypotheses are for recording macro
+:.i,4$[[hyp]][=ac:"hyp"][=unl:true][zh]假设[n]注意：定理表中若有假设[n]不可开启对应门#p[n]假设是用来录制宏的[en]Hypotheses[n]Note: If there are hypotheses in [P] list[n]the Gate #p cannot be opened[n]Hypotheses are for recording macro
 :%*,3@[zh]将定理列表清空后添加假设[n]录制成宏后假设将作为[n]推理条件出现在[n]推出符号“⊢”前[en]To add hypotheses, you need to[n] clear the [P] list first.[n]After recorded as a macro, the hypotheses[n] will occur as conditions[n]before the turnstile symbol “⊢”
 :%*,3,3$[=getD:1]
-:否定门,1$[[dG]][=unl:true][zh]拆门技能[n]通过门后将其拆除[n]提示：考虑逆否命题[n]（建议推出否定爆炸后[n]再探索前方系列谜题）[en]gate destruction skill:[n]Remove gates after passing through them[n]Hint: Consider contrapositive statements[n](recommend to get the principle of explosion[n]before exploring the puzzles ahead)
+:否定门,1$[[dG]][=ac:"delgate"][=unl:true][zh]拆门技能[n]通过门后将其拆除[n]提示：考虑逆否命题[n]（建议推出否定爆炸后[n]再探索前方系列谜题）[en]gate destruction skill:[n]Remove gates after passing through them[n]Hint: Consider contrapositive statements[n](recommend to get the principle of explosion[n]before exploring the puzzles ahead)
 
 // 玩家反馈在能拆门前容易用光推理素导致重置游戏
 
@@ -119,15 +119,15 @@ export const mapData = `
 :%*,3$[[del<>]][=dstr:"#<>(↔)\\n提示：该门后才解锁相应符号"]
 :%*,3,3$[[base-7]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%,1#[d]¬($0→$1)⊢$0
-:%*,3$[[andor]][=unl:true][zh]逻辑符号[n]“∧”（&）与“∨”（|）[en]logical symbols[n]“∧” (&) and “∨” (|)
-:%*,3,2#[[lem]][p](p∨¬p)
+:%*,3$[[andor]][=ac:"andor"][=unl:true][zh]逻辑符号[n]“∧”（&）与“∨”（|）[en]logical symbols[n]“∧” (&) and “∨” (|)
+:%*,3,2#[[lem]][=ac:"lem"][p](P∨¬P)
 :%*,3,2,2$[[base-8]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%*,3,2,4$[=getD:9]
-:%*,3,2,3#[[contra]][p]¬(p∧¬p)
+:%*,3,2,3#[[contra]][=ac:"contra"][p]¬(P∧¬P)
 :%*,3,2,3,2$[[base-9]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%*,3,2,3,3$[=getD:18]
 :%*,3,3@[zh]提示：需解锁[n]“<>”(↔)符号[n]才能使用逻辑符号[en]Hint: You need to unlock[n]the “<>” (↔) symbol[n]to use logical symbols
-:%*,3,3,4#[[pierce]][p]((p→q)→p)→p
+:%*,3,3,4#[[pierce]][=ac:"pierce"][p]((P→Q)→P)→P
 :%*,3,3,4,5$[=getD:50]
 
 :%*,3,3,1#[=payD:20]
@@ -137,7 +137,7 @@ export const mapData = `
 
 :del<>,1#[d]($0→$1),($1→$0)⊢($0↔$1)
 :%*,3$[=getD:10]
-:%,2#[p](a↔a)
+:%,2#[p](A↔A)
 :%*,2$[=getD:10]
 :%,1#[d]($0↔$1)⊢$0→$1
 :%*,2$[=getD:10]
@@ -215,7 +215,7 @@ export const mapData = `
 // mdt后好证的从#p门含义出来的岔路：
 
 :ccmp,1#[[mct2mdt]][zh]通过此门需[n]1.解锁条件演绎元定理[n]2.消耗推理素20µg[en]To pass this gate you need:[n]1. Unlock the Conditional Deduction Metatheorem[n]2. Consume 20µg of Deductrium
-:%*,2$[[mdt]][=unl:true][zh]演绎元定理[n]解锁演绎元定理[n]解锁演绎元定理[en]Deduction Metatheorem![n]Go for Unlock Deduction Metatheorem![n]Go for Unlock Deduction Metatheorem!
+:%*,2$[[mdt]][=ac:"mdt"][=unl:true][zh]演绎元定理[n]解锁演绎元定理[n]解锁演绎元定理[en]Deduction Metatheorem![n]Go for Unlock Deduction Metatheorem![n]Go for Unlock Deduction Metatheorem!
 :%,1@[zh]重要的元定理说三遍[n]重要的元定理说三遍[n]重要的元定理说三遍[en]Something is worth repeating 3 times[n]Something is worth repeating 3 times[n]Something is worth repeating 3 times
 :%,4#[p]($0→($1→$2))→(($0→($1→($2→$3)))→($0→($1→$3)))
 :%*,3$[=getD:1]
@@ -224,14 +224,14 @@ export const mapData = `
 
 // 否定逻辑词
 
-:neg,0#[[.dne]][p]¬¬a→a
-:%*,5@[zh]提示：要证a>~~a[n]需先证~~~a>~a[en]Hint: To prove a>~~a[n]you first need to prove ~~~a>~a
+:neg,0#[[.dne]][=ac:".dne"][p]¬¬A→A
+:%*,5@[zh]提示：要证A>~~A[n]需先证~~~A>~A[en]Hint: To prove A>~~A[n]you first need to prove ~~~A>~A
 :%*,5,0$[[base-6]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
-:%,3#[p]a→¬¬a
+:%,3#[p]A→¬¬A
 :%*,5$[[dniM]][=getD:5]
-:%*,1@[zh]提示：[n]门a>(a>a)[n]后有些关于双重否定[n]推理的提示[en]Hint:[n]Behind the gate a>(a>a)[n]there are hints for[n] double negation elimination
-:%*,1,3#[p](¬a→¬¬a)→(¬a→a)
-:%*,1,4#[p](¬a→¬a)→(a→a)
+:%*,1@[zh]提示：[n]门A>(A>A)[n]后有些关于双重否定[n]推理的提示[en]Hint:[n]Behind the gate A>(A>A)[n]there are hints for[n] double negation elimination
+:%*,1,3#[p](¬A→¬¬A)→(¬A→A)
+:%*,1,4#[p](¬A→¬A)→(A→A)
 :%*,1,4,5$[=getD:1]
 :%*,1,4,1$[=getD:1]
 :%*,1,3,1$[=getD:2]
@@ -244,27 +244,27 @@ export const mapData = `
 :%,5#[p](¬$0→$1)→(¬$1→$0)
 :%,4$[[delK]][=dstr:"#K"]
 :%,2$[=getD:15]
-2,2,2,4,2#[p]¬¬a→(¬¬¬¬a→¬¬a)
+2,2,2,4,2#[p]¬¬A→(¬¬¬¬A→¬¬A)
 :%*,3$[=getD:1]
 :%*,3,3@[zh]提示：先从a2公理出发证明[n]($0>$1),($0>($1>$2))⊢($0>$2)[en]Hint: Using axiom a2, firstly prove[n]($0>$1),($0>($1>$2))⊢($0>$2)
 :%*,3,3,3@[zh]提示2：通过a1公理可以证明[n]($1>$2)⊢($0>($1>$2))[en]Hint 2: Using axiom a1 to prove[n]($1>$2)⊢($0>($1>$2))
-:%*,1#[p](¬¬¬¬a→¬¬a)→(¬a→¬¬¬a)
+:%*,1#[p](¬¬¬¬A→¬¬A)→(¬A→¬¬¬A)
 :%*,1,5@[zh]提示：证明规则[n]($0>$1),($1>$2)⊢($0>$2)[n]后使用它[en]Hint: Prove the rule[n]($0>$1),($1>$2)⊢($0>$2)[n]then use it
-:%,2#[p]¬¬a→(¬a→¬¬¬a)
+:%,2#[p]¬¬A→(¬A→¬¬¬A)
 :%*,5#[d]($0→$1),($1→$2)⊢($0→$2)
 :%*,5,5$[=getD:9]
-:%,2#[p]¬¬a→(¬¬a→a)
-:%*,3@[zh]提示：~~a>(~~a>a)[n]与a2公理[en]Hint: ~~a>(~~a>a)[n]and Axiom a2
-:%,2#[p](¬¬a→¬¬a)→(¬¬a→a))
+:%,2#[p]¬¬A→(¬¬A→A)
+:%*,3@[zh]提示：~~A>(~~A>A)[n]与a2公理[en]Hint: ~~A>(~~A>A)[n]and Axiom a2
+:%,2#[p](¬¬A→¬¬A)→(¬¬A→A))
 :%,2$[=getD:5]
 :%,1$[[base-10]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
-:neg,3#[[exfalso2]][d]$0⊢(¬$0→$1)
+:neg,3#[[exfalso2]][=ac:"exfalso2"][d]$0⊢(¬$0→$1)
 :%*,2$[=getD:4]
 :%,1#[d]$0→($0→$1)⊢$0→$1
 :%*,2$[=getD:4]
-:neg,4#[[exfalso1]][p]a→(¬a→b)
+:neg,4#[[exfalso1]][=ac:"exfalso1"][p]A→(¬A→B)
 :%*,2$[=getD:8]
-:%*,1@[zh]提示：证否定爆炸须先证a>~~a[n]关键步骤：[n]a⊢~b>a[n]~b>a⊢~a>b[en]Hint: To prove[n] the principle of explosion,[n] you must first prove a>~~a[n]Key steps:[n]a⊢~b>a[n]~b>a⊢~a>b
+:%*,1@[zh]提示：证否定爆炸须先证A>~~A[n]关键步骤：[n]A⊢~B>A[n]~B>A⊢~A>B[en]Hint: To prove[n] the principle of explosion,[n] you must first prove A>~~A[n]Key steps:[n]A⊢~B>A[n]~B>A⊢~A>B
 :%*,1,2#[d]$0,¬$0⊢¬$1
 :%*,1,2,3$[=getD:2]
 :%*,1,4#[d]¬$0,$0⊢¬$1
@@ -272,7 +272,7 @@ export const mapData = `
 
 2,1#[=payD:101]
 :%*,3$[[base-5]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
-:%,4$[[.prop]][zh]获得常见[n]命题逻辑定理[n]大礼包！可直接使用！[en]Obtain a Toolkit of[n]common propositional logic theorems![n]You can use these rules directly!
+:%,4$[[.prop]][=ac:".prop"][zh]获得常见[n]命题逻辑定理[n]大礼包！可直接使用！[en]Obtain a Toolkit of[n]common propositional logic theorems![n]You can use these rules directly!
 :%*,2#[=payD:1e3]
 :%*,3#[=payD:500]
 :%*,2,1$[[renameD]][=unl:true][zh]直接重命名[n]推理规则的能力[en]the ability [n]to directly rename[D] rules.
@@ -285,21 +285,21 @@ export const mapData = `
 :.i,3;4;3;2@
 :%,3@[zh]门#K在离[n]#p闸门开启方法说明[n]直线距离2格远的地方[n][en]Gate #K is[n]2 grids away in straight line[n]from gate #p unlock method description[n]
 :%,1@[zh]要解锁门#L[n]需要从“解锁拆门技能”[n]方块旁经过[en]To unlock Gate #L[n]you need to pass by the block[n]"Unlock Gate Destruction Skill"
-:K,1#[p](b→c)→((¬b→c)→c)
-:%,1#[p](¬b→c)→((b→c)→c)
-:%,1#[p](¬b→¬c)→((¬b→c)→b)
-:%,1#[p](¬b→c)→((¬b→¬c)→b)
+:K,1#[p](B→C)→((¬B→C)→C)
+:%,1#[p](¬B→C)→((B→C)→C)
+:%,1#[p](¬B→¬C)→((¬B→C)→B)
+:%,1#[p](¬B→C)→((¬B→¬C)→B)
 :%,1#[[L]][zh][n]未解锁的闸门无法通过[n]请寻找线索解开闸门[n]#L[en][n]Locked gate cannot be passed[n]Find clues to unlock it[n]#L
-:%,1$[[mcpt]][=unl:true][zh]完备性元定理[n]（命题逻辑自动推理）[en]Completeness Metatheorem[n](Automated propositional logic reasoning)
+:%,1$[[mcpt]][=ac:"mcpt"][=unl:true][zh]完备性元定理[n]（命题逻辑自动推理）[en]Completeness Metatheorem[n](Automated propositional logic reasoning)
 
 // 一阶逻辑与iff的引子
 
 :dL,1@[=unl:true][zh]拆门技能奖励方块前方[n]可解锁<>、&、|逻辑符号[n]然后有很多推理素奖励[en]You can unlock logical symbols <>, & and |[n]Ahead of the gate destruct skill reward[n]Then, there are many deductriums
 :dL,1,4#[=payD:100]
 :dL,1,3#[[port-iff]][zh][n]未解锁的闸门无法通过[n]请寻找线索解开闸门[n]#<>(↔)[en][n]Locked gate cannot be passed[n]Find clues to unlock it[n]#<>(↔)
-:dL,1,4,5$[[1st]][=unl:true][zh]一阶逻辑[n]量词公理a4、a5、a6[n]与公理模式元规则mq[n]建议先前往介绍[n]量词、公式那条路[n]后面再来公理a4相关关卡[en]1st-order logic[n]Quantifier Axioms a4, a5, a6[n]and Axiom Schema Meta-rule mq[n]Recommend: first go to the path[n] introducing quantifiers and formulas[n]Then back to the Axiom a4 later
-:dL,1,3,1$[[iff]][=unl:true][zh]当且仅当（互推）[n]逻辑符号“↔”（<>）[en]iff (mutual implication)[n]Logical symbol “↔” (<>)
-:%,5#[p](¬(a→¬b)→c)↔(a→(b→c)))
+:dL,1,4,5$[[1st]][=ac:"1st"][=unl:true][zh]一阶逻辑[n]量词公理a4、a5、a6[n]与公理模式元规则mq[n]建议先前往介绍[n]量词、公式那条路[n]后面再来公理a4相关关卡[en]1st-order logic[n]Quantifier Axioms a4, a5, a6[n]and Axiom Schema Meta-rule mq[n]Recommend: first go to the path[n] introducing quantifiers and formulas[n]Then back to the Axiom a4 later
+:dL,1,3,1$[[iff]][=ac:"iff"][=unl:true][zh]当且仅当（互推）[n]逻辑符号“↔”（<>）[en]iff (mutual implication)[n]Logical symbol “↔” (<>)
+:%,5#[p](¬(A→¬B)→C)↔(A→(B→C)))
 :%,5$[=getD:20]
 :1st,4#[=payD:50]
 :%,4$[[italic-item]][=unl:true][zh]用斜体区分[n]显示项与公式[en]the use of italics [n]to distinguish terms and formulas.
@@ -333,13 +333,13 @@ export const mapData = `
 :%,0@[zh]2.若x不是$1[n]则#nf(Vx:$0,$1)=[n]Vx:#nf($0,$1)[n]即$1在Vx:$0中是否自由出现[n]取决于$1在$0中是否自由出现[en]2. If x is not $1[n]then #nf(Vx:$0,$1)=[n]Vx:#nf($0,$1)[n]i.e., whether $1 is free in Vx:$0[n]depends on whether $1 is free in $0
 :%,5@[zh]若#nf函数验证成功[n]则系统自动删去#nf函数[n]若验证失败系统将报错[en]If #nf function verification succeeds[n]the system automatically removes it[n]If verification fails, the system gets an error
 :%,0@[zh]由于$开头的公式或项[n]在录制宏后可替换成任意值[n]无法确定时[n]#nf函数将保留[en]Since $-prefixed formulas or terms[n]can be replaced with any value in macro usage[n]#nf function remains when there's uncertainty
-:%,0#[[nf]][p](∀x:$1)→(∀x:(∀x:$1))
+:%,0#[[nf]][=ac:"nf"][p](∀x:$1)→(∀x:(∀x:$1))
 :%*,5@[zh]Vx:$1中x被量词约束[n]不会自由出现[n]因此可使用公理a6[en]In Vx:$1, x is bound by quantifier[n]will not occur freely[n]Thus can use axiom a6
 :%,0#[p](∀x:$1)→(∀y:(∀x:$1))
 :%*,3,1#[p](∀x:F(x)∈y)→(∀y:(∀x:F(x)∈y))
 :%*,3$[never]
 :%,2@[zh]Vx:$1中y没被量词约束[n]可能在$1中自由出现[n]因此无法使用公理a6[en]In Vx:$1, y is not bound by quantifier[n]may occur freely in $1[n]Thus cannot use axiom a6
-:%,4#[p](∀x:#nf($1,y))→(∀y:(∀x:#nf($1,y)))
+:%,4#[d]#nf($1,y) ⊢ (∀x:$1)→(∀y:(∀x:$1))
 :%,5#[p](∀x:x=z)→(∀y:(∀x:x=z))
 :%*,2$[=getD:10]
 :%,5#[p](∀x:x∈y)→(∀y:(∀x:x∈y))
@@ -361,7 +361,7 @@ export const mapData = `
 :%*,2,5#[p]¬(∀x:(∀y:¬(x=y)) → ∀y:¬(y=y))
 :%*,1,4$[=getD:30]
 :%*,3,1,5$[never]
-:1st,3,1#[[rp]][p](∀$0:$1)→$1
+:1st,3,1#[[rp]][=ac:"rp"][p](∀$0:$1)→$1
 :%,4@[zh]带第四个参数的[n]#rp函数可部分替换[n]输入数字指定仅替换[n]第几个出现的变量[n]数字0表示全部替换[n]负数代表倒数第几个出现的变量[en]#rp functions allow partial [n]replacement with fourth parameter[n]Enter number to specify replacing only the[n]nth occurrence of variable[n]0 means replace all[n]Negative numbers mean nth from end
 :%,1$[[a8]][=unl:true][zh]等词公理a8[en]equational axiom a8
 
@@ -378,7 +378,7 @@ export const mapData = `
 :%*,1,4@[zh]比如输入Vx:x>x[n]系统会报错[n]因为x出现在V后[n]就判定x为变量[n]而“>”不能连接变量[en]E.g., enter Vx:x>x[n]You will get an error[n]Because x occurs after V as a variable[n]but ">" cannot connect variables
 // :%,4@
 
-:vx=x,5$[[a7]][=unl:true][zh]等词公理a7[en]equational axiom a7
+:vx=x,5$[[a7]][=ac:"a7"][=unl:true][zh]等词公理a7[en]equational axiom a7
 :vx=x,4$[=getD:10]
 
 // 等词性质
@@ -388,26 +388,26 @@ export const mapData = `
 :%*,4@[zh]a8公理使用提示2[n]若想把$a=$b中的$a替换成$c[n]写“#rp($a=$b,$a,$c,1)”[n]则没问题，因为$a第一个出现[n]是一定要被替换的。因此[n]让系统只替换第一个变量[n]不再管后面的变量即可[en]Axiom a8 usage tip 2[n]To replace $a with $c in $a=$b[n]we can write “#rp($a=$b,$a,$c,1)”,[n] because $a occurs first so it must be replaced[n] Therefore let system replace only first variable[n]and ignore latter variables
 :%*,2$[=getD:30]
 :%,1@[zh]导航提示：[n]1.这里离解锁皮亚诺公理[n]ZFC公理与类型层[n]仅有三个方块距离了，[n]2.旁边有着#nf与<>的门后[n]可解锁一阶逻辑大礼包[en]Navigation tips:[n]1. Here is only 3 blocks away from unlocking [n]Peano axioms, ZFC axioms and type layers[n]2. Behind gate with #nf and <>, you can[n]unlock useful 1st-order logic toolkit
-:%*,2#[[terr1]][p](∃$0:($1∨#nf($2,$0))) ↔ ((∃$0:$1)∨#nf($2,$0))
-:%*,3#[[terr2]][p](∀$0:($1∧#nf($2,$0))) ↔ ((∀$0:$1)∧#nf($2,$0))
+:%*,2#[[terr1]][=ac:"terr1"][d]#nf($2,$0) ⊢ (∃$0:($1∨$2)) ↔ ((∃$0:$1)∨$2)
+:%*,3#[[terr2]][=ac:"terr2"][d]#nf($2,$0) ⊢ (∀$0:($1∧$2)) ↔ ((∀$0:$1)∧$2)
 :%*,2,5#[d]$a1=$a2,$b1=$b2 ⊢$a1∈$b1 ↔ $a2∈$b2
-:%*,2,5,2#[[elV1]][d]∀x:∀y:f(x)=f(y)⊢ f($x)=f($y)
+:%*,2,5,2#[[elV1]][=ac:"elV1"][d]∀x:∀y:f(x)=f(y)⊢ f($x)=f($y)
 :%*,2,5,2,2$[[copygateD]][=unl:true]自动抄写技能[n]将上次碰到的门上的命题[n]自动抄下，以便复制
 :%*,2,5,2,1@[zh]连续消除两个量词[n]需要局部变量机制：[n]由“#”开头的叫局部变量[n]它保证与一切“$XX”的值都不同[n]ZFC集合论后不远的包含符号[n]周围有详细介绍使用方法[en]Eliminating 2 quantifiers consecutively[n]needs local variable mechanism:[n]Local variable started with “#”[n]Guarantes different from all “$XX” values[n]Near inclusion symbol behind ZFC set Theroy[n]There're detailed usage instructions around
 :%*,2,5,2,5@
-:%*,2,5,3#[p](∀$0:($1→#nf($2,$0))) ↔ ((∃$0:$1)→#nf($2,$0))
-:%*,2,5,4#[p](∀$0:($1∨#nf($2,$0))) ↔ ((∀$0:$1)∨#nf($2,$0))
-:%*,2,5,3,5$[[.1st]][=unl:true][zh]一阶逻辑大礼包[en]useful first-order logic[n] theorem toolkit
+:%*,2,5,3#[d]#nf($2,$0) ⊢ (∀$0:($1→$2)) ↔ ((∃$0:$1)→$2)
+:%*,2,5,4#[d]#nf($2,$0) ⊢ (∀$0:($1∨$2)) ↔ ((∀$0:$1)∨$2)
+:%*,2,5,3,5$[[.1st]][=ac:".1st"][=unl:true][zh]一阶逻辑大礼包[en]useful first-order logic[n] theorem toolkit
 :%*,4;1;2;1;1;1;1;1;1;2;2;1;1;1;1;1;1@
 :%*,4,1,2,1,1,1,1,1,1#[=payD:5e3]
 :%,1#[d]$0=$1,$1=$2⊢$0=$2
 :%*,3#[p](∀x:∃y:f(x)=g(y)) ↔(∀m:∃n:f(m)=g(n))
-:%*,3,5$[[mnt]][=dstr:"#rp"]
+:%*,3,5$[[mnt]][=ac:"mnt"][=dstr:"#rp"]
 :%*,3,4$[=getD:333]
 :%,2#[=payD:100]
-:%*,5$[[type]][=unl:true][zh]类型层[en]type layer
-:%*,3$[[peano]][=unl:true][zh]皮亚诺公理[n]apn1 - apn5[n]与10以内数字定义[en]Peano axioms[n]apn1 - apn5[n]and definitions for numbers ≤10
-:%,1$[[aExt]][=unl:true][zh]ZFC集合论[n]外延公理(aExt)[en]ZFC set theory[n]axiom of extensionality (aExt)
+:%*,5$[[type]][=ac:"type"][=unl:true][zh]类型层[en]type layer
+:%*,3$[[peano]][=ac:"peano"][=unl:true][zh]皮亚诺公理[n]apn1 - apn5[n]与10以内数字定义[en]Peano axioms[n]apn1 - apn5[n]and definitions for numbers ≤10
+:%,1$[[aExt]][=ac:"aExt"][=unl:true][zh]ZFC集合论[n]外延公理(aExt)[en]ZFC set theory[n]axiom of extensionality (aExt)
 :%,2@[zh]卡住了？可交钱绕行[en]Stucked? Pay deductrium to bypass
 :%,1#[=payD:100]
 :%,2;1;1@
@@ -418,7 +418,7 @@ export const mapData = `
 :1st,5,3,4$[[dE]][=unl:true][zh]量词符号[n]“∃”(E)[en]quantifier symbol[n]“∃”(E)
 :%*,2#[p](∃$0:($1∨$2)) ↔ ((∃$0:$1)∨(∃$0:$2))
 :%*,2,5$[=getD:123]
-:%,5#[p]∃$0:$0=#nf($1,$0)
+:%,5#[d]#nf($1,$0) ⊢ ∃$0:$0=$1
 :%,5$[=getD:30]
 
 // mcvt, mvt, vxvy = vyvx
@@ -428,7 +428,7 @@ export const mapData = `
 :%,1#[=payD:100]
 :%*,4$[[base-4]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%*,2#[[V]][zh]该门后可解锁概括元定理[n]#V[en]Generalization metatheorem #V[n]can be unlocked behind this gate
-:%*,2,5$[[mvt]][=unl:true][zh]概括元定理[en]generalization metatheorem
+:%*,2,5$[[mvt]][=ac:"mvt"][=unl:true][zh]概括元定理[en]generalization metatheorem
 :%,1#[p](∀$0:∀$1:$2)→$2
 :%,4#[p](∀$0:∀$1:$2)→(∀$1:∀$0:$2)
 :%,4#[p](∃$0:∃$1:$2)→(∃$1:∃$0:$2)
@@ -443,8 +443,8 @@ export const mapData = `
 
 :aExt,1#[p]∀x:∀y:((∀z:(z∈x↔z∈y))→(x=y))
 :%,1$[[aSep]][=unl:true][zh]ZFC集合论[n]分离公理(aSep)[en]ZFC set theory[n]axiom of separation (aSep)
-:%*,2#[[ext<]][p]∀x:∀y:((x⊂y)→((y⊂x)→(x=y)))
-:%*,2,3#[[elV2]][p](($x⊂$y)∧($y⊂$x)) → ($x=$y)
+:%*,2#[[ext<]][=ac:"ext<"][p]∀x:∀y:((x⊂y)→((y⊂x)→(x=y)))
+:%*,2,3#[[elV2]][=ac:"elV2"][p](($x⊂$y)∧($y⊂$x)) → ($x=$y)
 :%*,2,2$[=getD:150]
 :%*,2,3,5$[=getD:198]
 :%*,2,3,1@[zh]看似直接使用两次[n]“<a4”规则即可消去量词[n]但$x或$y可能是y或x[n]因此可能一个变量被替换两次[en]It seems that applying the"<a4" rule[n] twice would directly eliminate the quantifiers.[n]However, $x or $y could be y or x,[n]which may cause a variable being replaced twice.
@@ -458,7 +458,7 @@ export const mapData = `
 :%,1@[zh]尝试把分离公理中的$0[n]替换为~(z=z)[n]以证明空集存在[en]Try replacing $0 in the Axiom of Separation[n] with ~(z=z) to prove the existence of the empty set.
 :%*,1#[=payD:5e3]
 :%*,5$[[d<]][=unl:true][zh]谓词包含符号“⊂”(<)[en]the predicate inclusion symbol "⊂" (<).
-:%,2#[[empty]][p]∃y:∀z:¬(z∈y)
+:%,2#[[empty]][=ac:"empty"][p]∃y:∀z:¬(z∈y)
 :%*,5#[p]∀x:∀y:¬∀a:¬∀z:(z∈a↔(z∈x ∧ z∈y))
 :%*,5,2$[=getD:10]
 :%*,5,0#[p]∀x:∀y:∃!a:∀z:(z∈a↔(z∈x ∧ z∈y))
@@ -477,14 +477,14 @@ export const mapData = `
 :port-rp,1@[zh]后方解锁替换元定理中[n]可跨越量词E!进行替换[en]Go forward to unlock Replacement [n]across the quantifier E! in IFF Metatheorem
 :port-rp,3@[zh]特称元定理可给[n]任何带一个条件的规则[n]的条件和结论都加上[n]相同的存在量词[en]The Existential Metatheorem adds[n]the same existential quantifier[n]to both the condition and conclusion[n]of any rule with one condition
 :port-rp,2@[zh]尝试执行规则">veve.Vcn"[n]试试一键证明[n]“解锁特称元定理”方块[n]旁边的定理[en]Try executing the rule ">veve.Vcn"[n]to proof the theorem next to the[n]"Unlock Particularization Metatheorem" block
-:port-rp,5#[p]∀$4:∃$3:∀$2:∃$0:∀$x:#nf($1,$z) →∀$4:∃$3:∀$2:∃$0:∀$z:#rp(#nf($1,$z),$x,$z)
+:port-rp,5#[d]#nf($1,$z) ⊢ ∀$4:∃$3:∀$2:∃$0:∀$x:$1 →∀$4:∃$3:∀$2:∃$0:∀$z:#rp($1,$x,$z)
 :port-rp,4#[=payD:1e4]
 :%,5$[[met]][=unl:true][zh]特称元定理[en]Existential Metatheorem
 :d<,4@[zh]向前走，有更多关于证明[n]空集存在性的提示[en]Go forward for more hints on proving[n]the existence of the empty set.
 :%,3@[zh]首先把分离公理[n]通过互推替换化简为[n]正常人类使用的形式：[n]Vx:Ey:Vz:[n](z@y <> (z@x & ~z=z))[en]First, simplify the Axiom of Separation[n]through IFF metatheorem into [n]a form read by normal humans:[n]Vx:Ey:Vz:(z@y <> (z@x & ~z=z))
 :%,3@[zh]由于我们通过a7公理[n]知道z=z是对的，因此[n]~z=z是错的，[n]继而有z@x & ~z=z是错的[n]则与之等价的z@y也是错的[en]Since via axiom a7[n] we know z=z is true, thus[n]~z=z is false,[n]thus z@x & ~z=z is false[n]Then equivalent z@y is also false
 :%,3@[zh]具体做法：先证明$zz ⊢ [n]($zy<>($zx&~$zz)) <> ~$zy[n](提示：命题逻辑自动推理[n]元规则可一键完成该证明)[n]然后将$XXX代入具体值[n]使用互推替换即可[en]Specific approach: First prove $zz ⊢ [n]($zy<>($zx&~$zz)) <> ~$zy[n](Hint: Completeness metarule can[n] complete this proof with one click)[n]Then substitute specific values for $XXX[n]use IFF metatheorem
-:d<,2#[[.<i]][p]$0⊂$0
+:d<,2#[[.<i]][=ac:".<i"][p]$0⊂$0
 :%,5$[=getD:30]
 
 :crp,3#[=payD:19]
@@ -495,7 +495,7 @@ export const mapData = `
 :%,5#[p]∃!x:∀y:¬y∈x
 :%,2#[=payD:501]
 :%,5$[[d{}]][=unl:true][zh]空集常量符号[n]“{}”[en]empty set constant symbol[n]“{}”
-:dE!,2#[p](∃x:∃y:(#nf($a,y)∧#nf($b,x)))↔(∃x:#nf($a,y)∧∃y:#nf($b,x))
+:dE!,2#[d]#nf($a,y), #nf($b,x) ⊢ (∃x:∃y:($a∧$b))↔(∃x:$a∧∃y:$b)
 :%,5$[=getD:399]
 :dE!,4#[=payD:2e3]
 :%,1$[[omit-fn]][=unl:true][zh]简化显示#nf等系统函数[en]Display Omitted [n] System Functions e.g. #nf(...)
@@ -515,12 +515,12 @@ export const mapData = `
 :%*,3$[=getD:188]
 :%,0#[p]a∈{b} ↔ a=b
 :%*,0#[=payD:5e3]
-:%*,0,5$[[.zfc]][=unl:true][zh]ZFC简化大礼包[n]即用更方便的[n]人类习惯的符号[n]重新书写ZFC所有公理[en]ZFC simplify toolkit[n]which rewrites all ZFC axioms[n]using more convenient symbols[n] that human get used to
+:%*,0,5$[[.zfc]][=ac:".zfc"][=unl:true][zh]ZFC简化大礼包[n]即用更方便的[n]人类习惯的符号[n]重新书写ZFC所有公理[en]ZFC simplify toolkit[n]which rewrites all ZFC axioms[n]using more convenient symbols[n] that human get used to
 :%,5#[p]{a}={b} ↔ a=b
-:%*,3#[p]$c\\($a∪$b)=($c\\$a)∩($c\\$b)
-:%*,3,1@提示：解锁差集符号“\\”[n]需要先解锁有序数对[n]或重新证明皮亚诺公理
+:%*,3#[p]$c＼($a∪$b)=($c＼$a)∩($c＼$b)
+:%*,3,1@提示：解锁差集符号“＼”[n]需要先解锁有序数对[n]或重新证明皮亚诺公理
 :%*,3,2$[=getD:4e3]
-:%*,5#[[a@a]][p]¬(a∈{{a}})
+:%*,5#[[a@a]][=ac:"a@a"][p]¬(a∈{{a}})
 :%*,5,2@[zh]集合论中直接定义：[n]0={}，S(x)=xU{x}[n]若皮亚诺公理此时[n]不限制只对数推理的话[n]会推出矛盾[en]In set theory, we have definitions: [n]0={} and S(x)=x∪{x}[n]If the Peano axioms[n]are not restricted to natural numbers[n]this leads to a contradiction
 :%*,5,2,1@[zh]若apn5中去掉$0中[n]不自由出现x的条件[n]也能推出矛盾。[en]If the condition that x does not occur freely[n]in $0 is removed from apn5,[n]a contradiction can still be derived.
 :%*,5,2,1,3@[[apn5-err-in]][zh]向前走获得错误的[n]apn5公理apn5x[n]该公理只能在前方[n]门后的区域中使用[en]Go forward and get the incorrect[n]apn5 axiom: apn5x.[n]This axiom can only be used in the area[n]beyond the gate ahead.
@@ -531,7 +531,7 @@ export const mapData = `
 :%,0#[p]{a,b}={b,c} ↔ a=c
 :%*,2$[[aReg]][=unl:true][zh]ZFC集合论[n]正则公理(aReg)[en]ZFC set theory[n]axiom of regularity (aReg)
 :%*,3#[d]{{$a},{$a,$b}}={{$c},{$c,$d}} ⊢ ($a=$c) ∧ ($b=$d)
-:%*,3,4$[[d()]][=unl:true][zh]有序数对符号[n] (a, b)[en]the ordered pair symbol[n](a, b).
+:%*,3,4$[[d()]][=ac:"d()"][=unl:true][zh]有序数对符号[n] (a, b)[en]the ordered pair symbol[n](a, b).
 :%*,4#[=payD:100]
 :d(),2#[=payD:2e4]
 :d(),4#[=payD:2e4]
@@ -548,13 +548,13 @@ export const mapData = `
 :%,4@给个例子：重新定义空集[n]$$0：empty[n]$$1：x[n]$$2：Vy:~y@x  
 
 :d(),3,4#[d]#nf($x,$z), #nf($y,$z) ⊢[n] $x ∩ $y = {$z∈$x|$z∈$y}
-:%,1$[[dsub]][=unl:true]差集运算符[n]“\\”
-:d(),3,2#[p]¬0∈(N\\{0})
-// :d(),3,2#($a\\$b)U$b=$aU$b[n]#p
+:%,1$[[dsub]][=unl:true]差集运算符[n]“＼”
+:d(),3,2#[p]¬0∈(N＼{0})
+// :d(),3,2#($a＼$b)U$b=$aU$b[n]#p
 :d(),3,2,5$[=getD:500]
 
 :d(),1#[p]∀x:∀y:∃d:∀a:∀b:((a∈x∧b∈y)↔(a,b)∈d)
-:d(),1,2$[[dX]][=unl:true][zh]集合[n]笛卡尔积运算[n]“×”(X)[en]the set[n]Cartesian product operation[n]“×”(X).
+:d(),1,2$[[dX]][=ac:"dX"][=unl:true][zh]集合[n]笛卡尔积运算[n]“×”(X)[en]the set[n]Cartesian product operation[n]“×”(X).
 :dX,1#[p](1,2)∈N×N
 :%,1;1;1@..........
 :%,1#[p]∀a:∀b:∀x:(x∈a×b → ∃!m:∃!n:x=(m,n))
@@ -564,12 +564,12 @@ export const mapData = `
 :%,1$[[d()pr]][=unl:true][zh]有序数对投影函数[n]Pr1与Pr2[en]the ordered pair projection[n] functions Pr1 and Pr2.
 :%,1#[p]x = Pr1((x,y))
 :%,1#[p]y = Pr2((x,y))
-:%,2#[p]∀x:(x∈(N\\{0})→∃y:x=S(y))
+:%,2#[p]∀x:(x∈(N＼{0})→∃y:x=S(y))
 :%,1#[p]∀x:(x∈N×{0,1}→(Pr2(x)=0∨Pr2(x)=1))
 :%,1@[zh]ZFC中把整数a-b看成(a,b)[n]其中a与b是自然数[en]In ZFC, the integer a-b is[n] represented as (a,b),[n]where a and b are natural numbers.
 :%,1$[[dfZ]][=unl:true][zh]整数等价类生成函数“Z”[en]the integer equivalence[n] class generating function “Z”.
 :%,1@[zh]若a+d=b+c，则[n](a,b)跟(c,d)表示同一个整数[n]因此ZFC中把整数[n]定义为整个等价类的集合[en]If a+d=b+c, then[n](a,b) and (c,d) represent the same integer.[n]Therefore, in ZFC, integers are defined[n]as the set of the equivalence class.
-:%,1$[[dZ]][=unl:true][zh]整数集合(Z)[en]the set of[n] integers (Z).
+:%,1$[[dZ]][=ac:"dZ"][=unl:true][zh]整数集合(Z)[en]the set of[n] integers (Z).
 :%,1#[p]Z((0,0))=Z((1,1))
 :%,1#[p]Z((1,2))=Z((0,1))
 :%*,3@[zh]有难度？绕行的路上给些提示[en]Too difficult? [n]Get some hints [n]along the detour.
@@ -616,12 +616,12 @@ export const mapData = `
 :%,1@[zh]旁边付费看提示[en]Pay nearby to see the hint.
 :%,1#[[.pn4]][p]∀x:∀y:(x∪{x}=y∪{y}→x=y)
 :%,2;1;1;1;1;1;1@...............
-:%,1#[[.pn5]][p]#rp(#nf($0,x),$1,{})→(∀x:(x∈ω→(#rp(#nf($0,x),$1,x)→#rp(#nf($0,x),$1,x∪{x})))→∀x:(x∈ω→#rp(#nf($0,x),$1,x)))
+:%,1#[[.pn5]][d]#nf($0,x) ⊢ #rp($0,$1,{})→(∀x:(x∈ω→(#rp($0,$1,x)→#rp($0,$1,x∪{x})))→∀x:(x∈ω→#rp($0,$1,x)))
 :%,2;1;1;1@................
 :%,1$[[del-pn]][=dstr:"#pn"]
 :%,1#[[.pn]][zh]未解锁的闸门无法通过[n]请寻找线索解开闸门[n]#pn[en]Locked gate cannot be passed.[n]Find clues to unlock it[n]#pn.
 :%,4$[=getD:1e4]
-:.pn,3$[[dSd0]][=unl:true][zh]自然数与[n]后继函数[n]的集合论定义[en]the ZFC set definitions of [n]natural numbers and successor function
+:.pn,3$[[dSd0]][=ac:"dSd0"][=unl:true][zh]自然数与[n]后继函数[n]的集合论定义[en]the ZFC set definitions of [n]natural numbers and successor function
 
 :.pn4,5,5#[=payD:3e3]
 :%,3@
@@ -652,10 +652,10 @@ export const mapData = `
 :%,2$[=getD:1.5e6]
 :%,1@[zh]提示：利用反证法[n]假设存在双射r，则可[n]通过“对角线法则”[n]构造矛盾[en]Hint: Use proof by contradiction[n]Assume bijection r exists, then[n]construct contradiction via "diagonal method"
 :%,1#[p]¬∃quiv(ω,Pow(ω))
-:%,1$[[delAl]][=dstr:"#א"]
+:%,1$[[delAl]][=ac:"delAl"][=dstr:"#א"]
 :%,1$[=getD:1.2345678899999999e7]
 :%,1@[zh]提示：门#א在序数的尽头之后[en]Hint: Gate #א is beyond end of ordinals
-:aChoice,2#[[vwo]][p]∀x∃r:WellOrder(x, r)
+:aChoice,2#[[vwo]][=ac:"vwo"][p]∀x∃r:WellOrder(x, r)
 :%*,1@[zh]提示：解锁WellOrder(良序)的定义[n]需要到达序数ω^(ω2)[n]（前往该序数需在[n]解锁并集公理的不远处[n]用替代公理证明[n]{ω,ω+1,ω+2,...}[n]的存在性）[en]Hint: Unlock WellOrder definition[n]Need to reach ordinal ω^(ω2)[n](To get there, near unlocked union axiom[n]use replacement axiom to prove[n]{ω,ω+1,ω+2,...}[n]existence)
 :%,2$[=getD:4.2e8]
 // 并集、幂集、无穷公理、序数之门
@@ -672,7 +672,7 @@ export const mapData = `
 :%,1#[p]∃x:∀z:(z∈x→(z={} ∨ ∃y:(y∈x ∧ z=y∪{y})))
 // :%,1#Ex:({}@x &[n]Vy:(y@x > yU{y}@x))[n]#p
 :%,1$[[w4234]][zh]到达序数[n]ω⁴4+ω³4+ω²4[en]Reach ordinal[n]ω⁴4+ω³4+ω²4
-:%,0#[[UUII]][p]($a∩$b)∪$c = ($a∪$c)∩($b∪$c)
+:%,0#[[UUII]][=ac:"UUII"][p]($a∩$b)∪$c = ($a∪$c)∩($b∪$c)
 :%,1$[[aRepl]][=unl:true][zh]ZFC集合论[n]替换公理(aRepl)[en]ZFC set theory[n]axiom of replacement (aRepl)
 // iff定理
 
@@ -691,14 +691,14 @@ export const mapData = `
 :%*,2$[=getD:29]
 :%,5$[[I3]][=unl:true][zh]门#I3[en]gate #I3
 :iff,1#[[I1I2I3]][zh]该门上有三把锁：[n]#I1 #I2 #I3[n](提示：前两把锁在[n]解锁一阶逻辑之后)[en]This gate has three locks:[n]#I1 #I2 #I3[n](Hint: First two locks are after[n]unlocking first-order logic)
-:%*,3$[[mifft]][=unl:true][zh]互推替换元定理[en]IFF (mutual replacement) metatheorem
+:%*,3$[[mifft]][=ac:"mifft"][=unl:true][zh]互推替换元定理[en]IFF (mutual replacement) metatheorem
 :%*,3,5#[=payD:6e3]
 :%*,2$[=getD:1e3]
 :%,4;5@
 
-:%,2#[d](b→a),(c→a)⊢((a∧b↔a∧c)↔(b↔c))
+:%,2#[d](B→A),(C→A)⊢((A∧B↔A∧C)↔(B↔C))
 :%*,4$[=getD:37]
-:%,1#[d](b→¬a),(c→¬a)⊢((a∨b↔a∨c)↔(b↔c))
+:%,1#[d](B→¬A),(C→¬A)⊢((A∨B↔A∨C)↔(B↔C))
 :%*,2$[=getD:37]
 
 // PeanoAxiom
@@ -709,19 +709,19 @@ export const mapData = `
 :%,5$[[add-mul]][=unl:true][zh]加法与乘法算数[en]addition and[n] multiplication arithmetic
 :peano,2#[p]¬1=2
 :%,1#[p]1+0=1
-:%,2#[[1+1]][p]1+1=2
+:%,2#[[1+1]][=ac:"1+1"][p]1+1=2
 :%*,3#[p]3+4=7
 :%*,2#[p]4+3=7
 :%*,3,1$[=getD:111]
-:%*,4#[[commu+]][p]$0∈N→($1∈N→$0+$1=$1+$0)
+:%*,4#[[commu+]][=ac:"commu+"][p]$0∈N→($1∈N→$0+$1=$1+$0)
 :%*,4,5$[=getD:1.11e3]
-:%,1#[[2x2]][p]2*2=4
+:%,1#[[2x2]][=ac:"2x2"][p]2*2=4
 :%,1#[p]∀x:(x∈N→x*0=0)
 :%,1#[p]$0∈N→$0*1=$0
 :%,1#[p]$0∈N→$0*3=$0+($0+$0)
 :%,1#[[commux]][p]$1∈N→($2∈N→$1*$2=$2*$1)
-:%,1#[[xdistr]][p]$1∈N→($2∈N→($3∈N→($1+$2)*$3=($1*$3)+($2*$3)))
-:%*,0#[[3<4]][p]∀x:(x∈N→¬(4+x=3))
+:%,1#[[xdistr]][=ac:"xdistr"][p]$1∈N→($2∈N→($3∈N→($1+$2)*$3=($1*$3)+($2*$3)))
+:%*,0#[[3<4]][=ac:"3<4"][p]∀x:(x∈N→¬(4+x=3))
 :%,1#[p]∀x:(x∈N→¬(4+x=0))
 :%,1#[p]∀x:(x∈N→¬(4+x=1))
 :1+1,3,5@[zh]证加法交换律[n]需要用数学归纳法apn5[n]若不会证[n]请向前走看教程[en]Proving additive commutativity[n]need axiom of induction apn5[n]If you get stucked[n]Go forward for tutorial
@@ -730,8 +730,8 @@ export const mapData = `
 :%,5#[p]∀x:∀y:(x∈N→(y∈N→(x+y=y+x →S(x+y)=S(y+x))))
 :%,0#[p]∀x:∀y:(x∈N→(y∈N→S(y)+x=S(y+x)))
 :%,5@[zh]下面是重点：消去量词[n]看似直接使用两次[n]“<a4”规则即可消去量词[n]但$0或$1可能是y或x[n]因此可能一个变量被替换两次[en]The key point: Eliminating quantifiers.[n]It seems that applying[n] the "<a4" rule twice can work,[n]but $0 or $1 might be y or x,[n] may leading to substitution twice.
-:%,0#[[elV3]][p]$0∈N→($1∈N→S($0)+$1=S($0+$1))
-:3<4,1#[[5R6]][p]∀x:(x∈N→¬(x*5=6))
+:%,0#[[elV3]][=ac:"elV3"][p]$0∈N→($1∈N→S($0)+$1=S($0+$1))
+:3<4,1#[[5R6]][=ac:"5R6"][p]∀x:(x∈N→¬(x*5=6))
 :3<4,2$[=getD:3.4e3]
 :%*,2#[p]∀y:(y∈N→∃x:y*(y+1)=2*x)
 :%*,2,5$[=getD:4.321e3]
@@ -767,18 +767,18 @@ export const mapData = `
 :%,2#[=payD:5.09e3]
 :%*,1@[=unl:true][zh]后命令行输入.3+4[n]可生成规则⊢3+4=7[n]乘法同理[en]After unlocking, enter ".3+4"[n]in the command line to[n] generate the rule ⊢3+4=7.[n]Multiplication is also supported.
 :%,5$[[natop]][=unl:true][zh]所有正常计算机[n]能表示的自然数常量[n]且可自动计算加法与乘法[en]all natural number constants[n]representable by a normal computer[n]and enables automatic calculation[n] of addition and multiplication.
-:5R6,1$[[dPrime]][=unl:true][zh]谓词“是素数”[n](Prime)[en]predicate "is prime"[n](Prime)
+:5R6,1$[[dPrime]][=ac:"dPrime"][=unl:true][zh]谓词“是素数”[n](Prime)[en]predicate "is prime"[n](Prime)
 :5R6,2#[p]Prime(2)
 :%*,3$[[mprd]][=unl:true]自定义谓词公理模式[n]元规则mprd
 :%*,4#[p]¬Prime(4)
 :%*,4,5$[=getD:4e3]
 :%*,4,4#[p]∀z:((z∈N∧¬z=0∧z≤3) → z∣6)
-:%*,4,4,4#[[ex!]][p]∀x:∃y:(¬y=0∧∀z:((x∈N∧z∈N∧¬z=0∧z≤x) → (z∣y)))
+:%*,4,4,4#[[ex!]][=ac:"ex!"][p]∀x:∃y:(¬y=0∧∀z:((x∈N∧z∈N∧¬z=0∧z≤x) → (z∣y)))
 :%*,4,4,4,5$[=getD:1.23456e5]
-:%*,2#[[prm7]][p]Prime(7)
+:%*,2#[[prm7]][=ac:"prm7"][p]Prime(7)
 :%*,2,1$[=getD:7e3]
 :%*,2,2#[p]∀x:∀y:((x∈N∧y∈N∧¬x=0∧¬x=1)→(x∣y→¬(x∣y+1)))
-:%*,2,2,2#[[infprm]][p]∀x:(x∈N→∃y:(Prime(y) ∧ y≥x))
+:%*,2,2,2#[[infprm]][=ac:"infprm"][p]∀x:(x∈N→∃y:(Prime(y) ∧ y≥x))
 :%*,2,2,2,1$[=getD:9.99e5]
 
 :mprd,3@用法：$$0是新谓词名[n]该名字不能在[D]或[P]中[n]以函数的形式出现过[n]即出现的$$0(...)是公式，不能是项
@@ -809,7 +809,7 @@ export const mapData = `
 :%*,4,3#[t]eq (refl true) (refl true)
 :%*,4,4#[t]Pa:U, a + (not a)
 :%*,5#[t]False
-:%,3#[[ttrue]][t]True
+:%,3#[[ttrue]][=ac:"ttrue"][t]True
 :%,4@[zh]介绍函数符号“λ”（L）[n]与函数类型符号“Π”（P）[n][en]Introduce function symbol “λ” (L)[n]and function type symbol “Π” (P)[n]
 :%*,1@[zh]函数表达式为λx:A.b[n]其自变量x类型为A[n]输出(因变量)值为b[en]Function expression is λx:A.b[n] where input variable x has type A[n]and output value is b
 :%*,1,1@[zh]若假设x:A能推出b:B[n]则λx:A.b的类型为[n]Πx:A,B[en]If assuming x:A we can derive b:B[n]Then type of λx:A.b is[n]Πx:A,B
@@ -828,7 +828,7 @@ export const mapData = `
 :%*,4$[=getD:50]
 :%,0#[t]Px:True,Py:False,True
 :%,5#[t]Pa:U,Pb:U,Px:a,Py:b,a
-:%,0$[[ttsimplFn]][=unl:true][zh]简写非依赖函数[n]类型符号“→”（->）[en]abbreviation [n]for non-dependent function[n]type symbol “→” (->) 
+:%,0$[[ttsimplFn]][=ac:"ttsimplFn"][=unl:true][zh]简写非依赖函数[n]类型符号“→”（->）[en]abbreviation [n]for non-dependent function[n]type symbol “→” (->) 
 :%*,4@[zh]若类型Πx:A,B中[n]x不在表达式B中自由出现[n]则该类型可省去x[n]并记作：A→B[en]If in type Πx:A,B[n]x is not free in expression B[n]Then x can be omitted from type[n]And denoted: A→B
 :%*,4,1@系统这时会把“Πx:A,B”跟[n]“A→B”完全视为等同[n]这叫做“定义相等”
 :%*,4,5@[zh]默认符号“→”是右结合的[n]即A→B→C为[n]A→(B→C)[en]Symbol “→” is right-associative by default[n]i.e., A→B→C is A→(B→C)
@@ -849,7 +849,7 @@ export const mapData = `
 :%*,5,0,5,0,5,0,3#[[hint-tt-a3]][=payD:300]
 :%,0#[t]Pa:U,Pb:U,Pc:U,(a->b->c)->(a->b)->(a->c)
 :%,5$[[ttnotFn]][=unl:true][zh]简写否定符号“not”[n]即，将“A->False”[n]简写为“not A”[en]negation symbol “not”[n]I.e., abbreviate “A->False”[n]to “not A”
-:%*,3$[[ttactic1]][=unl:true][zh]证明策略[n]intro/expand/apply/exact[en]proof strategies[n]intro/expand/apply/exact
+:%*,3$[[ttactic1]][=ac:"ttactic1"][=unl:true][zh]证明策略[n]intro/expand/apply/exact[en]proof strategies[n]intro/expand/apply/exact
 :%*,4@简写前后[n]也是定义相等的[n]即系统会认为[n]“not a”跟“a->False”[n]是同一个东西
 :%*,5@[zh]由于False为空类型[n]因此若存在函数A->False[n]则若A类型不为空[n]就能推出False也不为空[n]因此A类型只能为空[n]即A是假命题[en]Since False is empty type[n]Thus if function A->False exists[n]Then if A type is non-empty[n]Can derive False is also non-empty[n]Thus A type can only be empty[n]I.e., A is false proposition
 :%,0#[t]Pa:U,a->(not (not a))
@@ -858,7 +858,7 @@ export const mapData = `
 :%,5#[t]Pa:U,(not (not (not a)))[n]->(not a)
 :%*,3@[zh]除了点击推荐的策略[n]还可直接输入策略点加号[n]比如目标是A[n]你恰好知道值a:A[n]可手动输入“apply a”[n]完成目标[en]Besides clicking recommended strategies[n]You can also enter strategy then [n]click "+" button. E.g., the goal is A[n]and you know some value a:A[n]Then you can manually enter "apply a"[n]To complete the goal
 :%*,2@[zh]如果觉得写这些函数太晕[n]建议把待证命题写在定理列表中[n]然后点证明策略的加号[n]使用解锁的证明助手[en]If you feel writing these [n]evidence functions is too diffcult[n]you can write the target type in proposition list[n]Then press proof strategy's "+" button[n]And use unlocked strategies of proof assistant
-:%,0$[[ttEq]][=unl:true][zh]相等类型[en]identity type
+:%,0$[[ttEq]][=ac:"ttEq"][=unl:true][zh]相等类型[en]identity type
 :%*,4@[zh]若a与b类型都是A[n]则eq a b是个类型[n]可翻译为命题“a等于b”[n]显然若a与b定义相等[n]则命题“a等于b”一定成立[n]故引入“refl a”表示该事实[en]If both a and b have type A[n]Then 'eq a b' is a type[n]This can be translated as proposition "a equals b"[n]Obviously if a and b are definitionally equal[n]Then proposition "a equals b" must hold[n]Thus introduce evidence "refl a" to this fact 
 :%,5#[t]eq true true
 :%*,2@[zh]注意现在有“定义相等”[n]与“命题相等”两种概念[n]由于是否定义相等[n]直接由系统判定[n]故不引入相等类型[n]就无法表达含假设命题[n]“若两值相等，则...”[en]Note there are two concepts: [n]"definitional equal" and "propositional equal"[n]Since definitional equal[n]is directly determined by system[n]Thus without identity type[n] We cannot express hypothetical proposition:[n]"If two values are equal, then..."
@@ -905,7 +905,7 @@ export const mapData = `
 :%*,4@[zh]ind_True接受一个[n]关于x:True的命题[n]（命题的类型都是U，[n]因此通过函数True->U定义）[n]和该命题对true成立的证据[n]从而输出该命题对[n]任意x:True成立的证据[en]ind_True accepts a[n]proposition about x:True[n](All propositions have type U,[n]thus defined via function True->U)[n]and evidence that the proposition holds for true[n]It returns an evidence that [n]the proposition holds for any x:True
 :%*,4,5@[zh]给些证旁边命题的提示：[n]看看表达式“ind_True [n](Lx:True.eq x true)”的类型[en]Hints for solve the adjacent puzzle:[n]Think of the type of expression [n]“ind_True (Lx:True.eq x true)”,
 :%*,4,5,5@[zh]除了理解为命题[n]ind_True也可用于构造函数：[n]要构造f:True->XXX[n]只需给定f(true)的值即可[n]公理类型列表中[n]ind_True的计算规则[n]表示这一事实[en]Besides understood as a proposition[n]ind_True can also be used to construct functions:[n]To construct f:True->XXX[n]just need the value of f(true)[n]In the axiom type list[n]ind_True's computation rule[n](marked with 'COMP') shows this fact
-:%,5#[[AllTrue]][t]Px:True,eq x true
+:%,5#[[AllTrue]][=ac:"AllTrue"][t]Px:True,eq x true
 :%,0$[[ttProd]][=unl:true][zh]积类型“X”与[n]有序对构造子“(,)”、[n]依赖值对类型“Σ”(S)与[n]依赖有序对构造子“pair”[en]product type “X” and[n]ordered pair constructor “(,)”,[n]dependent pair type “Σ” (S) and[n]dependent ordered pair constructor “pair”[n](constructors are marked with CTOR)
 :%,5@[zh]对任意a:A与b:B[n]可以构造有序对[n](a,b) : A X B[en]For any a:A and b:B[n]we can construct ordered pair[n](a,b) : A X B
 :%,0#[t]nat X nat
@@ -961,7 +961,7 @@ export const mapData = `
 :%*,2,1,2@
 :%,1#[t]Pa:U,Pb:U,(a+b)->[n](not((not a) X (not b)))
 :%,4;1;1;1;1;1@
-:%,0$[[ttindeq]][=unl:true][zh]ind_eq[en]ind_eq
+:%,0$[[ttindeq]][=ac:"ttindeq"][=unl:true][zh]ind_eq[en]ind_eq
 :%*,3#[t]Pa:U,Pb:U,(eq a b)->(a->b)
 :%*,2#[t]not (eq True False)
 :%*,2,5$[[ttelimeq]][=unl:true][zh]证明助手中[n]用destruct策略[n]解构相等类型[en]using the destruct strategy[n]in the proof assistant[n]to destruct equality types
@@ -988,10 +988,10 @@ export const mapData = `
 :%*,3,1,2,1#[t]Pa:U,Pc:a->U,[n](Sx:a,c x)->(not Px:a,not(c x))
 :%*,3,1,2,1,1#[t](Pa:U,(not(not a))->a)[n]->(Pa:U,a+(not a))
 :%*,3,1,2,1,1,1#[t](Pa:U,a+(not a))->[n](Pa:U,(not(not a))->a)
-:%*,3,1,2,1,1,1,1#[[ttpierce]][t](Pa:U,a+(not a))->[n](Pa:U,Pb:U,((a->b)->a)->a)
+:%*,3,1,2,1,1,1,1#[[ttpierce]][=ac:"ttpierce"][t](Pa:U,a+(not a))->[n](Pa:U,Pb:U,((a->b)->a)->a)
 :%*,3,1,2,1,1,1,1,1$[=getD:2e3]
 :%*,3,5$[=getD:490]
-:%,4#[[lemlie]][t]not Pa:U,a+(not a)
+:%,4#[[lemlie]][=ac:"lemlie"][t]not Pa:U,a+(not a)
 :%,5$[=getD:1e4]
 :ttBool,4$[[ttindFalse]][=unl:true][zh]ind_False[en]ind_False
 :%,3@[zh]类型False没有值[n]要证对任意x:False成立[n]其实都永远成立[n]引入ind_False作为[n]该事实的证据[n]即“从谬误能推出一切”[en]Type False has no values[n]To prove for any x:False holds[n]we do nothing, it actually always holds[n]Introduce ind_False as[n]evidence of this fact[n]namely "from falsehood, anything follows"
@@ -1011,7 +1011,7 @@ export const mapData = `
 
 // nat 递归函数
 
-:%,5$[[ttindnat]][=unl:true][zh]ind_nat[en]ind_nat
+:%,5$[[ttindnat]][=ac:"ttindnat"][=unl:true][zh]ind_nat[en]ind_nat
 :%*,5$[[base-2]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%*,2@[zh]自然数(nat)类型有两个构造子[n]“0”与“succ”[n]其中“succ”是带一个[n]递归参数的构造子[en]Natural number (nat) type[n] has two constructors: “0” and “succ”[n]where “succ” is a constructor[n]with a recursive parameter
 :%*,2,5@[zh]因此要证关于任意自然数的命题[n]要提供命题对0成立的证据[n]和对“succ”成立的证据[en]Thus to prove a proposition about any natural number,[n]We need to provide evidence that the proposition holds for 0[n]and also it holds for “succ”
@@ -1028,7 +1028,7 @@ export const mapData = `
 :%*,2@[zh]ind_nat还可以理解为[n]递归函数的生成器：[n]构造函数f(x)需要给定f(0)的值，[n]然后对任意自然数n[n]通过n与f(n)的值来给出f(n+1)的值[en]ind_nat can also be understood as[n]a generator of recursive functions:[n]To construct function f(x), the value of f(0) is needed,[n]then for any natural number n[n]f(n+1) is contructed by n and f(n)[n] hence a function (n and f(n) as its parameters) is needed
 :%,5$[[ttdbl]][=unl:true][zh]翻倍函数[n]double : nat->nat[en]double function[n]double : nat->nat
 :%,0$[[ttadd]][=unl:true][zh]加法函数[n]add : nat->nat->nat[en]addition function[n]add : nat->nat->nat
-:%,0#[[tt1+1]][t]eq (add 1 1) 2
+:%,0#[[tt1+1]][=ac:"tt1+1"][t]eq (add 1 1) 2
 :%*,4#[[:=what]][zh]请定义一个常量what[n]使得下面的定义相等成立[n]what 0b === what 1b True[n]#t:=[en]Please define a constant what[n]such that the following definitional equality holds[n]what 0b === what 1b True[n]#t:=
 :%*,4,1$[=getD:150]
 :%*,4,5@[zh]门 #t:= 开启方法：[n]在定理列表中定义[n]满足规定性质的常量后[n]才能通过此门[n]如旁边的门需定义[n]what := xxxxxx [en]How to open gate #t:= :[n]You must define a constant[n]with the required property[n]in the theorem list[n]before passing through this gate[n]For example, the nearby gate requires[n]what := xxxxxx 
@@ -1036,10 +1036,10 @@ export const mapData = `
 :%,5#[t]Px:nat,eq (add x 0) x
 :%*,0@[zh]来都来了，[n]这点小钱都出不起吗？[n]赶紧交钱，[n]不然你自己想办法过去[en]Since you're already here,[n]can't afford this small amount of money?[n]Pay up quickly,[n]otherwise figure out how to pass by yourself
 :%*,0,2#[=payD:2.222e3]
-:%,5#[[0+x]][t]Px:nat,eq (add 0 x) x
+:%,5#[[0+x]][=ac:"0+x"][t]Px:nat,eq (add 0 x) x
 :%*,4#[t]Sf:nat->nat,[n](eq (f 0) 0) X[n](Pn:nat,eq (f(succ n)) n)
 :%*,4,1$[[ttpred]][=unl:true][zh]“前继”函数[n]pred : nat->nat[en]"predecessor" function[n]pred : nat->nat
-:%*,4,4$[[ttEven]][=unl:true][zh]递归定义的谓词“是偶数”[n]Even: nat->U[en]the recursively defined predicate "is even"[n]Even: nat->U
+:%*,4,4$[[ttEven]][=ac:"ttEven"][=unl:true][zh]递归定义的谓词“是偶数”[n]Even: nat->U[en]the recursively defined predicate "is even"[n]Even: nat->U
 :%*,4,3#[[:=ftr]][zh]请定义函数ftr:nat->U[n]使得ftr 0 === True[n]ftr n === True->...->True[n]其中的True有n+1个[n]#t:=[en]Please define a function ftr:nat->U[n]such that ftr 0 === True[n]and ftr n === True->...->True[n]with n+1 occurrences of True[n]#t:=
 :%*,4,3,4$[[ftrdetour]][=getD:200]
 :%*,4,3,1#[[:=ftreq]][zh]请定义函数ftreq:Px:nat,(ftr x)->U[n]使得ftreq 0 === Lx:ftr 0,eq x true[n]ftreq 1 === Lx:ftr 1,Pa:True,eq (x a) true[n]ftreq 2 === Lx:ftr 2,Pa:True,Pa':True,eq (x a a') true[n]....[n]#t:=[en]Please define a function[n] ftreq:Px:nat,(ftr x)->U[n]such that ftreq 0 === Lx:ftr 0,eq x true[n]ftreq 1 === Lx:ftr 1,Pa:True,eq (x a) true[n]ftreq 2 === Lx:ftr 2,Pa:True,Pa':True,eq (x a a') true[n]....[n]#t:=
@@ -1075,7 +1075,7 @@ export const mapData = `
 
 :ttEven,2#[t]Px:nat,Even x ~=[n]Sy:nat,eq (double y) x
 :%,1$[=getD:5e3]
-:ttEven,4#[[tteven0]][t]Px:Even 0, eq x even0
+:ttEven,4#[[tteven0]][=ac:"tteven0"][t]Px:Even 0, eq x even0
 :%,5$[=getD:5e3]
 
 // W-type
@@ -1101,14 +1101,14 @@ export const mapData = `
 :%*,4,1,5#[t]Sa:U,Sb:a->U,[n](Wx:a,b x) ~= Option nat
 :%*,4,1,5,2$[=getD:200]
 :%*,4,5@[zh]类型Wx:True,False[n]只有一个true对应的构造子[n]找不到y:False[n]说明它不带参数[n]这就是单点类型True[en]For the type Wx:True,False[n]there is only one constructor[n]corresponding to true[n]There is no y:False[n]so the constructor has no arguments[n]This is exactly the singleton type True
-:%,3#[[ttWnat]][t]NW ~= nat
+:%,3#[[ttWnat]][=ac:"ttWnat"][t]NW ~= nat
 :%*,4$[=getD:2e3]
 :%*,2$[=getD:2e3]
 :%,3#[t]Pa:U,List a ~= [n]Wx:True+a,ind_Sum (Lx:True+a,U)[n](Lx:True,False) (Lx:a,True) x
 :%*,4$[=getD:4e3]
 :%*,2$[=getD:4e3]
 
-:ttindTrue,2#[[x+x]][t]Px:nat,(eq x 1)->(eq (add x x) 2)
+:ttindTrue,2#[[x+x]][=ac:"x+x"][t]Px:nat,(eq x 1)->(eq (add x x) 2)
 :%*,3$[[ttsimplEq]][=unl:true][zh]将eq x y简写为x = y[en]abbreviation[n] for "eq x y" as "x = y"
 :%,2#[t]Pf:nat->nat->nat,[n](f = add)->((f 1 1) = 2)
 :%,2#[t]Pa:nat,Pb:nat,[n](a = b)->[n]succ a = succ b
@@ -1132,7 +1132,7 @@ export const mapData = `
 :%*,5,3,1,2,1,1,1$[[ttacticeq]][=unl:true][zh]证明策略eq[n]（斜对面就有一些通用证据）[en]the proof strategy eq[n](There are some general proofs[n]diagonally across from here)
 :%,2#[t]not (0 = 1)
 :%*,2$[[ttS1]][=unl:true][zh]圆周类型[n]S1[n](高阶同伦归纳类型)[en]circle type[n]S1[n](high-order homotopy inductive type)
-:%,5#[[1neq2]][t]not (1 = 2)
+:%,5#[[1neq2]][=ac:"1neq2"][t]not (1 = 2)
 :%*,5$[[ttap2]][=unl:true][zh]相等类型证据[n]trans(传输)与[n]apd(依赖路径作用)[en]equality proofs[n]trans (transport)[n]and apd (dependent path application)
 :%*,5,5#[t]Pa:U,Pb:U,Px:a,Py:a,[n]Pk:b,Pm:x=y,[n](trans (Lx:a.b) m k) = k
 :%*,5,5,0$[[ttransC]][=unl:true][zh]刚才命题的证据transconst[n](常函数的传输是恒同函数[n]支持使用eq策略匹配化简)[en]the evidence transconst[n]for the previous theorem[n](Transport along a constant function[n]is the identity function[n]and can be simplified using strategy "eq")
@@ -1141,7 +1141,7 @@ export const mapData = `
 :%*,5,5,0,5,0,5$[[ttindS1]][=unl:true][zh]ind_S1[en]ind_S1
 :%*,5,2@[zh]1.ap是x=y推出[n]f(x)=f(y)的证据[n]2.trans是若x=y，则命题对x成立[n]就能推出对y成立的证据[n]3.apd是ap的依赖类型函数版本[n]由于x与y可以不定义相等[n]故若f(x)与f(y)类型不同[n]无法直接用eq比较相等[n]需要通过trans函数转换到[n]同一类型后才能用eq比较[en]1. ap is evidence that x=y implies f(x)=f(y)[n]2. trans is evidence that if x=y, then a proposition [n]holding for x implies it also holds for y[n]3. apd is the dependent type function version of ap[n]Since x and y may not be definitionally equal[n]if f(x) and f(y) have different types[n]we cannot directly compare equality with eq[n]Convertion to the same type via trans function[n] is needed before comparing with eq
 :%*,2$[=getD:2.2e3]
-:%,0#[[ttPathElim]][t]Pm:base=base,Pn:base=base,[n]((loop*m)=(loop*n))->(m=n)
+:%,0#[[ttPathElim]][=ac:"ttPathElim"][t]Pm:base=base,Pn:base=base,[n]((loop*m)=(loop*n))->(m=n)
 :%*,2#[t]Px:S1,x=base
 :%*,3#[[ttmno]][t]Pm:base=base,[n]Pn:base=base,[n]Po:base=base,[n](m*n)*o = m*(n*o)
 :%*,3,3@[zh]提示：路径的结合律[n]是个普遍规律[en]Hint: Associativity of paths[n]is a universal law
@@ -1152,7 +1152,7 @@ export const mapData = `
 :%*,3,1,2@[[loop2-lin]]
 :%*,3,1,3#[t]not (loop*loop = (refl base))
 :%*,3,1,2,1#[t]1I=0I
-:%,0,4#[[S1S1]][t](refl base) = [n](loop * (inveq loop))
+:%,0,4#[[S1S1]][=ac:"S1S1"][t](refl base) = [n](loop * (inveq loop))
 :%*,4#[t]inveq(inveq loop) = loop
 :%*,4,5$[[tteqprop1]][=unl:true][zh]证据 rightrfl / [n]leftinveq / rightinveq / invinveq [en]proofs rightrfl /[n]leftinveq / rightinveq / invinveq 
 
@@ -1160,7 +1160,7 @@ export const mapData = `
 :%,1@[zh]如果两个类型a与b之间[n]存在可逆的[n]一到一的双射f:a->b[n]则它们等价，记作[n]eqv A B[en]If between two types a and b[n]exists an invertible[n]bijection f:a->b[n]then they are equivalent, denoted[n]eqv A B
 :%,1@[zh]“f是双射”即为[n]存在函数g与h[n]使得f(g x) = x[n]且h(f x) = x[en]"f is a bijection" means[n]exist functions g and h[n]such that f(g x) = x[n]and h(f x) = x
 :%,1#[t]True ~= True
-:%,2#[[eqvid]][t]Pa:U,a ~= a
+:%,2#[[eqvid]][=ac:"eqvid"][t]Pa:U,a ~= a
 :%,2#[t](True+True) ~= Bool
 :%,2#[t](True+False) ~= True
 :%,2#[t](False+False) ~= False
@@ -1173,7 +1173,7 @@ export const mapData = `
 :%,1$[=getD:999]
 :%*,0#[t]Px:Bool=Bool,[n]pair (Lx:U.Bool=x) Bool x[n] = [n]pair (Lx:U.Bool=x) Bool rfl
 :%*,1#[=payD:2.99e3]
-:%*,1,1$[[ttfnext]][=unl:true][zh]函数外延公理[n]fnext[en]the function extensionality axiom[n]fnext
+:%*,1,1$[[ttfnext]][=ac:"ttfnext"][=unl:true][zh]函数外延公理[n]fnext[en]the function extensionality axiom[n]fnext
 :%*,1,1,1#[t]Pa:U,Pb:U,[n]Px1:a,Px2:a,Py1:b,Py2:b,[n](x1,y1)=(x2,y2) ~= [n]((x1=x2)X(y1=y2))
 :%,2@
 :%,1#[t]Pa:U,Pb:U,Px:a,Py:b,[n]False ~= ((inl x) = (inr y))
@@ -1280,7 +1280,7 @@ export const mapData = `
 :%*,3$[=getD:100]
 :%,5#[t]Px:S1,code_S1 x -> base = x
 :%*,3$[=getD:100]
-:%*,0#[[pi1S1]][t](base=base) ~= Z
+:%*,0#[[pi1S1]][=ac:"pi1S1"][t](base=base) ~= Z
 :%*,0,5$[=getD:6.6e3]
 :%*,0,3#[[pi2S1]][t]Px:refl base=refl base,[n]x = refl (refl base)
 :%*,0,3,5$[=getD:2.2e3]
@@ -1302,7 +1302,7 @@ export const mapData = `
 :%*,5$[=getD:2e3]
 :%,4$[=getD:2e3]
 :ttI,1#[t]Pa:U,Px:a,[n]Pm:refl x=refl x,[n]Pn:refl x=refl x,[n]m*n = n*m
-:%*,5$[[ttS2]][=unl:true][zh]球面类型S2[en]the sphere type S2
+:%*,5$[[ttS2]][=ac:"ttS2"][=unl:true][zh]球面类型S2[en]the sphere type S2
 :%*,5,2#[t]S2 ~= Sus S1
 :%*,5,2,4$[[ttpo]][=unl:true][zh]Pushout类型[en]the Pushout type
 :%*,5,2,3$[=getD:1e3]
@@ -1354,10 +1354,10 @@ export const mapData = `
 :%,3$[[ttS3]][=unl:true][zh]超球面S3[en]the 3-sphere S3
 :ttI,4#[t]Sr:refl base2 = refl base2,[n]not (r = rfl)
 :%*,2$[=getD:4e3]
-:%,5#[[hopf1]][t]Sr:refl (refl base2) = refl (refl base2),[n]not (r = rfl)
+:%,5#[[hopf1]][=ac:"hopf1"][t]Sr:refl (refl base2) = refl (refl base2),[n]not (r = rfl)
 :%*,4$[=getD:4e6]
 :%,5$[=getD:4e6]
-:%,0#[[hopf2]][t]Sf:S3->S2,[n]not (f = Lx:S3,base2)
+:%,0#[[hopf2]][=ac:"hopf2"][t]Sf:S3->S2,[n]not (f = Lx:S3,base2)
 :%*,2$[=getD:4e6]
 
 :ttindS1,4@[zh]ind_S1的意思是，[n]要构造从圆周S1[n]到其它类型的映射[n]除了要给定base映射的值[n]还要给出把路径loop[n]映射到哪里[en]The meaning of ind_S1 is:[n]To construct a map from the circle S1[n]to another type[n]Besides specifying the image of base[n]you must also specify[n]where the path loop is mapped
@@ -1412,7 +1412,7 @@ export const mapData = `
 :%*,5$[=getD:800]
 :%*,4@[zh]完整的函数外延公理[n]不仅说fnext存在[n]还说它跟happly是双射[en]The full function extensionality axiom[n]not only states that fnext exists[n]but also that it is inverse to happly
 :%*,3@[zh]其实只要有[n]单边方向的fnext存在[n]就足以推出这个等价了[en]In fact, merely having[n]one direction of fnext[n]is enough to derive this equivalence
-:%,2#[[ttNoFnext]][t]Pa:U,Pb:U,[n]Pf:a->b,Pg:a->b,[n](Px:a,f x = g x)~=(f=g)
+:%,2#[[ttNoFnext]][=ac:"ttNoFnext"][t]Pa:U,Pb:U,[n]Pf:a->b,Pg:a->b,[n](Px:a,f x = g x)~=(f=g)
 :%*,1$[=getD:1.8e3]
 
 :ttmno,4#[t](rec_S1 Bool (refl Bool)[n] base) = Bool
@@ -1422,19 +1422,19 @@ export const mapData = `
 :%,2$[=getD:1e3]
 :eqvid,1#[t](not True)~= False
 :%*,3#[t]Pa:U,Pb:U,(a~=b)->(b~=a)
-:%*,3,4$[[ttua]][=unl:true][zh]同伦类型论[n]泛等公理[n]ua[n](等价即相等)[en]homotopy type theory[n]axiom of univalence (ua)[n](equivalence is equality)
-:%*,2#[[looprfl]][t]not (refl base = loop)
+:%*,3,4$[[ttua]][=ac:"ttua"][=unl:true][zh]同伦类型论[n]泛等公理[n]ua[n](等价即相等)[en]homotopy type theory[n]axiom of univalence (ua)[n](equivalence is equality)
+:%*,2#[[looprfl]][=ac:"looprfl"][t]not (refl base = loop)
 :%*,2,1@[zh]loop不等于rfl的证明思路：[n]通过ind_S1构造映射f:S1->U[n]其中让f(base)=Bool，[n]f(loop)=ua(e)[n]若loop与rfl相等，则[n]ua(e)与rfl相等[n]后者能推出e(x)=x矛盾[n](e在双重否定消去思路中定义)[en]Proof idea for loop ≠ rfl:[n]Construct map f:S1->U via ind_S1[n]where f(base)=Bool,[n]f(loop)=ua(e)[n]If loop = rfl, then[n]ua(e) = rfl[n]The latter implies e(x)=x contradiction[n](e defined in double negation elimination idea)
 :%*,2,4$[[ttrecS1]][=unl:true][zh]ind_S1的简化版rec_S1[en]the simplified version of ind_S1:[n]rec_S1
 :%*,2,3$[=getD:4.9e3]
-:%,1#[[ttPoint]][t]Px:True,Py:True,(x=y)~=True
+:%,1#[[ttPoint]][=ac:"ttPoint"][t]Px:True,Py:True,(x=y)~=True
 :%*,3#[t]Pa:U,isProp(a)->a->(a~=True)
 :%*,3,2#[t]Pa:U,isProp(a)->[n](a~=True + a~=False)
 :%*,3,2,1,1#[t]True~=True~=True
-:%*,3,2,1$[[ttisContr]][=unl:true][zh]谓词“可缩”(isContr)[n]即没其它多余证据的[n]可通过相等路径[n]缩成单点的类型[en]the predicate "contractible" (isContr)[n]A type with no extra proof structure[n]which can be contracted[n]into a single point by equality paths
+:%*,3,2,1$[[ttisContr]][=ac:"ttisContr"][=unl:true][zh]谓词“可缩”(isContr)[n]即没其它多余证据的[n]可通过相等路径[n]缩成单点的类型[en]the predicate "contractible" (isContr)[n]A type with no extra proof structure[n]which can be contracted[n]into a single point by equality paths
 :%*,4$[[ttisProp]][=unl:true][zh]谓词“纯命题”(isProp)[n]命题只有成立或不成立[n]即没其它多余证据的类型[en]the predicate "mere proposition" (isProp)[n]A proposition is only true or false[n]namely a type with[n]no extra proof structure
 :%*,2#[t]isProp(True)
-:%*,2,1#[[ttSetNat]][t]isSet(nat)
+:%*,2,1#[[ttSetNat]][=ac:"ttSetNat"][t]isSet(nat)
 :%*,2,1,1@[zh]“编码-解码”方法是[n]同伦类型论研究[n]相等类型的一种套路:[n]定义一个code函数[n]再定义编码、解码函数[n]最后证明code跟相等等价[en]The "encode-decode" method[n]is a common technique in HoTT[n]for studying equality types:[n]Define a code function[n]Then define encode and decode[n]Finally prove that code[n]is equivalent to equality
 :%*,2,2#[[:=code_nat]][zh]请定义函数code_nat:nat->nat->U[n]使得输入两个自然数相等时[n]计算值为True，否则为False[n]#t:=[en]Please define a function code_nat:nat->nat->U[n]such that when the two natural numbers are equal[n]it computes to True[n]otherwise it computes to False[n]#t:=
 :%*,2,2,2$[=getD:100]
@@ -1448,10 +1448,10 @@ export const mapData = `
 :%*,2,1,2$[=getD:1.8e3]
 :%*,2,3$[[ttisSet]][=unl:true][zh]谓词“集合”(isSet)[n]集合中的元素都是点状的[n]即它的相等类型是纯命题[en]the predicate "set" (isSet)[n]Elements of a set are point-like[n]meaning that their equality types[n]are mere propositions
 :%,1@[zh]双重否定消去错误[n]的证明思路：[n]设映射e:Bool->Bool[n]且e(0b)=1b，e(1b)=0b[n]可证e是Bool自身到自身的双射[n]即能构造eqv Bool Bool的证据[en]Proof idea for double negation elimination is wrong:[n]Let map e:Bool->Bool[n]e(0b)=1b, e(1b)=0b[n]We can prove e is a bijection of Bool to itself[n]i.e., construct evidence of eqv Bool Bool
-:%*,3#[[tteq2027]][t]Px:2027=2027,x=refl 2027
+:%*,3#[[tteq2027]][=ac:"tteq2027"][t]Px:2027=2027,x=refl 2027
 :%*,3,2$[=getD:2.028e3]
 :%*,3,1$[=getD:1.9e3]
-:%*,2#[[Bool=Bool=Bool]][t](Bool~=Bool)~=Bool
+:%*,2#[[Bool=Bool=Bool]][=ac:"Bool=Bool=Bool"][t](Bool~=Bool)~=Bool
 :%*,2,4$[=getD:1.9e3]
 :%*,2,1@[zh]则ua(e):eq Bool Bool[n]通过ua(e)使用ind_eq[n]可证明若存在f:Pa:U,~~a->a[n]则能推出e(f Bool x)=f Bool x[n]从而可推出矛盾[en]Then ua(e):eq Bool Bool[n]Using ind_eq via ua(e)[n] we can prove that if there exists f:Pa:U,~~a->a[n]then e(f Bool x)=f Bool x can be derived[n]thus leading to a contradiction
 :%,1#[t]not Pa:U,(not(not a))->a
@@ -1461,7 +1461,7 @@ export const mapData = `
 :%*,4$[=getD:900]
 :%*,2$[[ttSus]][=unl:true][zh]高阶同伦类型构造器[n]纬悬(Sus)[en]the higher inductive type constructor[n]Suspension (Sus)
 :%,1#[t]Sus False ~= Bool
-:%,2#[[ttdrawS1]][t]Sus Bool ~= S1
+:%,2#[[ttdrawS1]][=ac:"ttdrawS1"][t]Sus Bool ~= S1
 :%,5$[=getD:1.9e3]
 
 :ttua,0,5@[zh]泛等公理不仅说ua是命题[n]“(eqv a b)->(eq a b)”的证据[n]它还说ua映射与id2eqv[n]映射互为逆映射[en]The axiom of univalence not only indicates[n] ua is evidence for proposition[n]“(eqv a b)->(eq a b)”[n]It also says the ua map and id2eqv[n]map are inverse to each other
@@ -1534,7 +1534,7 @@ export const mapData = `
 :%,0#[t]Pa:U,Px:a,isContr(Sx0:a,x=x0)
 :%,5@[zh]我们离证明“f是双射”[n]是纯命题不远了[en]We are not far from proving that[n]"f is an equivalence"[n]is a mere proposition
 :%,0@
-:%,5#[[isequivP]][t]Pa:U,Pb:U,Pf:a->b,[n]isProp((Sg:b->a,Px:a,x=g(f x))[n]X(Sh:b->a,Px:b,x=f(h x)))
+:%,5#[[isequivP]][=ac:"isequivP"][t]Pa:U,Pb:U,Pf:a->b,[n]isProp((Sg:b->a,Px:a,x=g(f x))[n]X(Sh:b->a,Px:b,x=f(h x)))
 :%*,2$[=getD:4.4e3]
 :%*,3@[zh]“f是双射”是纯命题的[n]等价定义很多，不只这一种[n]比如纤维可缩等等[en]There are many equivalent definitions[n]of "f is an equivalence" being a mere proposition[n]not just this one[n]For example, contractible fibers
 :%*,5$[=getD:4.4e3]
@@ -1547,7 +1547,7 @@ export const mapData = `
 
 :ttLiftU,3#[t](nat+True) ~= nat
 :%*,5@[zh]欢迎入住[n]希尔伯特无穷旅馆！[en]Welcome to[n]Hilbert's Infinite Hotel!
-:%,4#[[infhotel]][t](nat+nat) ~= nat
+:%,4#[[infhotel]][=ac:"infhotel"][t](nat+nat) ~= nat
 :%*,3$[=getD:1.1e3]
 :%,4#[t](natXnat) ~= nat
 :%*,3$[=getD:2.2e3]
@@ -1580,7 +1580,7 @@ export const mapData = `
 :%*,3$[=getD:1.5e3]
 :%,1#[t]Px:nat,Py:nat,[n](Fin x->Fin y)~=(Fin (pow y x))
 :%*,3$[=getD:1.5e3]
-:%,0#[[permMaster]][t]Px:nat,[n](Fin x ~= Fin x)~=(Fin (factorial x))
+:%,0#[[permMaster]][=ac:"permMaster"][t]Px:nat,[n](Fin x ~= Fin x)~=(Fin (factorial x))
 :%,2$[=getD:1.888e4]
 
 // List
@@ -1646,7 +1646,7 @@ export const mapData = `
 :%,3$[=getD:600]
 :%,3@[zh]嫌钱给少了？[n]这可是证明排中律[n]不成立的关键步骤哦[en]Think the fee is too low?[n]This is a crucial step[n]in proving that[n]excluded middle does not hold!
 
-:1neq2,3$[[ttZ]][=unl:true][zh]整数类型[n]Z[en]the integer type[n]Z
+:1neq2,3$[[ttZ]][=ac:"ttZ"][=unl:true][zh]整数类型[n]Z[en]the integer type[n]Z
 :1neq2,4#[=payD:3e3]
 :%,2@
 :%,1$[[ttsuccZ]][=unl:true][zh]整数后继运算succZ[en]integer successor operation succZ
@@ -1668,7 +1668,7 @@ export const mapData = `
 :%*,5,2$[=getD:660]
 :%,2#[t]Pn:nat,eq (mul 0 n) 0
 :%,1#[t]Pn:nat,eq (mul 1 n) n
-:%*,4$[[ttList]][=unl:true][zh]列表类型List[en]the List type
+:%*,4$[[ttList]][=ac:"ttList"][=unl:true][zh]列表类型List[en]the List type
 :%,1#[t]Pn:nat,eq [n](mul n 2) (double n)
 :%,1#[t]Px:nat,Py:nat,eq (mul x y) (mul y x)
 :%*,3#[=payD:1e4]
@@ -1678,13 +1678,13 @@ export const mapData = `
 :%*,4,5,2$[=getD:660]
 :%*,4,4#[[:=Combin]][zh]定义组合函数[n]Combin:nat->nat->nat[n]使得Combin n k === [n] n!/k!/(n-k)![n]#t:=[en]Define a combination function[n]Combin:nat->nat->nat[n]such that Combin n k ===[n] n!/k!/(n-k)![n]#t:=
 :%*,4,4,1$[=getD:6.6e3]
-:%*,4,1#[[:=factorial2]][zh]定义双阶乘函数[n]factorial2:nat->nat[n]使得对奇数n有[n]factorial2 n = 1x3x5x..xn[n]对偶数n有[n]factorial2 n = 2x4x6x..xn[n]#t:=[en]Define the double factorial function[n]factorial2:nat->nat[n]such that for odd n[n]factorial2 n = 1x3x5x..xn[n]and for even n[n]factorial2 n = 2x4x6x..xn[n]#t:=
+:%*,4,1#[[:=factorial2]][=ac:":=factorial2"][zh]定义双阶乘函数[n]factorial2:nat->nat[n]使得对奇数n有[n]factorial2 n = 1x3x5x..xn[n]对偶数n有[n]factorial2 n = 2x4x6x..xn[n]#t:=[en]Define the double factorial function[n]factorial2:nat->nat[n]such that for odd n[n]factorial2 n = 1x3x5x..xn[n]and for even n[n]factorial2 n = 2x4x6x..xn[n]#t:=
 :%*,4,1,5$[=getD:6.6e3]
 :%,1#[t]Px:nat,Py:nat,Pz:nat,[n]eq (mul x (add y z))[n](add (mul x y) (mul x z))
 :%*,4$[[tt!]][=unl:true][zh]阶乘函数[n]factorial : nat->nat[en]factorial function[n]factorial : nat->nat
 :%,1#[t]Px:nat,Py:nat,Pz:nat,[n]eq (mul x (mul y z))[n](mul (mul x y) z)
 :%,1$[=getD:500]
-:%,1#[[tt5R7]][t]Px:nat,not (eq (mul x 5) 7)
+:%,1#[[tt5R7]][=ac:"tt5R7"][t]Px:nat,not (eq (mul x 5) 7)
 :%,2$[=getD:5.7e3]
 :hint-tt-a3,3@[zh]这种函数嵌套类型[n]其实就是多元函数类型[en]This nested function type[n]is actually a multi-argument function type
 :%,3@[zh]输入的自变量为[n]a:U、b:U、c:U、[n]x:a->b->c、y:a->b、[n]z:a这六个[en]Input arguments are[n]a:U, b:U, c:U,[n]x:a->b->c, y:a->b,[n]z:a (total 6 inputs)
