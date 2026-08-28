@@ -1,0 +1,249 @@
+/* ============================================================
+   尺规层（R-layer）：Euclidea 风格 2D/3D 尺规作图
+   与全站主题一致：浅色卡片、圆角、主色 #1a5cff
+   ============================================================ */
+div[data-layer="R-layer"] {
+    height: calc(100vh - 50px);
+}
+
+.rl-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    font-size: 0.85rem;
+    color: #1e293b;
+}
+
+/* ---- 顶栏：模式切换 + 目标 + 操作 ---- */
+.rl-top {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.5rem 0.8rem;
+    background: #fff;
+    border-bottom: 1px solid #eef2f6;
+    flex-shrink: 0;
+}
+
+.rl-mode {
+    display: flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.rl-mode .btn-sm.active {
+    background: #1a5cff;
+    color: #fff;
+}
+
+.rl-goal {
+    flex: 1;
+    min-width: 0;
+}
+
+.rl-goal-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.rl-goal-desc {
+    color: #5b6a7e;
+    font-size: 0.78rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rl-actions {
+    display: flex;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+/* ---- 主体：工具栏 + 画布 + 侧栏 ---- */
+.rl-main {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+/* 工具栏（Euclidea 式竖排） */
+.rl-toolbar {
+    width: 78px;
+    background: #fff;
+    border-right: 1px solid #eef2f6;
+    overflow-y: auto;
+    padding: 0.35rem 0.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    flex-shrink: 0;
+}
+
+.rl-tool {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0.5rem 0.2rem;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #5b6a7e;
+    font-size: 0.72rem;
+    line-height: 1.1;
+    transition: background 0.15s, color 0.15s;
+}
+
+.rl-tool:hover {
+    background: #f0f4fe;
+    color: #1a2b44;
+}
+
+.rl-tool.active {
+    background: #eef4ff;
+    color: #1a5cff;
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px rgba(26, 92, 255, 0.35);
+}
+
+.rl-tool-ico {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+/* 画布 */
+.rl-canvas-wrap {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+}
+
+#rlCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #fbfcfe;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+/* 右侧面板 */
+.rl-side {
+    width: 230px;
+    flex-shrink: 0;
+    padding: 0.5rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: #f6f8fb;
+}
+
+.rl-card {
+    margin: 0;
+    box-shadow: none;
+    border: 1px solid #eef2f6;
+}
+
+.rl-steps {
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 0.2rem 0.4rem;
+}
+
+.rl-step {
+    padding: 0.25rem 0.3rem;
+    border-bottom: 1px dashed #eef2f6;
+    font-size: 0.8rem;
+    color: #334155;
+}
+
+.rl-step-empty {
+    color: #94a3b8;
+}
+
+.rl-hint {
+    padding: 0.4rem;
+    font-size: 0.78rem;
+    color: #334155;
+    line-height: 1.5;
+    min-height: 2.2em;
+}
+
+.rl-hint.err {
+    color: #e05555;
+    font-weight: 600;
+}
+
+.rl-coord {
+    padding: 0.4rem;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 0.78rem;
+    color: #1a5cff;
+}
+
+/* ---- 图元列表 ---- */
+.rl-elems {
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 0.2rem 0.3rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.rl-elem {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.22rem 0.4rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #334155;
+    transition: background 0.12s;
+}
+
+.rl-elem:hover {
+    background: #f0f4fe;
+}
+
+.rl-elem.active {
+    background: #eef4ff;
+    color: #1a5cff;
+    font-weight: 600;
+}
+
+.rl-elem-ico {
+    width: 1.1em;
+    text-align: center;
+    color: #94a3b8;
+    flex-shrink: 0;
+}
+
+.rl-elem.active .rl-elem-ico {
+    color: #1a5cff;
+}
+
+.rl-elem-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 窄屏：隐藏右侧面板与工具文字 */
+@media (max-width: 700px) {
+    .rl-side {
+        display: none;
+    }
+
+    .rl-toolbar {
+        width: 56px;
+    }
+
+    .rl-tool-name {
+        display: none;
+    }
+}

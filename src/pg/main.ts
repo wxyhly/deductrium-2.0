@@ -1,6 +1,6 @@
 import { LangMgr } from "../lang.js";
 import { SaveLoad } from "../saveload.js";
-import { knowledgeBase } from "../kb.js";
+import { knowledgeBase } from "./kb.js";
 import { HSParser } from "../hs/core/parser.js";
 import { SyntaxViewer } from "../astrender.js";
 

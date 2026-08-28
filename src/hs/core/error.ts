@@ -8,6 +8,7 @@ export type HSErrorInfo =
     | { type: "isNotItem"; ast: AST; metaVarName?: string }
     | { type: "createRule"; ruleName: AST; cause: unknown }
     | { type: "matchCond"; conditionIndex: number; cause: unknown }
+    | { type: "futureCondition"; conditionId: number; appendId: number }
     | { type: "assertFail"; assertionIndex: number; cause: unknown }
     | { type: "sbFail"; destination: AST; quantifierSet: Set<string>; cause: unknown }
     | { type: "assertForeverFail"; ast: AST }
@@ -53,7 +54,19 @@ export type HSErrorInfo =
     | { type: "noSelfLift" }
     | { type: "errRuleUsed"; rule: string; cause: unknown }
     | { type: "replayConclusionMismatch" }
-    | { type: "badMetaRule" };
+    | { type: "badMetaRule" }
+    | { type: "uNeedCond"; ruleName: string }
+    | { type: "nestedCVFolder" }
+    | { type: "mcptInCVFolder" }
+    | { type: "mcptFalse"; atoms: AST[]; hyp: number }
+    | { type: "mcptTooMany"; count: number; max: number }
+    | { type: "msbtBadTemplate" }
+    | { type: "msbtNoMatch" }
+    | { type: "msbtBadIndex" }
+    | { type: "msbtRuleWithCond" }
+    | { type: "mcntNoMatch" }
+    | { type: "mcntBadIndex" }
+    | { type: "mcntAssertFail"; cause: unknown };
 
 export function isHSErrorInfo(value: unknown): value is HSErrorInfo {
     return typeof value === "object" && value !== null && "type" in value;
@@ -67,6 +80,7 @@ export const HSError: {
     isNotItem(ast: AST, metaVarName?: string): HSErrorInfo;
     createRule(ruleName: AST, cause: unknown): HSErrorInfo;
     matchCond(conditionIndex: number, cause: unknown): HSErrorInfo;
+    futureCondition(conditionId: number, appendId: number): HSErrorInfo;
     assertFail(assertionIndex: number, cause: unknown): HSErrorInfo;
     sbFail(destination: AST, quantifierSet: Set<string>, cause: unknown): HSErrorInfo;
     assertForeverFail(ast: AST): HSErrorInfo;
@@ -112,6 +126,18 @@ export const HSError: {
     errRuleUsed(rule: string, cause: unknown): HSErrorInfo;
     replayConclusionMismatch: HSErrorInfo;
     badMetaRule: HSErrorInfo;
+    uNeedCond(ruleName: string): HSErrorInfo;
+    nestedCVFolder: HSErrorInfo;
+    mcptInCVFolder: HSErrorInfo;
+    mcptFalse(atoms: AST[], hyp: number): HSErrorInfo;
+    mcptTooMany(count: number, max: number): HSErrorInfo;
+    msbtBadTemplate: HSErrorInfo;
+    msbtNoMatch: HSErrorInfo;
+    msbtBadIndex: HSErrorInfo;
+    msbtRuleWithCond: HSErrorInfo;
+    mcntNoMatch: HSErrorInfo;
+    mcntBadIndex: HSErrorInfo;
+    mcntAssertFail(cause: unknown): HSErrorInfo;
 } = {
     isItemAndWff(name: string): HSErrorInfo { return { type: "isItemAndWff", name }; },
     isNotVar(ast: AST, metaVarName?: string): HSErrorInfo { return { type: "isNotVar", ast, metaVarName }; },
@@ -120,6 +146,7 @@ export const HSError: {
     isNotItem(ast: AST, metaVarName?: string): HSErrorInfo { return { type: "isNotItem", ast, metaVarName }; },
     createRule(ruleName: AST, cause: unknown): HSErrorInfo { return { type: "createRule", ruleName, cause }; },
     matchCond(conditionIndex: number, cause: unknown): HSErrorInfo { return { type: "matchCond", conditionIndex, cause }; },
+    futureCondition(conditionId: number, appendId: number): HSErrorInfo { return { type: "futureCondition", conditionId, appendId }; },
     assertFail(assertionIndex: number, cause: unknown): HSErrorInfo { return { type: "assertFail", assertionIndex, cause }; },
     sbFail(destination: AST, quantifierSet: Set<string>, cause: unknown): HSErrorInfo { return { type: "sbFail", destination, quantifierSet, cause }; },
     assertForeverFail(ast: AST): HSErrorInfo { return { type: "assertForeverFail", ast }; },
@@ -166,6 +193,18 @@ export const HSError: {
     errRuleUsed(rule: string, cause: unknown): HSErrorInfo { return { type: "errRuleUsed", rule, cause }; },
     replayConclusionMismatch: { type: "replayConclusionMismatch" },
     badMetaRule: { type: "badMetaRule" },
+    uNeedCond(ruleName: string): HSErrorInfo { return { type: "uNeedCond", ruleName }; },
+    nestedCVFolder: { type: "nestedCVFolder" },
+    mcptInCVFolder: { type: "mcptInCVFolder" },
+    mcptFalse(atoms: AST[], hyp: number): HSErrorInfo { return { type: "mcptFalse", atoms, hyp }; },
+    mcptTooMany(count: number, max: number): HSErrorInfo { return { type: "mcptTooMany", count, max }; },
+    msbtBadTemplate: { type: "msbtBadTemplate" },
+    msbtNoMatch: { type: "msbtNoMatch" },
+    msbtBadIndex: { type: "msbtBadIndex" },
+    msbtRuleWithCond: { type: "msbtRuleWithCond" },
+    mcntNoMatch: { type: "mcntNoMatch" },
+    mcntBadIndex: { type: "mcntBadIndex" },
+    mcntAssertFail(cause: unknown): HSErrorInfo { return { type: "mcntAssertFail", cause }; },
     // 规则 step 生成失败：ruleName 为空表示局部异常（由 getD 补全规则名）
     genStepFail(ruleName: string, cause: unknown, steps?: string): HSErrorInfo { return { type: "genStepFail", ruleName, cause, steps }; }
 };

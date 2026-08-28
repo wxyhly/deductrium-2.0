@@ -4,10 +4,11 @@ const symbolMap = {
     "→": ">", "¬": "~", "×": "\\x",
     "λ": "\\l", "Π": "\\p", "Σ": "\\s", "𝖶": "\\w",
     "≃": "~=", "≡": "==", "▪": "*",
-    "⟦": "[[", "⟧": "]]"
+    "⟦": "[[", "⟧": "]]",
+    "𝒰": "\\u", // 宇宙类型形成子（𝒰 = \u，如 \u 0、\u u、\u succ(u)）
 };
 const constMap = {
-    "ℕ": "\\N", "ℤ": "\\Z", "ℚ": "\\Q", "ℝ": "\\R", "𝒰": "\\u",
+    "ℕ": "\\N", "ℤ": "\\Z", "ℚ": "\\Q", "ℝ": "\\R",
 };
 const strMap = Object.assign({}, symbolMap, constMap);
 // 生成 ASCII → Unicode 输入替换表（含组合替换，同 HS 的 genAscii2unicodeTable）：
@@ -31,6 +32,40 @@ function genAscii2unicodeTable(strMap) {
 const asciiToUnicodeArr = genAscii2unicodeTable(strMap);
 export const asciiToUnicode = Object.fromEntries(asciiToUnicodeArr);
 const charSeps = '()[]{},;.~|:=+* \t\n';
+// ========== token 分类（由系统表驱动，可动态更新） ==========
+// 系统表 [type]/[ctor]/[ind]/[def] 规则中定义的原子名集合。
+// getTokens 遇到这些 atom 时把 token.type 设为 type/ctor/ind/def（→ CSS token-type 等）。
+// 因为每次渲染都会 new TypeParser，这里用模块级集合共享；gui.ts 构建/刷新系统表时调用 setTokenCategories。
+const tokenCategories = {
+    type: new Set(),
+    ctor: new Set(),
+    ind: new Set(),
+    def: new Set(),
+};
+export function setTokenCategories(cats) {
+    tokenCategories.type = new Set(cats.type ?? []);
+    tokenCategories.ctor = new Set(cats.ctor ?? []);
+    tokenCategories.ind = new Set(cats.ind ?? []);
+    tokenCategories.def = new Set(cats.def ?? []);
+}
+// 宇宙相关 token：\u/\U/𝒰（宇宙形成子）、\u@/U@/U@:（层级排序）、Uu/Uv/U_/U0..（𝒰 u 等）、@0/@succ/@max（层级字面量）
+function isUniverseToken(text) {
+    if (text === '\\u' || text === '\\U' || text === '\\u@' || text === '\\U@')
+        return true;
+    if (text === 'U' || text === 'U@' || text === 'U@:')
+        return true;
+    if (text === '@succ' || text === '@max')
+        return true;
+    if (/^@\d+$/.test(text))
+        return true; // @0 @1...
+    if (/^U[a-z_]\w*$/.test(text) || /^U\d+$/.test(text))
+        return true; // Uu Uv U_ U0
+    return false;
+}
+// 解构的 ind_xxx 恒为 token-ind（即使来自 [def] 别名的 ind_Bool := @ind_Bool ?u）
+function isIndName(text) {
+    return text.startsWith('ind_') || text.startsWith('@ind_');
+}
 export class TypeParser {
     tokens = [];
     tokensWithSpaces = [];
@@ -73,24 +108,39 @@ export class TypeParser {
                 pos += matchedUni.length;
                 continue;
             }
-            // 2. {}
+            // 2. 定义相等：=== / ==（≡ 的 ASCII 写法；GUI 输入替换也会把 == 换成 ≡）
+            if (unicodeText.startsWith('===', pos) || unicodeText.startsWith('==', pos)) {
+                const len = unicodeText.startsWith('===', pos) ? 3 : 2;
+                tokens.push({ type: 'sym', text: '==', displayText: '≡', start: pos, end: pos + len });
+                pos += len;
+                continue;
+            }
+            // 3. :=
             if (unicodeText.startsWith(':=', pos)) {
                 tokens.push({ type: 'sym', text: ':=', displayText: ':=', start: pos, end: pos + 2 });
                 pos += 2;
                 continue;
             }
-            // 3. 单字符分隔符
+            // 4. 单字符分隔符
             if (charSeps.includes(unicodeText[pos])) {
                 tokens.push({ type: "(){}|[]".includes(unicodeText[pos]) ? 'layer' : 'sym', text: unicodeText[pos], displayText: unicodeText[pos], start: pos, end: pos + 1 });
                 pos++;
                 continue;
             }
-            // 4. atom
+            // 4. atom（绑定符符号 Π/λ/Σ/𝖶 出现在词中间时并入原子，如 ind_Σ；
+            //    箭头/相等/其它符号仍切分，保证 nat→nat、x=y 正常）
             const start = pos;
-            while (pos < unicodeText.length &&
-                !charSeps.includes(unicodeText[pos]) &&
-                !Object.keys(symbolMap).includes(unicodeText[pos])) {
-                pos++;
+            while (pos < unicodeText.length && !charSeps.includes(unicodeText[pos])) {
+                const sym = Object.keys(symbolMap).find(k => unicodeText.startsWith(k, pos));
+                if (!sym) {
+                    pos++;
+                    continue;
+                }
+                if (["Π", "λ", "Σ", "𝖶"].includes(sym) && pos > start) {
+                    pos += sym.length;
+                    continue;
+                }
+                break;
             }
             const word = unicodeText.slice(start, pos);
             tokens.push({
@@ -104,6 +154,59 @@ export class TypeParser {
         return tokens;
     }
     getTokens() {
+        // token 分类（高亮）：
+        //  - 宇宙层级表达式：𝒰（sym \u）及其后随的层级（数字角标/变量/@/succ/max/(...)）→ universe
+        //  - 系统表 [type]/[ctor]/[ind]/[def] 定义的原子 → 对应类别；自然数字面量（0/1/5...）→ ctor
+        let uLevel = 0; // 0=不在宇宙层级表达式；1=刚见到 𝒰；2=见到 succ/max 待 (；3=在 (…) 内
+        for (const t of this.tokens) {
+            if (t.type === 'space')
+                continue;
+            if (t.type === 'sym' && (t.text === '\\u' || t.text === '\\U')) {
+                // 𝒰 宇宙形成子
+                t.type = 'universe';
+                uLevel = 1;
+                continue;
+            }
+            if (uLevel > 0) {
+                if (t.type === 'atom') {
+                    // 层级：数字角标/变量/@/succ/max
+                    t.type = 'universe';
+                    if (t.text === 'succ' || t.text === 'max')
+                        uLevel = 2;
+                    continue;
+                }
+                if (t.type === 'sym') {
+                    if (t.text === '(') {
+                        uLevel = 3;
+                        continue;
+                    }
+                    if (t.text === ')') {
+                        uLevel = uLevel === 3 ? 1 : 0;
+                        continue;
+                    }
+                    if (t.text === ',' && uLevel === 3)
+                        continue;
+                    uLevel = 0; // : → > . ≡ 等结束层级表达式，回落到普通分类
+                }
+                else {
+                    uLevel = 0;
+                }
+            }
+            if (t.type === 'atom') {
+                if (/^\d+$/.test(t.text))
+                    t.type = 'ctor'; // 自然数字面量
+                else if (isUniverseToken(t.text))
+                    t.type = 'universe';
+                else if (isIndName(t.text) || tokenCategories.ind.has(t.text))
+                    t.type = 'ind';
+                else if (tokenCategories.type.has(t.text))
+                    t.type = 'type';
+                else if (tokenCategories.ctor.has(t.text))
+                    t.type = 'ctor';
+                else if (tokenCategories.def.has(t.text))
+                    t.type = 'def';
+            }
+        }
         return this.tokens;
     }
     parse(unicodeText) {
@@ -154,7 +257,8 @@ export class TypeParser {
             const opToken = this.token;
             const start = left.start;
             this.nextSym();
-            const right = this.typeTerm0();
+            // 右结合：a→b→c = a→(b→c)（函数类型标准结合性）
+            const right = this.type();
             const ast = new AST(NodeType.SYM, op, left, right).range(start, right.end);
             opToken.parentAST = ast;
             return ast;
@@ -313,15 +417,23 @@ export class TypeParser {
             tokens.forEach(e => e.parentAST = bound); // 操作符 token 高亮整个 bound
             return bound;
         }
-        // \U, \Usucc, \Umax
-        if (token.text.startsWith('\\U')) {
+        // 宇宙：\u / \U / 𝒰（后随层级）、\u@（层级排序）、\usucc/\umax（层级运算）
+        // 兼容 hott 写法：U（=𝒰0）、U@（层级排序）、Uu/Uv/U_/U0..（=𝒰 u 等，由 kast 处理）
+        const uTok = token.text;
+        const isUniverseKw = uTok === '\\u' || uTok === '\\U' || uTok === '\\u@' || uTok === '\\U@' ||
+            uTok.startsWith('\\usucc') || uTok.startsWith('\\umax') ||
+            uTok.startsWith('\\Usucc') || uTok.startsWith('\\Umax');
+        if (isUniverseKw) {
             const start = token.start;
-            if (token.text === '\\U') {
+            // 层级排序：\u@ / \U@
+            if (uTok === '\\u@' || uTok === '\\U@') {
                 this.nextSym();
-                const index = this.parseAtom(); // 期望数字或变量
-                return new AST(NodeType.U, '', index).range(start, index.end);
+                return new AST(NodeType.ATOM, 'U@').range(start, token.end);
             }
-            else if (token.text === '\\Usucc' || token.text === '\\Umax') {
+            // 层级运算：\usucc(...) / \umax(...)
+            const isSucc = uTok.startsWith('\\usucc') || uTok.startsWith('\\Usucc');
+            const isMax = uTok.startsWith('\\umax') || uTok.startsWith('\\Umax');
+            if (isSucc || isMax) {
                 const ufnToken = token;
                 this.nextSym();
                 this.expectSym('(');
@@ -333,10 +445,43 @@ export class TypeParser {
                     }
                     this.expectSym(')');
                 }
-                const ufn = new AST(NodeType.UFN, token.text, ...args).range(start, this.tokens[this.cursor - 2].end);
+                const ufn = new AST(NodeType.UFN, isSucc ? '\\usucc' : '\\umax', ...args).range(start, this.tokens[this.cursor - 2].end);
                 ufnToken.parentAST = ufn;
                 return ufn;
             }
+            // 裸宇宙：\u / \U / 𝒰 —— 后随单个层级 atom（数字/变量/_）或 @（=层级排序）；无则 = 𝒰0
+            this.nextSym();
+            const nxt = this.token;
+            if (nxt && nxt.text === '@') {
+                this.nextSym();
+                return new AST(NodeType.ATOM, 'U@').range(start, nxt.end);
+            }
+            // 𝒰 succ(...) / 𝒰 max(...)：把 succ/max 当作层级运算
+            if (nxt && nxt.type === 'atom' && (nxt.text === 'succ' || nxt.text === 'max')) {
+                const op = nxt.text;
+                const opTok = nxt;
+                this.nextSym();
+                this.expectSym('(');
+                const args = [];
+                if (!this.acceptSym(')')) {
+                    args.push(this.type());
+                    while (this.acceptSym(','))
+                        args.push(this.type());
+                    this.expectSym(')');
+                }
+                const ufn = new AST(NodeType.UFN, op === 'succ' ? '\\usucc' : '\\umax', ...args).range(start, this.tokens[this.cursor - 2].end);
+                opTok.parentAST = ufn;
+                return ufn;
+            }
+            let level;
+            if (nxt && nxt.type === 'atom' && /^[A-Za-z0-9_]+$/.test(nxt.text)) {
+                level = new AST(NodeType.ATOM, nxt.text).range(nxt.start, nxt.end);
+                this.nextSym();
+            }
+            else {
+                level = new AST(NodeType.ATOM, '0').range(start, token.end); // 裸 𝒰 = 𝒰0
+            }
+            return new AST(NodeType.U, '', level).range(start, level.end ?? token.end);
         }
         // 变量
         return this.parseAtom();

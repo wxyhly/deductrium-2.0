@@ -2,14 +2,14 @@ import { TTGui } from "./gui.js";
 import { LangMgr } from "../lang.js";
 
 // ==================== 类型层（T-layer） ====================
-// 与推理层并列的第三层：系统表（规则）+ 定理表（命题）。
-// 执行逻辑与推理层完全不同（此处仅 GUI，逻辑后续接入）。
+// 与推理层并列的第三层：系统表（类型定义）+ 定理表（用户定义/断言/推断）。
+// creative=true 时加载全量 HoTT 初始系统；否则最小系统（True/False/nat）。
 export class TTLayer {
     private gui: TTGui;
     onchange?: () => void;
 
-    constructor() {
-        this.gui = new TTGui();
+    constructor(creative = false) {
+        this.gui = new TTGui(creative);
         this.gui.onchange = () => this.onchange?.();
         this.initButtons();
     }
@@ -34,4 +34,5 @@ export class TTLayer {
         this.gui.deserialize(data);
     }
     getGui() { return this.gui; }
+    getCore() { return this.gui.core; }
 }

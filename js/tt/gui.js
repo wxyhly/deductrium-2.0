@@ -1,37 +1,87 @@
 import { LangMgr } from "../lang.js";
 import { SyntaxEditor, SyntaxViewer } from "../astrender.js";
 import { TreeListViewer } from "../listmgr.js";
-import { TypeParser } from "./parser.js";
-// prefix 翻译：中文 构造/类型，英文 CTOR/TYPE
+import { TypeParser, setTokenCategories } from "./parser.js";
+import { Core } from "./core.js";
+import { initTypeSystem } from "./initial.js";
+import { astToString } from "./kast.js";
+// prefix 翻译：中文 类型/构造/解构/定义/计算，英文 TYPE/CTOR/IND/DEF/COMPUTE
 export function ttPrefixName(prefix) {
     if (prefix === "type")
         return LangMgr.text.ttType;
     if (prefix === "ctor")
         return LangMgr.text.ttCtor;
+    if (prefix === "ind")
+        return LangMgr.text.ttInd;
+    if (prefix === "def")
+        return LangMgr.text.ttDef;
+    if (prefix === "rule")
+        return LangMgr.text.ttRule;
     return prefix;
 }
-// 初始系统表数据：True:U 文件夹（内含 true:True）+ False:U
-export function initSysData() {
-    return [
-        {
-            uuid: 1, name: "type", prefix: "type", content: "True:U",
-            children: [
-                { uuid: 2, name: "ctor", prefix: "ctor", content: "true:True" },
-            ],
-        },
-        { uuid: 3, name: "type", prefix: "type", content: "False:U" },
-    ];
+// 系统表：按类型分组构建。每个 group 一个文件夹，文件夹内容 = 该类型的定义
+// （组内第一条规则，kind=type 或 def），其余规则作为子节点。
+export function buildSysData(rules) {
+    const groups = new Map();
+    for (const r of rules) {
+        if (!groups.has(r.group))
+            groups.set(r.group, []);
+        groups.get(r.group).push(r);
+    }
+    const out = [];
+    let uuid = 1;
+    for (const [group, list] of groups) {
+        const head = list[0];
+        const children = list.slice(1);
+        out.push({
+            uuid: uuid++, name: head.kind, prefix: head.kind, content: head.text,
+            children: children.length ? children.map(c => ({
+                uuid: uuid++, name: c.kind, prefix: c.kind, content: c.text,
+            })) : undefined,
+        });
+    }
+    return out;
+}
+// 初始系统表数据：创造模式全量 HoTT 系统，其余模式最小集
+export function initSysData(creative) {
+    return buildSysData(initTypeSystem(creative));
+}
+// 从系统规则收集 token 分类：规则文本形如 `True:𝒰`、`true:True`、`@ind_Bool:Πu:𝒰@...`、`pred := ...`。
+// 取 `:` 或 `:=` 前的名称作为该类别定义的原子（名称可数字开头，如 0b/1b/0Z）；无法提取则跳过。
+function collectTokenCategories(rules) {
+    const cats = { type: new Set(), ctor: new Set(), ind: new Set(), def: new Set() };
+    for (const r of rules) {
+        const m = /^([@A-Za-z_0-9][A-Za-z0-9_]*)\s*(?=:|:=)/.exec(r.text);
+        if (!m)
+            continue;
+        const name = m[1];
+        if (r.kind === 'type')
+            cats.type.add(name);
+        else if (r.kind === 'ctor')
+            cats.ctor.add(name);
+        else if (r.kind === 'ind')
+            cats.ind.add(name);
+        else if (r.kind === 'def')
+            cats.def.add(name);
+    }
+    return cats;
 }
 export class TTGui {
     sysData = [];
     tableData = [];
+    // 类型论核心：系统表注册 + 定理表检查
+    core = new Core;
+    creative;
     sysView;
     tableView;
     // 活动文件夹（定理表）：新命题默认添加到这里
     activeFolder = null;
     onchange;
-    constructor() {
-        this.sysData = initSysData();
+    constructor(creative = false) {
+        this.creative = creative;
+        this.sysData = initSysData(creative);
+        this.core.registerSystemRules(initTypeSystem(creative));
+        this.applyTokenCategories();
         this.sysView = new TreeListViewer(this.sysData, document.getElementById('ttSysTable'));
         this.tableView = new TreeListViewer(this.tableData, document.getElementById('ttTable'));
         this.initSysView();
@@ -39,6 +89,10 @@ export class TTGui {
         // TreeListViewer 构造时已用默认回调渲染过一次，重新设置回调后需刷新
         this.sysView.refresh();
         this.tableView.refresh();
+    }
+    // 系统表动态更新后调用：重算 token 分类并重绘（高亮随系统表 refresh）
+    applyTokenCategories() {
+        setTokenCategories(collectTokenCategories(initTypeSystem(this.creative)));
     }
     // ===== 系统表（只读） =====
     initSysView() {
@@ -62,14 +116,51 @@ export class TTGui {
     }
     // ===== 定理表 =====
     initTableView() {
-        // 内容列：叶子命题语法高亮（SyntaxViewer + TypeParser）；文件夹纯文字（无高亮）
+        // 内容列：用户输入内容（点击→编辑）+ 检查结果信息块跟在后面（浅色背景、点击不编辑、可选中复制）
+        //  - 类型信息（定义/推断）：": " + SyntaxViewer 高亮的类型
+        //  - 错误信息：浅红背景纯文本
         this.tableView.renderContent = (node, span) => {
             if (node.children) {
                 span.textContent = node.content;
+                return;
             }
-            else {
-                new SyntaxViewer(span, new TypeParser, node.content);
+            const content = document.createElement('span');
+            content.className = 'tt-content-part';
+            new SyntaxViewer(content, new TypeParser, node.content);
+            span.appendChild(content);
+            if (node.ttErr) {
+                const info = document.createElement('span');
+                info.className = 'tt-info tt-info-err';
+                info.textContent = node.ttErr;
+                span.appendChild(info);
             }
+            else if (node.ttType !== undefined && node.ttType !== "✓") {
+                const info = document.createElement('span');
+                info.className = 'tt-info tt-info-type';
+                info.appendChild(document.createTextNode(": "));
+                const typeSpan = document.createElement('span');
+                new SyntaxViewer(typeSpan, new TypeParser, node.ttType);
+                info.appendChild(typeSpan);
+                span.appendChild(info);
+            }
+        };
+        // 额外列：只显示检查是否成功（✓/⚠），详细信息在内容列的信息块里
+        this.tableView.renderExtra = node => {
+            if (node.children)
+                return document.createTextNode("");
+            if (node.ttErr) {
+                const s = document.createElement('span');
+                s.className = 'tt-result tt-result-err';
+                s.textContent = '⚠';
+                return s;
+            }
+            if (node.ttType !== undefined) {
+                const s = document.createElement('span');
+                s.className = 'tt-result tt-result-ok';
+                s.textContent = '✓';
+                return s;
+            }
+            return document.createTextNode("");
         };
         // name 列只显示行号：完整树前序遍历编号（折叠的项也占行号）
         this.tableView.renderName = node => {
@@ -90,12 +181,13 @@ export class TTGui {
             return String(find(this.tableData));
         };
         // 渲染后：给叶子命题的内容列绑定点击→就地编辑内容（SyntaxEditor 语法高亮；文件夹内容列是展开/折叠，不绑定）
+        // 类型/错误信息块（.tt-info）不触发编辑，便于选中复制
         this.tableView.onAfterRender = () => {
             const rowsContainer = document.getElementById('ttRows');
             rowsContainer?.querySelectorAll('.item-row:not(.folder-row) .cell-content').forEach(cell => {
                 cell.addEventListener('click', (e) => {
                     const t = e.target;
-                    if (t.closest('.cell-actions') || t.closest('.toggle-icon') || t.closest('input') || t.closest('.editor-container'))
+                    if (t.closest('.cell-actions') || t.closest('.toggle-icon') || t.closest('input') || t.closest('.editor-container') || t.closest('.tt-info'))
                         return;
                     const row = cell.closest('.item-row');
                     const id = Number(row?.dataset.uuid);
@@ -185,6 +277,42 @@ export class TTGui {
         this.onchange?.();
         return node;
     }
+    // 定理表条目提交后的类型检查：
+    //   x := v / x := v : T → 定义（记录推断类型）
+    //   a : T / a == b      → 断言（记录 ✓）
+    //   裸表达式           → 推断（记录类型）
+    // 失败记录 ttErr（渲染标红）；成功清除旧错误。
+    checkAndMark(node) {
+        delete node.ttErr;
+        delete node.ttType;
+        const text = node.content.trim();
+        if (!text)
+            return;
+        try {
+            const ast = this.core.parse(text);
+            if (!ast)
+                throw new Error(LangMgr.text.ttParseError);
+            const r = this.core.run(ast);
+            if (r.kind === "define" || r.kind === "infer") {
+                node.ttType = astToString(r.type);
+            }
+            else {
+                node.ttType = "✓";
+            }
+        }
+        catch (e) {
+            node.ttErr = e.message;
+        }
+    }
+    // 递归检查整棵定理表（加载存档后重放检查）
+    checkAll(list) {
+        for (const n of list) {
+            if (n.children)
+                this.checkAll(n.children);
+            else
+                this.checkAndMark(n);
+        }
+    }
     // "+ 命题"按钮：添加一个空命题行并立即进入就地编辑（语法高亮）
     addNewItem() {
         const node = this.addItem("");
@@ -193,18 +321,28 @@ export class TTGui {
         this.startContentEditById(node.uuid);
     }
     // 就地编辑内容：用 SyntaxEditor（语法高亮）替换内容列，失焦/Enter 提交，Esc 取消
+    // 只替换用户输入部分（.tt-content-part）；类型/错误信息块移到编辑器旁保留，方便对照复制
     startContentEditById(id) {
         const row = document.querySelector(`#ttRows .item-row[data-uuid="${id}"]`);
         if (!row)
             return;
-        const inner = row.querySelector('.cell-content .inner');
+        const cell = row.querySelector('.cell-content');
+        if (!cell)
+            return;
+        const inner = cell.querySelector('.inner');
         if (!inner)
             return;
+        // 取出信息块（若有），编辑期间留在内容列尾部
+        const info = inner.querySelector('.tt-info');
+        if (info)
+            inner.removeChild(info);
         // 内容列高亮容器
-        row.querySelector('.cell-content')?.classList.add('tt-inline-edit');
+        cell.classList.add('tt-inline-edit');
         const mount = document.createElement('div');
         mount.style.flex = '1';
         inner.replaceWith(mount);
+        if (info)
+            cell.appendChild(info);
         // 就地编辑与显示一样用 TypeParser（不加模式参数）
         const editor = new SyntaxEditor(mount, new TypeParser, (this.findNode(id)?.content ?? ""));
         editor.onEnter = () => editor.blur();
@@ -228,10 +366,13 @@ export class TTGui {
             const val = editor.getValue().trim();
             const node = this.findNode(id);
             if (node) {
-                if (val)
+                if (val) {
                     node.content = val;
-                else
+                    this.checkAndMark(node);
+                }
+                else {
                     this.tableView.deleteNode(id); // 空内容删除
+                }
             }
             editor.destroy();
             this.tableView.refresh();
@@ -279,6 +420,8 @@ export class TTGui {
         this.onchange?.();
     }
     refresh() {
+        // 系统表可能动态更新：先重算 token 分类再重绘（高亮随系统表 refresh）
+        this.applyTokenCategories();
         this.tableView.refresh();
         this.sysView.refresh();
     }
@@ -327,6 +470,8 @@ export class TTGui {
                 target.active = true;
             }
         }
+        // 重放类型检查（顺序敏感：前面的定义可被后面的引用）
+        this.checkAll(this.tableData);
         this.tableView.refresh();
     }
 }

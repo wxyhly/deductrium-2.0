@@ -1,5 +1,5 @@
 import { LangMgr } from "../lang.js";
-import { knowledgeBase } from "../kb.js";
+import { knowledgeBase } from "./kb.js";
 import { HSParser } from "../hs/core/parser.js";
 import { SyntaxViewer } from "../astrender.js";
 // ==================== 成就列表 ====================

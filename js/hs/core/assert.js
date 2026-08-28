@@ -548,8 +548,17 @@ export class Assertion {
                 new NFAssertion(dst, a.vs, a.qs).reduce(subres);
                 if (this.check(premises, subres).passed)
                     continue;
-                // nf c b D2 ∧ D1 ⊆ D2  ⇒  nf #sb(a,b,c,D1) b D2
                 if (a.vs.has(src.name)) {
+                    // nf a c D  ⇒  nf #sb(a,b,c) b D
+                    if (!qsNodes?.nodes?.length && dst.isAtom()) {
+                        if (this.check(premises, new NFAssertion(body, new Set([dst.name]), a.qs).reduce()).passed) {
+                            const reducedA = a.clone();
+                            reducedA.vs.delete(src.name);
+                            res.asts.push(reducedA);
+                            continue;
+                        }
+                    }
+                    // nf c b D2 ∧ D1 ⊆ D2  ⇒  nf #sb(a,b,c,D1) b D2
                     // check D1 ⊆ D2
                     const qs = new Set(qsNodes.nodes.map(n => n.name));
                     for (const d1 of qs) {
@@ -562,6 +571,7 @@ export class Assertion {
                         const reducedA = a.clone();
                         reducedA.vs.delete(src.name);
                         res.asts.push(reducedA);
+                        continue;
                     }
                 }
             }
@@ -606,11 +616,6 @@ export class Assertion {
         mut_ast.type = NodeType.SB;
         mut_ast.name = "";
     }
-    static assign(mut_ast, dst) {
-        mut_ast.type = dst.type;
-        mut_ast.name = dst.name;
-        mut_ast.nodes = dst.nodes.map(e => e.clone());
-    }
     static reduceSbFnInside(premises, mut_body, src, dst, qs) {
         const bodyName = mut_body.isAtom();
         // if body = src and src is not bounded by qs, then:
@@ -618,7 +623,7 @@ export class Assertion {
             const check = Assertion.check(premises, new NFAssertion(dst, qs, new Set).reduce());
             // if dst has variables bounded by qs, then fail and throw error, else #sb(body, src, dst, qs) => dst
             if (check.passed)
-                return Assertion.assign(mut_body, dst);
+                return mut_body.copyFrom(dst);
             else
                 throw HSError.sbFail(dst, qs, check.counterexample);
         }

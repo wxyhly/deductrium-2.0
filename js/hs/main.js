@@ -7,6 +7,7 @@ import { Deduction } from "./core/deduction.js";
 import { HilbertSystem } from "./core/core.js";
 import { HSError } from "./core/error.js";
 import { AtomSolver } from "./core/assert.js";
+import { MSBT, MCNT } from "./core/combine.js";
 import { NodeType } from "../asttype.js";
 import { LangMgr } from "../lang.js";
 import { Serde } from "./serde.js";
@@ -219,6 +220,9 @@ export class HSLayer {
             this.ruleListView.startRename(folder);
         });
         this.ruleListView.onAfterRender = this.propListView.onAfterRender = () => this.onchange?.();
+        // 推理表行高亮（逻辑在 SheetGui，这里只需在每次渲染后应用）
+        const origPropAfterRender = this.propListView.onAfterRender;
+        this.propListView.onAfterRender = () => { origPropAfterRender?.(); this.sheetGui.applyRowHighlight(); };
         // 定理表
         this.propListView.renderName = it => it.name || String(it.id);
         this.propListView.wideToggleFolderRange = it => it.from.type === "f";
@@ -347,7 +351,11 @@ export class HSLayer {
             ];
             if (p.from.type === "d") {
                 try {
-                    if (this.hilbertSystem.getD(p.from.data.deduction).step?.length) {
+                    const dname = p.from.data.deduction;
+                    // mcpt 是特殊元规则（不在 getD 中），所有 mcpt 步骤都可肢解（步骤 lazy 生成）
+                    const isMcpt = dname.type === NodeType.ATOM_DNAME && dname.name === "mcpt";
+                    const isMsbt = this.hilbertSystem.isMsbtDname(dname);
+                    if (isMcpt || isMsbt || this.hilbertSystem.getD(dname).step?.length) {
                         arr.push({ label: LangMgr.text.expand, action: "expand", icon: '🔧' });
                     }
                 }
@@ -356,6 +364,13 @@ export class HSLayer {
             else if (p.from.type === "f" || p.from.type === "c" || p.from.type === "v") {
                 if (p.children?.length) {
                     arr.push({ label: LangMgr.text.expand, action: "expand", icon: '🔧' });
+                }
+                // 文件夹可设为活跃（cd）或取消活跃（cd 0），与规则表菜单一致
+                if (p.active) {
+                    arr.push({ label: LangMgr.text.clearActiveFolder, action: "clearActiveFolder", icon: '⭐' });
+                }
+                else {
+                    arr.push({ label: LangMgr.text.setActiveFolder, action: "setActiveFolder", icon: '⭐' });
                 }
             }
             if (!p.relyAfter?.length)
@@ -392,6 +407,20 @@ export class HSLayer {
                     this.cmdEngine.reportError(e);
                     return false;
                 }
+            }
+            else if (action === "setActiveFolder") {
+                try {
+                    this.hilbertSystem.cd(p);
+                    this.propListView.refresh();
+                }
+                catch (e) {
+                    this.cmdEngine.reportError(e);
+                    return false;
+                }
+            }
+            else if (action === "clearActiveFolder") {
+                this.hilbertSystem.clearActiveDir();
+                this.propListView.refresh();
             }
             else if (action === "copy") {
                 this.cmdInput.setValue(p.getCmd());
@@ -482,7 +511,12 @@ export class HSLayer {
                         let ast;
                         try {
                             ast = new HSParser().parse(e, "dname");
-                            this.hilbertSystem.getD(ast);
+                            // msbt 是元规则（不注册为规则实体），跳过 getD 校验；
+                            // 但规则模板的结论须为 xx↔xx/xx=xx，第一时间检查
+                            if (this.isMsbtDname(ast))
+                                this.checkMsbtRuleTemplate(ast);
+                            else
+                                this.hilbertSystem.getD(ast);
                             return { success: true, value: ast };
                         }
                         catch (e) {
@@ -490,6 +524,10 @@ export class HSLayer {
                         }
                     }
                 };
+            }
+            // msbt：替换元定理（msbt>/msbt<），走独立参数流程
+            if (this.isMsbtDname(args[0])) {
+                return this.msbtGetNextParam(args);
             }
             const deduction = this.hilbertSystem.getD(args[0]);
             // 加1是加上了规则名
@@ -555,6 +593,12 @@ export class HSLayer {
             // 参数齐了执行时也清一下行点击回调（正常情况下clearState已清，这里兜底）
             this.propListView.onRowClick = () => { };
             this.ruleListView.onRowClick = () => { };
+            // msbt：替换元定理特殊处理（不进 getD）
+            if (this.isMsbtDname(args[0])) {
+                this.msbtExec(args);
+                this.propListView.refresh();
+                return;
+            }
             const deduction = this.hilbertSystem.getD(args[0]);
             const conds = args.slice(1, 1 + deduction.conditions.length).map((e, idx) => {
                 const p = this.hilbertSystem.getP(e.name);
@@ -688,6 +732,95 @@ export class HSLayer {
             this.hilbertSystem.hyp(args[0]);
             this.propListView.refresh();
         });
+        // mcpt：命题逻辑自动推理（特殊元规则，独立命令，不走 d 命令交互）
+        defineCommand('mcpt', (args) => {
+            if (args.length === 0) {
+                this.cmdInput.setParserArgs("wff");
+                return {
+                    prompt: LangMgr.text.plsEnterHyp, default: "", parse: e => {
+                        let ast;
+                        try {
+                            ast = new HSParser().parse(e, "wff");
+                            return { success: true, value: ast };
+                        }
+                        catch (e) {
+                            return { success: false, error: e };
+                        }
+                    }
+                };
+            }
+            return null;
+        }, async (args) => {
+            if (!args[0])
+                throw HSError.emptyValue;
+            this.hilbertSystem.mcpt(args[0]);
+            this.propListView.refresh();
+        });
+        // mcnt：量词换名元定理（特殊元规则，独立命令，不走 d 命令交互）
+        defineCommand('mcnt', (args) => {
+            // 完整参数：mcnt 目标(wff或推理步骤) 换名规则{..}
+            if (args.length >= 2)
+                return null;
+            const need = args.length; // 下一个要填的参数（0=目标，1=换名规则）
+            let prompt;
+            let mode;
+            if (need === 0) {
+                prompt = LangMgr.text.plsEnterMsbtTarget;
+                mode = "wff";
+            }
+            else {
+                prompt = LangMgr.text.plsEnterMcntRule;
+                mode = "item";
+            }
+            this.cmdInput.setParserArgs(mode);
+            // 目标参数：同时支持点击高亮ast插入 与 点击推理行选择步骤（与msbt一致）
+            if (need === 0) {
+                SyntaxViewer.onClickAst = this.cmdUIMgr.insertText;
+                this.propListView.onRowClick = p => { if (p.from.type !== "f" && p.from.type !== "v" && p.from.type !== "a")
+                    this.cmdEngine.run(String(p.id)); };
+                this.ruleListView.onRowClick = () => { };
+            }
+            else {
+                SyntaxViewer.onClickAst = null;
+                this.propListView.onRowClick = () => { };
+                this.ruleListView.onRowClick = () => { };
+            }
+            return {
+                prompt, default: "", parse: e => {
+                    let ast;
+                    try {
+                        if (mode === "item") {
+                            ast = new HSParser().parse(e, "item");
+                            MCNT.getsubIndices(ast); // 预校验换名规则格式
+                        }
+                        else {
+                            ast = new HSParser().parse(e, "wff");
+                            // 原子：可能是推理步骤引用（如 1/a），查表命中则当步骤；否则必须是合法wff
+                            if (ast.isAtom()) {
+                                if (!this.hilbertSystem.getP(ast.name))
+                                    ast.checkWFF();
+                            }
+                            else {
+                                ast.checkWFF();
+                            }
+                        }
+                        return { success: true, value: ast };
+                    }
+                    catch (e) {
+                        return { success: false, error: e };
+                    }
+                }
+            };
+        }, async (args) => {
+            // 参数齐了执行时也清一下行点击回调（正常情况下clearState已清，这里兜底，与msbt一致）
+            this.propListView.onRowClick = () => { };
+            this.ruleListView.onRowClick = () => { };
+            SyntaxViewer.onClickAst = null;
+            if (!args[0])
+                throw HSError.emptyValue;
+            this.hilbertSystem.mcnt(args);
+            this.propListView.refresh();
+        });
     }
     unlockMetaBlock(type) {
         this.unlockCommonMetaBlockCmd();
@@ -769,6 +902,144 @@ export class HSLayer {
             return s || "folder";
         const hit = segs.find(([lang]) => lang === LangMgr.lang);
         return (hit ? hit[1] : segs[0][1]) || "folder";
+    }
+    // ===== msbt 替换元定理（元规则，不注册为规则实体） =====
+    // dname 为 msbt>/msbt<（裸，或复合 (规则名)/(mcpt)）时为真
+    isMsbtDname(ast) {
+        if (ast.type === NodeType.ATOM_DNAME)
+            return ast.name === "msbt>" || ast.name === "msbt<";
+        if (ast.type === NodeType.NODE_DNAME && ast.nodes[0]) {
+            const n = ast.nodes[0].name;
+            return n === "msbt>" || n === "msbt<";
+        }
+        return false;
+    }
+    // 检查 msbt 规则模板：复合dname msbt>(规则名) 时，规则结论必须为 xx↔xx/xx=xx（第一时间报错）
+    checkMsbtRuleTemplate(dname) {
+        const isNode = dname.type === NodeType.NODE_DNAME;
+        const inner = isNode ? dname.nodes[1] : null;
+        if (!isNode || !inner || inner.name === "mcpt")
+            return; // 裸 msbt< / mcpt 模板无需在此检查
+        const rule = this.hilbertSystem.getD(inner);
+        if (rule.conditions.length)
+            throw HSError.msbtRuleWithCond;
+        const c = rule.conclusion;
+        if (!(c.type === NodeType.LOGIC && c.name === "<>") && !(c.type === NodeType.PRED && c.name === "="))
+            throw HSError.msbtBadTemplate;
+    }
+    // 检查 msbt 模板是否为 xx↔xx/xx=xx
+    checkMsbtPatternShape(ast) {
+        if (!(ast.type === NodeType.LOGIC && ast.name === "<>") && !(ast.type === NodeType.PRED && ast.name === "="))
+            throw HSError.msbtBadTemplate;
+    }
+    // msbt 命令参数提示：三种格式（规则/推理步骤模板，mcpt额外多一个模板wff），按序提示
+    msbtGetNextParam(args) {
+        const dname = args[0];
+        const isNode = dname.type === NodeType.NODE_DNAME;
+        // 复合dname：nodes[0]=msbt>名，nodes[1]=内层（规则名/mcpt）
+        const innerName = isNode ? dname.nodes[1]?.name : null;
+        const mcptMode = isNode && innerName === "mcpt";
+        const stepMode = !isNode;
+        // 完整参数数：规则模式 dname+2；mcpt/步骤模式 dname+3
+        const total = (mcptMode || stepMode) ? 4 : 3;
+        if (args.length >= total)
+            return null;
+        const need = args.length - 1; // 下一个要填的参数（0-based，不含dname）
+        let prompt;
+        let mode;
+        // 提示前缀：像d规则那样显示 dname + 已输入参数，未输入的位置用"?"占位
+        const paramCount = total - 1;
+        const argStrs = [];
+        for (let i = 0; i < paramCount; i++) {
+            const arg = args[i + 1];
+            argStrs.push(arg ? highlightHTML(arg.toString(), "wff") : "?");
+        }
+        const prefix = LangMgr.text.deducing + highlightHTML(HSParser.stringify(args[0], false), "dname") + ' ' + argStrs.join(' ') + ' ';
+        if (mcptMode || stepMode) {
+            if (need === 0) {
+                prompt = mcptMode ? LangMgr.text.plsEnterMsbtTemplate : LangMgr.text.plsEnterMsbtStep;
+                mode = mcptMode ? "wff" : "item";
+            }
+            else if (need === 1) {
+                prompt = LangMgr.text.plsEnterMsbtTarget;
+                mode = "wff";
+            }
+            else {
+                prompt = LangMgr.text.plsEnterMsbtIndex;
+                mode = "ast";
+            }
+        }
+        else {
+            if (need === 0) {
+                prompt = LangMgr.text.plsEnterMsbtTarget;
+                mode = "wff";
+            }
+            else {
+                prompt = LangMgr.text.plsEnterMsbtIndex;
+                mode = "ast";
+            }
+        }
+        this.cmdInput.setParserArgs(mode);
+        // 目标参数：同时支持点击高亮ast插入 与 点击推理行选择步骤（合并d命令两种交互）
+        const isTargetParam = (mcptMode || stepMode) ? need === 1 : need === 0;
+        // 模板步骤参数（步骤模式 need===0）：只支持点击行选择步骤
+        const isTplStepParam = stepMode && need === 0;
+        if (isTargetParam) {
+            SyntaxViewer.onClickAst = this.cmdUIMgr.insertText;
+            this.propListView.onRowClick = p => { if (p.from.type !== "f" && p.from.type !== "v" && p.from.type !== "a")
+                this.cmdEngine.run(String(p.id)); };
+            this.ruleListView.onRowClick = () => { };
+        }
+        else if (isTplStepParam) {
+            SyntaxViewer.onClickAst = null;
+            this.propListView.onRowClick = p => { if (p.from.type !== "f" && p.from.type !== "v" && p.from.type !== "a")
+                this.cmdEngine.run(String(p.id)); };
+            this.ruleListView.onRowClick = () => { };
+        }
+        else {
+            SyntaxViewer.onClickAst = null;
+            this.propListView.onRowClick = () => { };
+            this.ruleListView.onRowClick = () => { };
+        }
+        return {
+            prompt: prefix + prompt, default: "", parse: e => {
+                let ast;
+                try {
+                    ast = new HSParser().parse(e, mode);
+                    if (mode === "wff") {
+                        // 原子：可能是推理步骤引用（如 1/a），查表命中则当步骤；否则必须是合法wff
+                        if (ast.isAtom()) {
+                            if (!this.hilbertSystem.getP(ast.name))
+                                ast.checkWFF();
+                        }
+                        else {
+                            ast.checkWFF();
+                        }
+                        // mcpt 模板参数：第一时间检查模板形状 xx↔xx/xx=xx
+                        if (mcptMode && need === 0)
+                            this.checkMsbtPatternShape(ast);
+                    }
+                    if (mode === "item" && !this.hilbertSystem.getP(ast.name))
+                        throw HSError.pname404(ast.name);
+                    // 步骤模板参数：第一时间检查步骤ast形状 xx↔xx/xx=xx
+                    if (stepMode && need === 0) {
+                        const tp = this.hilbertSystem.getP(ast.name);
+                        if (tp)
+                            this.checkMsbtPatternShape(tp.ast);
+                    }
+                    if (mode === "ast")
+                        MSBT.getsubIndices(ast); // 预校验索引格式
+                    return { success: true, value: ast };
+                }
+                catch (e) {
+                    return { success: false, error: e };
+                }
+            }
+        };
+    }
+    // 执行 msbt：委托给 core 的 msbt（与 fromCmd 共用同一逻辑，保证加载/重放一致）
+    msbtExec(args) {
+        this.hilbertSystem.msbt(args);
     }
     addRules(data) {
         const context = this.hilbertSystem.saveContext();

@@ -31,6 +31,11 @@ export class AST {
         this.type = ast.type; this.name = ast.name;
         this.nodes = ast.nodes.map(e => e.clone());
     }
+    mut_ref(dst: AST) {
+        this.type = dst.type;
+        this.name = dst.name;
+        this.nodes = dst.nodes;
+    }
     isAtom() { return this.type === NodeType.ATOM_UKNOWN || this.type === NodeType.ATOM_ITEM || this.type === NodeType.ATOM_WFF ? this.name : undefined; }
     becomeItem() {
         if (this.type === NodeType.ATOM_UKNOWN || this.type === NodeType.ATOM_WFF && this.name.match(/^[^A-Z]/)) this.type = NodeType.ATOM_ITEM;
@@ -96,6 +101,12 @@ export class AST {
             node.getLocalvars(res);
         }
         return res;
+    }
+    // 绑定器绑定的变量名（QUANT/BOUNDED_QUANT/SEP/CLASS 在 nodes[0]；RPL 在 nodes[1]）
+    getBoundVarName(): string | undefined {
+        if (this.type === NodeType.QUANT || this.type === NodeType.BOUNDED_QUANT || this.type === NodeType.SEP || this.type === NodeType.CLASS) return this.nodes[0].name;
+        if (this.type === NodeType.RPL) return this.nodes[1].name;
+        return undefined;
     }
     hasSbFn() {
         if (this.type === NodeType.SB) return true;

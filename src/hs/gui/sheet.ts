@@ -1,5 +1,6 @@
 import { HSContext, HilbertSystem } from "../core/core.js";
 import { HSParser } from "../core/parser.js";
+import { Proposition } from "../core/deduction.js";
 import { LangMgr } from "../../lang.js";
 
 // 一张推理表 = 一份独立的props上下文（rules为全局共用）
@@ -48,7 +49,71 @@ export class SheetGui {
         this.hs = hs;
         this.container = document.getElementById('propSheetTabs');
         this.sheets = [{ name: LangMgr.text.defaultSheetName + " 1", ctx: hs.saveContext(), pe: [] }];
+        this.initRowHighlight();
         this.bindEvents();
+    }
+
+    // ---- 推理表行高亮（纯显示层，不改逻辑；不依赖 propListView，只操作 propRows DOM） ----
+    // 无 relyAfter 的步骤标淡黄；悬停某步骤时其 relyBefore 行标红、relyAfter 行标蓝。
+    // props 是嵌套树（文件夹 children），必须递归查找。
+    private findProp(uuid: number, list: Proposition[] = this.hs.props): Proposition | undefined {
+        for (const p of list) {
+            if (p.uuid === uuid) return p;
+            if (p.children) {
+                const found = this.findProp(uuid, p.children);
+                if (found) return found;
+            }
+        }
+        return undefined;
+    }
+    // 渲染完成后调用：为无 relyAfter 的行加淡黄 class（TreeListViewer 渲染后再执行）
+    applyRowHighlight() {
+        const rows = document.getElementById('propRows');
+        if (!rows) return;
+        for (const row of Array.from(rows.querySelectorAll<HTMLElement>('.item-row'))) {
+            const uuid = Number(row.dataset.uuid);
+            if (!uuid) continue;
+            const p = this.findProp(uuid);
+            if (p && p.from.type !== "f" && p.from.type !== "c" && p.from.type !== "v" && !p.relyAfter?.length) {
+                row.classList.add('row-no-relyafter');
+            }
+        }
+    }
+    // 悬停依赖高亮：鼠标移到某步骤时其 relyBefore 行标红、relyAfter 行标蓝，移开清除
+    private initRowHighlight() {
+        const propRowsBox = document.getElementById('propRows');
+        if (!propRowsBox) return;
+        let hoverUuid = 0;
+        const clearDepHighlight = () => {
+            propRowsBox.querySelectorAll('.row-dep-before, .row-dep-after').forEach(el => el.classList.remove('row-dep-before', 'row-dep-after'));
+        };
+        propRowsBox.addEventListener('mouseover', (e) => {
+            const row = (e.target as HTMLElement).closest('.item-row') as HTMLElement | null;
+            if (!row) return;
+            const uuid = Number(row.dataset.uuid);
+            if (!uuid || uuid === hoverUuid) return;
+            hoverUuid = uuid;
+            clearDepHighlight();
+            const p = this.findProp(uuid);
+            if (!p) return;
+            const mark = (dep: Proposition[] | undefined, cls: string) => {
+                if (!dep) return;
+                for (const d of dep) {
+                    if (d.uuid) {
+                        const r = propRowsBox.querySelector(`.item-row[data-uuid="${d.uuid}"]`);
+                        r?.classList.add(cls);
+                    }
+                }
+            };
+            mark(p.relyBefore, 'row-dep-before');
+            mark(p.relyAfter, 'row-dep-after');
+        });
+        propRowsBox.addEventListener('mouseout', (e) => {
+            const to = (e as MouseEvent).relatedTarget as HTMLElement | null;
+            if (to && propRowsBox.contains(to)) return;
+            hoverUuid = 0;
+            clearDepHighlight();
+        });
     }
 
     // 新建一张空表（仅构造数据，不切换）；默认名重复则序号加一，保证不重名

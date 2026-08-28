@@ -5,11 +5,53 @@
     --col-extra: 20px;
     --col-actions: 10px;
 }
-/* 定理表：name 列只显示行号，较窄 */
+/* 定理表：name 列只显示行号，较窄；extra 列只显示检查结果（✓/⚠） */
 #ttWrapper .item-row {
     --col-name: 45px;
-    --col-extra: 20px;
+    --col-extra: 26px;
     --col-actions: 10px;
+}
+
+/* extra 列 ✓/⚠：只表示检查是否成功 */
+#ttWrapper .cell-extra .tt-result {
+    font-size: 14px;
+    font-weight: 600;
+}
+#ttWrapper .cell-extra .tt-result-ok {
+    color: #059669;
+}
+#ttWrapper .cell-extra .tt-result-err {
+    color: #dc2626;
+}
+
+/* 检查结果信息块（跟在用户内容后面）：浅色背景区分，点击不编辑、可选中复制
+   （rgba 背景在明暗主题下都适用） */
+#ttWrapper .cell-content .tt-info {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    vertical-align: baseline;
+    white-space: pre-wrap;
+    word-break: break-all;
+    cursor: default;
+    user-select: text;
+}
+/* 类型信息：浅绿背景 */
+#ttWrapper .cell-content .tt-info-type {
+    background: rgba(16, 185, 129, 0.14);
+    color: #059669;
+}
+/* 错误信息：浅红背景 */
+#ttWrapper .cell-content .tt-info-err {
+    background: rgba(239, 68, 68, 0.14);
+    color: #dc2626;
+}
+/* 用户输入内容部分：保持文本光标提示可编辑 */
+#ttWrapper .cell-content .tt-content-part {
+    cursor: text;
 }
 
 /* 系统表行：可读不可编辑（无拖拽光标） */

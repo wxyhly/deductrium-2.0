@@ -28,6 +28,13 @@ export class LangMgr {
         plsEnterVar: { zh: '请输入变量：', en: "Please enter variable: " },
         plsEnterFolderName: { zh: '请输入文件夹名称：', en: "Please enter folder name: " },
         plsEnterProp: { zh: '请输入或点选推理步骤：', en: "Please enter or click deduction step: " },
+        // msbt 替换元定理
+        plsEnterMsbtTemplate: { zh: '请输入匹配模板公式（xx↔xx）：', en: "Enter match template wff (xx↔xx): " },
+        plsEnterMsbtStep: { zh: '请输入匹配模板推理步骤：', en: "Enter the template step: " },
+        plsEnterMsbtTarget: { zh: '请输入要替换的wff或推理步骤：', en: "Enter the wff or step to replace: " },
+        plsEnterMsbtIndex: { zh: '请输入要替换的位置（匹配顺序为从外到内、从左到右，{2,-2}表示替换第2个和倒数第二个，0表示全部替换）：', en: "Enter substitution index (the order of matching is from outside to inside, from left to right, {2,-2} means replace the 2nd and the second last, 0 means replace all): " },
+        // mcnt 换名元定理
+        plsEnterMcntRule: { zh: '请输入换名规则执行的位置索引（格式：{pos1,pos2...}，其中pos可以是变量、{索引,变量}对、. 占位符）：', en: "Enter rename rule (e.g. {pos1,pos2...}: elements can be a variable, {index,var} pair, . placeholder): " },
         rootList: { zh: '根列表', en: " root list " },
         // 推理层静态标题
         ruleList: { zh: '规则表', en: "Rule Table" },
@@ -53,6 +60,10 @@ export class LangMgr {
         // 类型层系统表 prefix 翻译（name 列显示方括号内的前缀）
         ttType: { zh: '类型', en: "TYPE" },
         ttCtor: { zh: '构造', en: "CTOR" },
+        ttInd: { zh: '解构', en: "IND" },
+        ttDef: { zh: '定义', en: "DEF" },
+        ttRule: { zh: '计算', en: "COMPUTE" },
+        ttParseError: { zh: '无法解析表达式', en: "Cannot parse expression" },
         // 进度层
         progressLayer: { zh: '进度', en: "Progress" },
         layerD: { zh: '推理层', en: "Deduction" },
@@ -332,6 +343,10 @@ export class LangMgr {
                 return zh
                     ? `匹配条件${info.conditionIndex}时：${formatCause(info.cause)}`
                     : `match condition ${info.conditionIndex} failed: ${formatCause(info.cause)}`;
+            case "futureCondition":
+                return zh
+                    ? `条件命题${info.conditionId}位于当前推理位置${info.appendId}之后，不能使用`
+                    : `condition proposition ${info.conditionId} is after the current deduction position ${info.appendId}`;
             case "assertFail":
                 return zh
                     ? `第${info.assertionIndex}个断言失败：${formatCause(info.cause)}`
@@ -424,6 +439,18 @@ export class LangMgr {
             }
             case "badMetaRule":
                 return zh ? "错误的元规则" : "bad meta rule";
+            case "uNeedCond":
+                return zh ? `u:元规则（${info.ruleName}）只能用于有条件的规则，无条件规则请使用v:元规则` : `u: meta rule (${info.ruleName}) requires at least one condition, use v: meta rule for conditionless rules`;
+            case "mcntNoMatch":
+                return zh ? "没有找到可换名的量词" : "no quantifier found to rename";
+            case "mcntBadIndex":
+                return zh ? "换名规则格式错误：应为{变量,{索引,变量},.}等形式" : "bad rename rule format: expected {var,{idx,var},.} etc.";
+            case "mcntAssertFail":
+                return zh ? `换名失败：断言不满足（新变量可能会在量词作用域中被捕获）` : `rename failed: assertion unsatisfied (the new variable could be captured by a quantifier scope)`;
+            case "nestedCVFolder":
+                return zh ? "请先肢解内部的cond与var层级" : "please disassemble the inner cond and var layers first";
+            case "mcptInCVFolder":
+                return zh ? "请先肢解内部的mcpt步骤" : "please disassemble the inner mcpt step first";
             case "combineCyclic":
                 return zh ? "无法解算变量约束，可能存在循环替换" : "cannot solve variable constraints, possible cyclic replacement";
             case "combineInconsist":
@@ -456,6 +483,29 @@ export class LangMgr {
                     : `rule ${info.rule} failed to load: ${formatCause(info.cause)}`;
             case "replayConclusionMismatch":
                 return zh ? "推理步骤重放后与规则结论不一致" : "replayed steps do not match the rule conclusion";
+            case "mcptFalse": {
+                // 列出各原子命题在使整个命题为假的指派下的真值
+                const assignments = info.atoms.map((a, i) =>
+                    zh
+                        ? `${a} = ${(info.hyp >> i) & 1 ? "真" : "假"}`
+                        : `${a} = ${(info.hyp >> i) & 1 ? "true" : "false"}`
+                );
+                return zh
+                    ? `命题逻辑验证失败：当${assignments.join("，")}时，命题不为真`
+                    : `propositional verification failed: the proposition is false when ${assignments.join(", ")}`;
+            }
+            case "mcptTooMany":
+                return zh
+                    ? `命题逻辑验证原子命题过多（${info.count} > ${info.max}），无法穷举真值表`
+                    : `too many atomic propositions (${info.count} > ${info.max}) for propositional verification`;
+            case "msbtBadTemplate":
+                return zh ? "匹配模板必须是等价互推(x↔y)或等式(x=y)" : "match template must be a biconditional (x↔y) or equation (x=y)";
+            case "msbtNoMatch":
+                return zh ? "没有找到可替换的匹配项" : "no match found to substitute";
+            case "msbtBadIndex":
+                return zh ? "无效的替换索引" : "invalid substitution index";
+            case "msbtRuleWithCond":
+                return zh ? "匹配模板规则不允许带条件" : "template rule cannot have conditions";
             default:
                 return zh ? `未知错误：${JSON.stringify(info)}` : `unknown error: ${JSON.stringify(info)}`;
         }

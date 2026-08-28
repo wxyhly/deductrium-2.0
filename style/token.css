@@ -45,6 +45,14 @@
 .token-rule-sharp{ color: grey; font-weight: 900;}
 .token-rule-mp{ color: rgb(74, 13, 159);}
 
+/* ===== 类型层（T-layer）token 分类 =====
+   由系统表驱动：TypeParser.getTokens 按 [type]/[ctor]/[ind]/[def] 规则定义的原子
+   以及宇宙相关节点分类（见 src/tt/parser.ts 的 tokenCategories/isUniverseToken） */
+.token-type     { color: blue; }
+.token-ctor     { color: brown; }
+.token-ind      { color: darkorchid; }
+.token-def      { color: darkblue; }
+.token-universe { color: gray; }
 
 /* AST 悬停高亮 */
 .ast-highlight {

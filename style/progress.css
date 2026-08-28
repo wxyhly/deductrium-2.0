@@ -173,7 +173,6 @@
 .pg-slot-info {
     font-size: 0.75rem;
     color: #64748b;
-    word-break: break-all;
     /* 固定两行高度，保证信息长短不一时按钮对齐 */
     min-height: 2.4em;
     line-height: 1.2;

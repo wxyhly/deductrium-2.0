@@ -85,7 +85,7 @@ console.log(serialized);
 ok(serialized.startsWith("(1)mp:ax:"), "规则行带 uuid 前缀 (1)mp:ax:");
 ok(serialized.includes("(3){公理组"), "文件夹行带 uuid 前缀 (3){公理组");
 ok(serialized.includes("}"), "文件夹结束 }");
-ok(serialized.includes("(6).i:⊢$→$;d a1 $ $"), ".i 步骤不含 hyp");
+ok(serialized.includes("(6).i:⊢$→$;a1 $ $"), ".i 步骤不含 hyp（非关键字规则名省略 d 前缀）");
 ok(serialized.includes("(7).t:$1→$2,$2→$3⊢$1→$3;cond $1"), ".t 步骤不含 hyp（条件自动推导）");
 
 // ===== test 2: 模拟 deserializeRulelist（addRules 解析字符串，含 uuid 恢复） =====

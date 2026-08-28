@@ -9,6 +9,7 @@ export const HSError = {
     isNotItem(ast, metaVarName) { return { type: "isNotItem", ast, metaVarName }; },
     createRule(ruleName, cause) { return { type: "createRule", ruleName, cause }; },
     matchCond(conditionIndex, cause) { return { type: "matchCond", conditionIndex, cause }; },
+    futureCondition(conditionId, appendId) { return { type: "futureCondition", conditionId, appendId }; },
     assertFail(assertionIndex, cause) { return { type: "assertFail", assertionIndex, cause }; },
     sbFail(destination, quantifierSet, cause) { return { type: "sbFail", destination, quantifierSet, cause }; },
     assertForeverFail(ast) { return { type: "assertForeverFail", ast }; },
@@ -55,6 +56,18 @@ export const HSError = {
     errRuleUsed(rule, cause) { return { type: "errRuleUsed", rule, cause }; },
     replayConclusionMismatch: { type: "replayConclusionMismatch" },
     badMetaRule: { type: "badMetaRule" },
+    uNeedCond(ruleName) { return { type: "uNeedCond", ruleName }; },
+    nestedCVFolder: { type: "nestedCVFolder" },
+    mcptInCVFolder: { type: "mcptInCVFolder" },
+    mcptFalse(atoms, hyp) { return { type: "mcptFalse", atoms, hyp }; },
+    mcptTooMany(count, max) { return { type: "mcptTooMany", count, max }; },
+    msbtBadTemplate: { type: "msbtBadTemplate" },
+    msbtNoMatch: { type: "msbtNoMatch" },
+    msbtBadIndex: { type: "msbtBadIndex" },
+    msbtRuleWithCond: { type: "msbtRuleWithCond" },
+    mcntNoMatch: { type: "mcntNoMatch" },
+    mcntBadIndex: { type: "mcntBadIndex" },
+    mcntAssertFail(cause) { return { type: "mcntAssertFail", cause }; },
     // 规则 step 生成失败：ruleName 为空表示局部异常（由 getD 补全规则名）
     genStepFail(ruleName, cause, steps) { return { type: "genStepFail", ruleName, cause, steps }; }
 };

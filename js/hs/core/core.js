@@ -1,9 +1,10 @@
 import { NodeType } from "../../asttype.js";
 import { Assertion, AtomSolver, NFAssertion } from "./assert.js";
 import { AST } from "./ast.js";
-import { combineRules, assertToAST, genConditionStep, genQuantStep } from "./combine.js";
+import { combineRules, assertToAST, genConditionStep, genQuantStep, genUnivStep, MCPT, MCNT, MSBT } from "./combine.js";
 import { Deduction, Proposition } from "./deduction.js";
 import { HSError, isHSErrorInfo } from "./error.js";
+import { HSParser } from "./parser.js";
 const RuleNameNotAllowedStartsWith = "acdempuv0123456789#$%<>.";
 export class HilbertSystem {
     rules = new Map;
@@ -71,6 +72,38 @@ export class HilbertSystem {
                         // 生成 step（v:mp 写死、公理无 step、有假设通用），失败则无 step
                         const step = genQuantStep(this, d, c);
                         return new Deduction(d.dependence, dname, d.assertions, conds, conclusion, step);
+                    }
+                    if (dname.name === "u") {
+                        // u:xx 只给结论加全称量词，条件保持原样但要求其中的 replvar 不自由出现新变量
+                        // （无条件规则与 v 无区别，禁止使用）
+                        if (!d.conditions.length)
+                            throw HSError.uNeedCond(dname.toString());
+                        const c = d.getNewReplName("var");
+                        const mapFn = (ast) => {
+                            ast = ast.clone();
+                            return new AST(NodeType.QUANT, "\\a", c.clone(), ast);
+                        };
+                        // 新增断言：每个条件中每个 replvar 不自由出现 c（去重）
+                        const assertions = d.assertions.slice();
+                        const added = new Set();
+                        // 新增 nf 断言：每个条件中不自由出现v
+                        let asssertRes = { asts: [], atoms: [] };
+                        for (const cc of d.conditions) {
+                            new NFAssertion(cc, new Set([c.name]), new Set()).reduce(asssertRes);
+                        }
+                        Assertion.check([], asssertRes);
+                        for (const atom of asssertRes.atoms) {
+                            const hash = AtomSolver.print(atom);
+                            if (!added.has(hash)) {
+                                assertions.push(atom);
+                                added.add(hash);
+                            }
+                        }
+                        const conds = d.conditions.map(cc => cc.clone());
+                        const conclusion = mapFn(d.conclusion);
+                        // 生成 step（<a6 加量词 + v:d），失败则无 step
+                        const step = genUnivStep(this, assertions, d, c);
+                        return new Deduction(d.dependence, dname, assertions, conds, conclusion, step);
                     }
                     if (dname.name === "<") {
                         if (d.conclusion.type !== NodeType.LOGIC || d.conclusion.name !== ">")
@@ -270,6 +303,7 @@ export class HilbertSystem {
     getReplvarsInfo() {
         return { item: this.replvars, var: this.replvarVars };
     }
+    // 当前断言（MSBT 等元规则需要检查变量自由出现等约束时使用）
     getAsserts() {
         let pos = this.props.findIndex(e => e.from.type !== "a");
         pos = pos === -1 ? this.props.length : pos;
@@ -354,6 +388,20 @@ export class HilbertSystem {
     getActiveList() {
         return this.activeProp?.children || this.props;
     }
+    checkConditionsBeforeAppend(conditions) {
+        const lastId = (p) => p.children?.length
+            ? lastId(p.children[p.children.length - 1])
+            : p.id;
+        const activeList = this.getActiveList();
+        const appendId = activeList.length
+            ? lastId(activeList[activeList.length - 1])
+            : (this.activeProp?.id ?? 0);
+        for (let i = 0; i < conditions.length; i++) {
+            if (conditions[i].id > appendId) {
+                throw HSError.matchCond(i + 1, HSError.futureCondition(conditions[i].id, appendId));
+            }
+        }
+    }
     updateReplvars() {
         this.replvarVars.clear();
         this.replvars.clear();
@@ -397,28 +445,102 @@ export class HilbertSystem {
             return [];
         const data = p.from.data;
         const dname = data.deduction;
-        // 只要getD能解析出带step的规则即可展开（原子宏、组合、<包装等）
-        let rule;
-        try {
-            rule = this.getD(dname);
+        // 只要getD能解析出带step的规则即可展开（原子宏、组合、<包装等）；
+        // mcpt 的步骤在执行肢解时才 lazy 生成（MCPT.check(true) 生成命令序列）
+        const isMcpt = dname.type === NodeType.ATOM_DNAME && dname.name === "mcpt";
+        const isMsbt = this.isMsbtDname(dname);
+        const isMcnt = dname.type === NodeType.ATOM_DNAME && dname.name === "mcnt";
+        let rule = null;
+        let steps;
+        if (isMcpt) {
+            steps = this.genMcptSteps(data.replaceValues["$"]);
         }
-        catch (e) {
-            throw HSError.expandFail(e);
-        }
-        if (!rule.step?.length)
+        else if (isMcnt) {
+            // mcnt 暂不生成肢解步骤
             throw HSError.atomicStep(dname);
-        const steps = rule.step;
+        }
+        else if (isMsbt) {
+            const isNode = dname.type === NodeType.NODE_DNAME;
+            const inner = isNode ? dname.nodes[1] : null;
+            const right = (isNode ? dname.nodes[0].name : dname.name) === "msbt>";
+            const isMcptTemplate = inner?.name === "mcpt";
+            let pattern;
+            let exactMatch;
+            let templateProp;
+            let templateRule;
+            if (isMcptTemplate) {
+                pattern = data.replaceValues["$p"].clone();
+                exactMatch = false;
+            }
+            else if (inner) {
+                templateRule = this.getD(inner);
+                pattern = templateRule.conclusion.clone();
+                exactMatch = false;
+            }
+            else {
+                templateProp = data.conditions[0];
+                pattern = templateProp.ast.clone();
+                exactMatch = true;
+            }
+            // wff 目标保存在 $t；步骤目标则作为最后一个条件保存。
+            // 注意：裸 msbt 的步骤模板本身也占一个 conditions，不能用 conditions.length 判断。
+            const targetIsStep = !data.replaceValues["$t"];
+            const targetAst = targetIsStep
+                ? data.conditions[data.conditions.length - 1].ast.clone()
+                : data.replaceValues["$t"].clone();
+            const sheetAsserts = this.getAsserts();
+            const generator = new MSBT(this, pattern, exactMatch, targetAst, false, right, sheetAsserts, MSBT.getsubIndices(data.replaceValues["$i"]));
+            const saved = this.saveContext();
+            try {
+                this.loadContext(this.createEmptyContext());
+                // 预置当前表断言：生成 context 里 d() 的 captureScope 量词捕获检查
+                // （如 .<>r\a 的 a6 检查需要 #nf 断言）依赖这些断言，与规则录制时的上下文一致。
+                // 生成的步骤前部会出现 a 类型断言步骤，重放时与普通 d 规则一致直接忽略。
+                let assertCount = 0;
+                for (const a of sheetAsserts) {
+                    try {
+                        this.hyp(assertToAST(a));
+                        assertCount++;
+                    }
+                    catch (e) {
+                        if (e?.type === "assertNeverFail")
+                            continue;
+                        throw e;
+                    }
+                }
+                const commands = generator.generateStep(templateRule, templateProp, isMcptTemplate, targetIsStep, assertCount);
+                this.fromCmd(commands.map(command => new HSParser().parse(command, "cmd")));
+                steps = this.props.slice(0);
+            }
+            finally {
+                this.loadContext(saved);
+            }
+            rule = new Deduction(new Set, dname, [], data.conditions.map(c => c.ast.clone()), p.ast.clone(), steps);
+        }
+        else {
+            try {
+                rule = this.getD(dname);
+            }
+            catch (e) {
+                throw HSError.expandFail(e);
+            }
+            if (!rule.step?.length)
+                throw HSError.atomicStep(dname);
+            steps = rule.step;
+        }
         // p所在的列表与位置
         const list = p.parent ? p.parent.children : this.props;
         const idx = list.indexOf(p);
         if (idx < 0)
             throw HSError.expandFail(HSError.notInList);
         // 从实际条件重新匹配规则条件模板，恢复宏规则元变量的绑定
-        // （d()保存的replaceValues只含结论独有的元变量，条件中的元变量由匹配确定）
-        const rv = Object.assign({}, data.replaceValues);
+        // （d()保存的replaceValues只含结论独有的元变量，条件中的元变量由匹配确定）；
+        // mcpt 无条件且 wff 已实例化（replaceValues 里的 $ 不能再当模板替换键，否则会把
+        // 步骤里的字面 $ 误替换成整个 wff），因此 rv 置空）
+        const rv = isMcpt ? {} : Object.assign({}, data.replaceValues);
         try {
             const assertions = this.getAsserts();
-            for (let i = 0; i < rule.conditions.length; i++) {
+            for (let i = 0; i < (rule?.conditions.length ?? 0); i++) {
                 const cond = data.conditions[i];
                 this.ref_addCaptureScopeToAST(cond.ast, this.captureScope(p.parent, cond, assertions)).match(rule.conditions[i], rv);
             }
@@ -495,7 +617,7 @@ export class HilbertSystem {
                 const sp = flat[i];
                 if (sp.from.type === "a")
                     continue;
-                if (sp.from.type !== "h" || hIdx >= rule.conditions.length)
+                if (sp.from.type !== "h" || hIdx >= (rule?.conditions.length ?? 0))
                     break;
                 oldNew.set(sp, data.conditions[hIdx++]);
             }
@@ -535,6 +657,35 @@ export class HilbertSystem {
         this.updatePropIdx();
         this.updateReplvars();
         return newFolders;
+    }
+    // mcpt 肢解：lazy 调用 MCPT.check(true) 生成命令序列（假设推理表为空环境的 string[] 命令），
+    // 在全新空环境中执行得到 Proposition 步骤，供 expand() 重放。
+    genMcptSteps(wff) {
+        if (!wff)
+            throw HSError.expandFail(HSError.emptyValue);
+        const m = new MCPT(wff.clone());
+        // 非重言式抛 mcptFalse；生成 this.steps（string[] 命令）
+        const cmdStrs = m.check(true);
+        const saved = this.saveContext();
+        this.loadContext(this.createEmptyContext());
+        try {
+            this.clear();
+            for (const s of cmdStrs) {
+                const cmd = new HSParser().parse(s, "cmd");
+                this.fromCmd([cmd]);
+            }
+            // 树尾结论应等于 wff，否则说明生成/执行失败
+            const last = this.getLastChildP(null);
+            if (!last || !last.ast.equal(wff))
+                throw HSError.conclusionMismatch;
+            return this.props.slice(0);
+        }
+        catch (e) {
+            throw HSError.expandFail(e);
+        }
+        finally {
+            this.loadContext(saved);
+        }
     }
     // 生成 ">" 规则 step（演绎元定理）：把 d 的最后条件变为 cond 文件夹，
     // d 的其余步骤全部重放进 cond 层级，使结论带上该条件（a,b⊢c → a⊢b→c）。
@@ -646,6 +797,26 @@ export class HilbertSystem {
         // 后续引用通过map自动映射，且所有ast都被重算。
         const type2 = type;
         const children = p.children || [];
+        // 若内部还有 c/v 文件夹：直接拒绝肢解（嵌套wrap会导致内部d步骤capture外部步骤被加条件/量词，推理失败）
+        const hasNestedCV = children.some(c => c.children && (c.from.type === "c" || c.from.type === "v"));
+        if (hasNestedCV)
+            throw HSError.expandFail(HSError.nestedCVFolder);
+        // 若内部（含嵌套层级）有 mcpt 步骤：拒绝肢解（mcpt 是特殊元规则，c/v 提升时
+        // 无法为其生成 c:mcpt/v:mcpt 包装规则，会报"未知规则 mcpt"；提示玩家先肢解 mcpt）
+        const hasMcpt = (() => {
+            const iter = (arr) => {
+                for (const c of arr) {
+                    if (c.from.type === "d" && c.from.data.deduction.type === NodeType.ATOM_DNAME && c.from.data.deduction.name === "mcpt")
+                        return true;
+                    if (c.children && iter(c.children))
+                        return true;
+                }
+                return false;
+            };
+            return iter(children);
+        })();
+        if (hasMcpt)
+            throw HSError.expandFail(HSError.mcptInCVFolder);
         const ctx = this.saveContext();
         const isInP = (op) => { let par = op; while (par) {
             if (par === p)
@@ -778,6 +949,24 @@ export class HilbertSystem {
                 return m;
             return c;
         });
+        if (this.isMsbtDname(data.deduction)) {
+            return this.replayMsbtStep(data, {}, conds, new Map());
+        }
+        if (data.deduction.type === NodeType.ATOM_DNAME && data.deduction.name === "mcpt") {
+            const wff = data.replaceValues["$"];
+            if (!wff)
+                throw HSError.emptyValue;
+            return this.mcpt(wff.clone());
+        }
+        if (data.deduction.type === NodeType.ATOM_DNAME && data.deduction.name === "mcnt") {
+            const args = [];
+            if (data.replaceValues["$t"])
+                args.push(data.replaceValues["$t"].clone());
+            else
+                args.push(new AST(NodeType.ATOM_ITEM, String(conds[conds.length - 1].id)));
+            args.push(data.replaceValues["$i"].clone());
+            return this.mcnt(args);
+        }
         return this.d(this.getD(data.deduction), conds, data.replaceValues);
     }
     // 提升c/v文件夹内的一个d步骤：规则名加c/v前缀；条件在文件夹内则保留(liftMap映射)，
@@ -880,11 +1069,39 @@ export class HilbertSystem {
             const conds = ddata.conditions.map(c => propMap.get(c));
             if (conds.some(c => !c))
                 throw HSError.expandFail(HSError.unmappedStepProp);
-            const rv2 = {};
-            for (const [name, val] of Object.entries(ddata.replaceValues)) {
-                rv2[name] = ren(val.clone()).mut_replaceByMatchTable(rv);
+            if (this.isMsbtDname(ddata.deduction)) {
+                // msbt 是元规则：不经过 getD，按步骤存储的命令数据重建并执行（含替换索引重算）
+                newP = this.replayMsbtStep(ddata, rv, conds, localRename);
             }
-            newP = this.d(this.getD(ddata.deduction), conds, rv2);
+            else if (ddata.deduction.type === NodeType.ATOM_DNAME && ddata.deduction.name === "mcpt") {
+                // mcpt 是元规则：不经过 getD，与一般d步骤一样直接对 replaceValues 应用宏绑定 rv
+                const rv2 = {};
+                for (const [name, val] of Object.entries(ddata.replaceValues)) {
+                    rv2[name] = ren(val.clone()).mut_replaceByMatchTable(rv);
+                }
+                newP = this.mcpt(rv2["$"]);
+            }
+            else if (ddata.deduction.type === NodeType.ATOM_DNAME && ddata.deduction.name === "mcnt") {
+                // mcnt 是元规则：对 $t/$i 应用宏绑定 rv 后重建命令执行
+                const rv2 = {};
+                for (const [name, val] of Object.entries(ddata.replaceValues)) {
+                    rv2[name] = ren(val.clone()).mut_replaceByMatchTable(rv);
+                }
+                const args = [];
+                if (rv2["$t"])
+                    args.push(rv2["$t"].clone());
+                else
+                    args.push(new AST(NodeType.ATOM_ITEM, String(conds[conds.length - 1].id)));
+                args.push(rv2["$i"].clone());
+                newP = this.mcnt(args);
+            }
+            else {
+                const rv2 = {};
+                for (const [name, val] of Object.entries(ddata.replaceValues)) {
+                    rv2[name] = ren(val.clone()).mut_replaceByMatchTable(rv);
+                }
+                newP = this.d(this.getD(ddata.deduction), conds, rv2);
+            }
         }
         else
             throw "can't reach"; // a类型不会出现在step中
@@ -903,6 +1120,61 @@ export class HilbertSystem {
             newP = reuse;
         }
         propMap.set(sp, newP);
+    }
+    // 重放 msbt 步骤（规则肢解时）：按步骤存储的命令数据重建 msbt 命令并执行。
+    // rv（规则宏绑定）会替换模板/目标/索引里的所有元变量；其中替换索引必须重算：
+    // 录制时索引（0=全部等）是在"未替换"的目标上匹配得到的，rv 替换后目标可能产生
+    // 录制时没有的新匹配（原本不匹配的元变量被宏填入而匹配），直接沿用会误替换。
+    // 重算逻辑见 MSBT.reindexAfterReplace（记录原匹配绝对位置 → 替换后反查新索引）。
+    replayMsbtStep(ddata, rv, conds, localRename) {
+        const ren = (ast) => localRename.size ? ast.renameLocalVars_mut(localRename) : ast;
+        const rv2 = {};
+        for (const [name, val] of Object.entries(ddata.replaceValues))
+            rv2[name] = ren(val.clone()).mut_replaceByMatchTable(rv);
+        const dname = ddata.deduction;
+        const isNode = dname.type === NodeType.NODE_DNAME;
+        const inner = isNode ? dname.nodes[1] : null;
+        const right = (isNode ? dname.nodes[0].name : dname.name) === "msbt>";
+        // ---- 还原格式与模板：格式1(规则名)/格式2(mcpt)模板存于$p、格式3(步骤)模板=conditions[0] ----
+        const isMcpt = !!(inner && inner.name === "mcpt");
+        const isRuleFmt = !!inner && !isMcpt;
+        let template; // 录制时模板（含规则元变量）
+        let newTemplate; // 替换后模板（执行时实际使用的）
+        let exactMatch;
+        if (isMcpt) {
+            template = ddata.replaceValues["$p"];
+            newTemplate = rv2["$p"];
+            exactMatch = false;
+        }
+        else if (isRuleFmt) {
+            // 规则结论作模板：不随外规则rv改变（msbt() 内部会重新 getD 取结论）
+            template = this.getD(inner).conclusion.clone();
+            newTemplate = template.clone();
+            exactMatch = false;
+        }
+        else {
+            template = ddata.conditions[0].ast;
+            newTemplate = conds[0].ast;
+            exactMatch = true;
+        }
+        // ---- 目标：wff（存于$t）或推理步骤（conditions最后一个） ----
+        const hasT = !!rv2["$t"];
+        const originTarget = hasT ? ddata.replaceValues["$t"] : ddata.conditions[ddata.conditions.length - 1].ast;
+        const newTargetAst = hasT ? rv2["$t"] : conds[conds.length - 1].ast;
+        // ---- 替换索引重算 ----
+        const newIdx = MSBT.reindexAfterReplace(this, template, newTemplate, right, exactMatch, originTarget, newTargetAst, MSBT.getsubIndices(ddata.replaceValues["$i"]));
+        // ---- 重建命令参数并执行 ----
+        const args = [dname.clone()];
+        if (isMcpt)
+            args.push(rv2["$p"].clone());
+        if (!isMcpt && !isRuleFmt)
+            args.push(new AST(NodeType.ATOM_ITEM, String(conds[0].id)));
+        if (hasT)
+            args.push(rv2["$t"].clone());
+        else
+            args.push(new AST(NodeType.ATOM_ITEM, String(conds[conds.length - 1].id)));
+        args.push(MSBT.toIndexAst(newIdx));
+        return this.msbt(args);
     }
     getActiveProp() { return this.activeProp; }
     // 根据captureScope的结果添加ast表达式
@@ -963,14 +1235,36 @@ export class HilbertSystem {
                 // cause 保留原始异常（unknown），渲染交给 LangMgr（递归翻译双语）
                 throw HSError.expandFail(HSError.errRuleUsed(deduction.name.toString(), deduction.error.cause));
             }
+            // mcpt：命题逻辑完备性元定理——穷举真值表验证 wff 为重言式，通过则作为结论添加
+            // if (deduction.name.type === NodeType.ATOM_DNAME && deduction.name.name === "mcpt") {
+            //     const wff = replaceValues["$"];
+            //     if (!wff) throw HSError.deductFail("mcpt", HSError.emptyValue);
+            //     new MCPT(wff).check(false);
+            //     return this.addP(new Proposition(wff.clone(), {
+            //         type: "d",
+            //         data: { deduction: deduction.name, conditions: [], replaceValues: Object.assign({}, replaceValues) },
+            //     }));
+            // }
             const assertions = this.getAsserts();
             if (conditions.length !== deduction.conditions.length)
                 throw HSError.inconsistCondNum;
+            this.checkConditionsBeforeAppend(conditions);
             for (const [name, isItem] of deduction.replaceNames) {
                 if (isItem)
                     replaceValues[name]?.becomeItem();
             }
             const originReplaceValues = Object.assign({}, replaceValues);
+            // 按 replaceNames 顺序重建，使 getCmd 的 Object.values 序列化与
+            // fromCmd 按 replaceNames 解析的命令参数序一致（如 v.i = [x $]，而非 [$ x]）
+            const orderedReplaceValues = {};
+            for (const [name] of deduction.replaceNames) {
+                if (originReplaceValues[name])
+                    orderedReplaceValues[name] = originReplaceValues[name];
+            }
+            for (const [name, val] of Object.entries(originReplaceValues)) {
+                if (!orderedReplaceValues[name])
+                    orderedReplaceValues[name] = val;
+            }
             for (let i = 0; i < conditions.length; i++) {
                 const cond = conditions[i];
                 if (!cond)
@@ -1000,7 +1294,7 @@ export class HilbertSystem {
             try {
                 const res = deduction.conclusion.clone().mut_replaceByMatchTable(replaceValues);
                 res.checkWFF();
-                return this.addP(new Proposition(res, { type: "d", data: { deduction: deduction.name, conditions, replaceValues: originReplaceValues } }));
+                return this.addP(new Proposition(res, { type: "d", data: { deduction: deduction.name, conditions, replaceValues: orderedReplaceValues } }));
             }
             catch (e) {
                 throw HSError.conclusionFail(e);
@@ -1016,11 +1310,136 @@ export class HilbertSystem {
         if (this.flatProps.get(name))
             throw HSError.nameAlreadyExist(name);
     }
+    // mcpt：命题逻辑完备性元定理（特殊"元规则"，不注册为规则实体、不经过 getD）。
+    // 验证 wff 为重言式后作为结论添加；内部仍用 from.type="d" 表示（deduction 名为 mcpt），
+    // 由 mcpt 命令 / fromCmd 特殊处理。
+    mcpt(ast) {
+        new MCPT(ast).check(false);
+        return this.addP(new Proposition(ast.clone(), {
+            type: "d",
+            data: { deduction: new AST(NodeType.ATOM_DNAME, "mcpt"), conditions: [], replaceValues: { $: ast.clone() } },
+        }));
+    }
+    // ===== msbt 替换元定理（元规则，不注册为规则实体、不经过 getD） =====
+    // dname 为 msbt>/msbt<（裸，或复合 (规则名)/(mcpt)）时为真
+    isMsbtDname(dname) {
+        if (dname.type === NodeType.ATOM_DNAME)
+            return dname.name === "msbt>" || dname.name === "msbt<";
+        if (dname.type === NodeType.NODE_DNAME && dname.nodes[0]) {
+            const n = dname.nodes[0].name;
+            return n === "msbt>" || n === "msbt<";
+        }
+        return false;
+    }
+    // 执行 msbt（供 fromCmd / 命令UI调用）：解析模板来源与目标，计算替换结果，加入推理表（暂无step/肢解）。
+    // 存储完整命令信息：deduction=复合dname、conditions=步骤引用、replaceValues=wff参数+索引，
+    // 使 getCmd/renderExtra 能还原完整命令。
+    msbt(args) {
+        const dname = args[0];
+        const isNode = dname.type === NodeType.NODE_DNAME;
+        const right = (isNode ? dname.nodes[0].name : dname.name) === "msbt>";
+        // 复合dname：nodes[1]=内层（规则名/mcpt）；裸 msbt< 无内层
+        const inner = isNode ? dname.nodes[1] : null;
+        // ---- 解析匹配模板 ----
+        let pattern;
+        let exactMatch;
+        let targetIdx;
+        let indexIdx;
+        let tplProp = null; // 步骤模式的模板步骤prop
+        let mcptTemplate = null; // mcpt模式的模板wff
+        if (inner && inner.name === "mcpt") {
+            // 格式2：msbt>(mcpt) 模板wff 目标 索引（模板须为重言式，replvar为通配符）
+            const template = args[1];
+            new MCPT(template.clone()).check(false);
+            pattern = template.clone();
+            exactMatch = false;
+            mcptTemplate = template.clone();
+            targetIdx = 2;
+            indexIdx = 3;
+        }
+        else if (inner) {
+            // 格式1：msbt>(规则名) 目标 索引（规则结论作模板，不允许带条件）
+            const rule = this.getD(inner);
+            if (rule.conditions.length)
+                throw HSError.msbtRuleWithCond;
+            pattern = rule.conclusion.clone();
+            exactMatch = false;
+            targetIdx = 1;
+            indexIdx = 2;
+        }
+        else {
+            // 格式3：裸 msbt>/msbt< 都支持“模板步骤 目标 索引”（精确匹配）。
+            // 方向由 dname 决定：> 匹配等价式左侧，< 匹配等价式右侧。
+            const tp = this.getP(args[1].name);
+            if (!tp)
+                throw HSError.pname404(args[1].name);
+            pattern = tp.ast.clone();
+            exactMatch = true;
+            tplProp = tp;
+            targetIdx = 2;
+            indexIdx = 3;
+        }
+        if (!(pattern.type === NodeType.LOGIC && pattern.name === "<>") && !(pattern.type === NodeType.PRED && pattern.name === "="))
+            throw HSError.msbtBadTemplate;
+        // ---- 目标：wff 或推理步骤 ----
+        const targetArg = args[targetIdx];
+        const targetProp = targetArg.isAtom() ? this.getP(targetArg.name) : undefined;
+        const isStep = !!targetProp && (targetProp.from.type === "d" || targetProp.from.type === "h");
+        const targetAst = isStep ? targetProp.ast.clone() : targetArg.clone();
+        const genIff = !isStep;
+        const subIndices = MSBT.getsubIndices(args[indexIdx]);
+        // ---- 计算替换 ----
+        const msbt = new MSBT(this, pattern, exactMatch, targetAst, genIff, right, this.getAsserts(), subIndices);
+        // msbt 的正常执行只计算替换结果；肢解应由后续显式的展开操作触发，
+        // 不能在这里因为目标是步骤就提前生成并执行递归证明。
+        const result = msbt.check(false);
+        // ---- 存储完整命令信息 ----
+        const nameParts = [new AST(NodeType.ATOM_DNAME, right ? "msbt>" : "msbt<")];
+        if (inner)
+            nameParts.push(inner.clone());
+        const dname2 = nameParts.length > 1 ? new AST(NodeType.NODE_DNAME, "", ...nameParts) : nameParts[0];
+        const conds = [];
+        if (tplProp)
+            conds.push(tplProp);
+        if (isStep)
+            conds.push(targetProp);
+        const rv = {};
+        if (mcptTemplate)
+            rv["$p"] = mcptTemplate;
+        if (!isStep)
+            rv["$t"] = targetArg.clone();
+        rv["$i"] = args[indexIdx].clone();
+        // Deduction 的条件模板须与运行时 conds 数量一致（d()匹配用）
+        const d = new Deduction(new Set, dname2, [], conds.map(c => c.ast.clone()), result);
+        return this.d(d, conds, rv);
+    }
     c(ast) { return this.addP(Proposition.mkdir("c", ast)); }
     v(ast) { return this.addP(Proposition.mkdir("v", ast)); }
     f(ast) {
         this.checkPname(ast.name);
         return this.addP(Proposition.mkdir("f", ast));
+    }
+    // ===== mcnt 换名元定理（元规则，不注册为规则实体、不经过 getD） =====
+    // 命令格式：mcnt 目标(wff或推理步骤) 替换规则{..}。目标为wff时结果wrap<>（原↔换名后），
+    // 为步骤时结果直接是换名后的表达式。存储格式与msbt一致（$t=wff目标、$i=替换规则）。
+    mcnt(args) {
+        const targetArg = args[0];
+        const targetProp = targetArg.isAtom() ? this.getP(targetArg.name) : undefined;
+        const isStep = !!targetProp && (targetProp.from.type === "d" || targetProp.from.type === "h");
+        const targetAst = isStep ? targetProp.ast.clone() : targetArg.clone();
+        const subIndices = MCNT.getsubIndices(args[1]) ?? new Map();
+        const mc = new MCNT(targetAst, isStep ? targetProp.id : undefined, subIndices, this.getAsserts());
+        const result = mc.check(false);
+        // ---- 存储完整命令信息 ----
+        const conds = [];
+        if (isStep)
+            conds.push(targetProp);
+        const rv = {};
+        if (!isStep)
+            rv["$t"] = targetArg.clone();
+        rv["$i"] = args[1].clone();
+        const d = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, "mcnt"), [], conds.map(c => c.ast.clone()), result);
+        return this.d(d, conds, rv);
     }
     clear() {
         this.props.length = 0;
@@ -1335,7 +1754,18 @@ export class HilbertSystem {
             const args = cmd.nodes;
             if (name === "hyp")
                 this.hyp(args[0]);
+            if (name === "mcpt")
+                this.mcpt(args[0]);
+            if (name === "mcnt")
+                this.mcnt(args);
+            if (name === "pop")
+                this.pop();
             if (name === "d") {
+                // msbt 是元规则：d 命令下 dname 为 msbt>/msbt< 时走 msbt()，不经过 getD
+                if (this.isMsbtDname(args[0])) {
+                    this.msbt(args);
+                    continue;
+                }
                 const rule = this.getD(args[0]);
                 const conds = args.slice(1, rule.conditions.length + 1).map(e => this.getP(e.name));
                 const replaceValues = Object.fromEntries(args.slice(rule.conditions.length + 1).map((e, idx) => [rule.replaceNames[idx][0], e]));
@@ -1365,6 +1795,31 @@ export class HilbertSystem {
                     p.name = args[1].name;
                 }
             }
+        }
+    }
+    // 在宿主当前上下文中重放一组步骤（CombineHost.replaySteps 实现）。
+    // 供 genQuantStep 无条件分支把原规则 step 包进 var 文件夹。
+    // 用引用映射重放（同 expand/genDeductStep），不能用 genCmd/fromCmd——
+    // 命令里的 id 基于原 step 树，重放到新上下文后 id 会错位。
+    replaySteps(steps) {
+        const flat = [];
+        const iterFlat = (arr) => {
+            for (const sp of arr) {
+                flat.push(sp);
+                if (sp.children)
+                    iterFlat(sp.children);
+            }
+        };
+        iterFlat(steps);
+        const oldNew = new Map();
+        // a（断言）跳过；无条件规则的 step 无 h；其余逐条重放，锚定 var 文件夹（当前 active）
+        for (const sp of flat) {
+            if (sp.from.type === "a")
+                continue;
+            const desiredParent = sp.parent ? (oldNew.get(sp.parent) ?? this.activeProp) : this.activeProp;
+            while (this.activeProp && this.activeProp !== desiredParent)
+                this.pop();
+            this.replayStepProp(sp, {}, oldNew);
         }
     }
 }

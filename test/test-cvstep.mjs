@@ -105,7 +105,35 @@ ok(pca.ast.toString() === "A→A→B→A", "c:a1 A ⊢ A→A→B→A");
 console.log("===== test 5: v:a1 无step =====");
 const va1 = getD("v:a1");
 console.log(" v:a1:", va1.toString(), "| step:", va1.step?.length);
-ok(!va1.step?.length, "v:a1 无step（公理不允许展开）");
+ok(!va1.step?.length, "v:a1 无step（公理加v还是公理，不允许肢解）");
+sys.clear();
+const pva = sys.d(va1, [], { [va1.replaceNames[0][0]]: parser.parse("x", 'item'), $1: parser.parse("A", 'wff'), $2: parser.parse("B", 'wff') });
+console.log(" applied:", pva.ast.toString());
+ok(pva.ast.toString() === "∀x:(A→B→A)", "v:a1 A B ⊢ ∀x:(A→B→A)");
+try {
+    sys.expand(pva);
+    ok(false, "v:a1 公理 expand 应报错");
+} catch (e) {
+    ok(true, "v:a1 公理 expand 报错: " + (e?.cause?.type ?? e?.type));
+}
+
+// ===== test 5b: v:.i（非公理加v）可肢解 =====
+console.log("===== test 5b: v:.i step =====");
+const vi = getD("v:.i");
+console.log(" v:.i:", vi.toString(), "| step:", vi.step?.length);
+ok(!!vi.step?.length, "v:.i 有step（非公理加v：var + 原规则step）");
+if (vi.step) dump(vi.step);
+sys.clear();
+const pvi = sys.d(vi, [], { [vi.replaceNames[0][0]]: parser.parse("x", 'item'), $: parser.parse("A", 'wff') });
+console.log(" applied:", pvi.ast.toString());
+ok(pvi.ast.toString() === "∀x:(A→A)", "v:.i A ⊢ ∀x:(A→A)");
+const nfvi = sys.expand(pvi);
+console.log(" after expand:");
+dump(sys.props);
+ok(nfvi.length === 1 && sys.props.some(p => p.from.type === "v" && p.ast.toString() === "x"), "v:.i expand 产生 var x 文件夹");
+const vix = sys.props.find(p => p.from.type === "v");
+const vixCount = vix && vix.children ? vix.children.length : 0;
+ok(!!vix && vixCount >= 3, "v:.i expand 后 var 文件夹内含原 .i 步骤（" + vixCount + " 步）");
 
 // ===== test 6: c:t step =====
 console.log("===== test 6: c:t step =====");

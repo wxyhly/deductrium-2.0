@@ -97,6 +97,53 @@ export class SyntaxHighlighter {
         }).join('');
     }
 
+    /**
+     * DOM 版高亮：直接创建 span 元素（textContent 自动转义），避免 innerHTML 字符串解析。
+     * 系统表渲染卡顿的主因是 innerHTML 重建 + 浏览器重新解析 HTML；
+     * 这里一次构建 DocumentFragment，render() 用 replaceChildren 挂载，量级快很多。
+     * token 分类/悬停高亮（dummytokens/outterDummyVars/quantStack）与字符串版完全一致。
+     */
+    highlightDOM(tokens: Token[]): DocumentFragment {
+        const fragment = document.createDocumentFragment();
+        const quantStack: QuantStack = [];
+        let layerDepth = 0;
+        this.dummytokens.length = 0;
+        for (let tidx = 0; tidx < tokens.length; tidx++) {
+            const tok = tokens[tidx];
+            const boundedTokens = this.highLightQuants(quantStack, tokens, tok, tidx);
+            const span = document.createElement('span');
+            if (boundedTokens) {
+                this.dummytokens[tok.start] = boundedTokens;
+            } else if (tok.type.includes("replvar") || tok.type.includes('free')) {
+                const outerIdx = this.outterDummyVars.findIndex(([name, _]) => name === tok.text);
+                if (outerIdx !== -1) {
+                    if (!tok.type.includes("replvar")) tok.type = 'atom-var';
+                    span.dataset.outerIdx = String(outerIdx);
+                }
+            }
+            let cls = 'token-' + tok.type;
+            if (tok.type === "layer") {
+                if ("([{".includes(tok.text)) {
+                    layerDepth++;
+                    cls += "-" + (layerDepth % LAYER_STYLE_MAX_DEPTH);
+                } else if (")}]".includes(tok.text)) {
+                    cls += "-" + (layerDepth % LAYER_STYLE_MAX_DEPTH);
+                    layerDepth--;
+                }
+            }
+            span.className = cls;
+            span.textContent = tok.displayText;   // textContent 自动转义，无需 escapeHtml
+            span.dataset.start = String(tok.start);
+            span.dataset.end = String(tok.end);
+            if (tok.parentAST && typeof tok.parentAST.start === 'number' && typeof tok.parentAST.end === 'number') {
+                span.dataset.parentStart = String(tok.parentAST.start);
+                span.dataset.parentEnd = String(tok.parentAST.end);
+            }
+            fragment.appendChild(span);
+        }
+        return fragment;
+    }
+
     highLightQuants(quantStack: QuantStack, tokens: Token[], tok: Token, tidx: number): Token[] | undefined {
         while (quantStack.length > 0 && tok.start >= quantStack[quantStack.length - 1].end) {
             quantStack.pop();
@@ -266,18 +313,33 @@ export abstract class BaseSyntaxViewer {
         // 默认不做额外清理，子类负责移除自己的 DOM
     }
 
-    /** 渲染方法：解析并更新 code 元素的 innerHTML */
-    protected render(unicodeText: string) {
-        if (!unicodeText?.trim()) return this.codeElement.innerHTML = "";
+    // 解析缓存：同一文本只解析一次（setCode 里 replaceText 与 render 各会触发 parse，
+    // 系统表每行因此双解析——大表卡顿主因；按文本缓存后同文本直接复用 tokens）
+    private lastParseText: string | null = null;
+    private lastParseTokens: Token[] | null = null;
+    private parseTokens(unicodeText: string): Token[] {
+        if (this.lastParseText === unicodeText && this.lastParseTokens) {
+            return this.lastParseTokens;
+        }
         try { this.parser.parse(unicodeText, ...this.parserArgs); } catch { }
-        const tokens = this.parser.getTokens();
-        const html = this.highlighter.highlight(tokens);
-        this.codeElement.innerHTML = html ;
+        this.lastParseTokens = this.parser.getTokens();
+        this.lastParseText = unicodeText;
+        return this.lastParseTokens;
+    }
+
+    /** 渲染方法：解析并更新 code 元素的 DOM（直接构建 span，不走 innerHTML） */
+    protected render(unicodeText: string) {
+        if (!unicodeText?.trim()) {
+            this.codeElement.replaceChildren();
+            return;
+        }
+        const tokens = this.parseTokens(unicodeText);
+        const fragment = this.highlighter.highlightDOM(tokens);
+        this.codeElement.replaceChildren(fragment);
     }
 
     protected replaceText(str: string): string {
-        try { this.parser.parse(str, ...this.parserArgs) } catch { }
-        const tokens = this.parser.getTokens();
+        const tokens = this.parseTokens(str);
         let result = "";
         let buffer = "";
         const allowed = this.parser.allowReplaceTokenType;
@@ -344,6 +406,8 @@ export class SyntaxViewer extends BaseSyntaxViewer {
         const target = e.target as HTMLElement;
         const span = target?.closest?.('span') as HTMLElement | null;
         if (!span || !SyntaxViewer.onClickAst) return;
+        // 点击不在公式渲染区内（如行内空白/外层包装元素）→ 不拦截，交给行点击回调（如选择推理步骤）
+        if (!this.codeElement.contains(span)) return;
 
         const parentStart = span.dataset.parentStart;
         const parentEnd = span.dataset.parentEnd;
@@ -355,6 +419,8 @@ export class SyntaxViewer extends BaseSyntaxViewer {
             text = span.innerText; // 或 span.textContent
         }
         SyntaxViewer.onClickAst(text, e, this.parser, this.parserArgs);
+        // 已按 AST 片段处理（如插入输入框），阻止冒泡，避免外层行点击回调再次触发覆盖行为
+        e.stopPropagation();
     };
     // 覆写 destroy 以移除 DOM 和事件
     destroy() {

@@ -21,7 +21,7 @@ class Game {
     tilesParcour = 0; // 总方块步数
     langMgr = new LangMgr(SaveLoad.getSavedLang());
     hsLayer = new HSLayer;
-    ttLayer = new TTLayer;
+    ttLayer = new TTLayer(gameMode === "creative");
     hyLayer = new HyLayer;
     saveload = new SaveLoad(gameMode, () => {
         // 创造模式目前只有推理层（hs）+ 类型层（tt）；几何层/奖励/成就/经济仅生存模式

@@ -62,6 +62,8 @@ const commandDefs: Record<string, CommandDef> = {
     del: { params: [{ type: 'ast', astType: 'item' }] },
     dir: { params: [{ type: 'ast', astType: 'item' }] },
     m: { params: [{ type: 'rulename' }] },
+    mcpt: { params: [{ type: 'ast', astType: 'wff' }] },
+    mcnt: { params: [{ type: 'ast', astType: 'wff' }, { type: 'ast', astType: 'item' }] },
     // axiom: { params: [{ type: 'atom_token' }, { type: 'ast', astType: 'wff' }] },
     // assert: { params: [{ type: 'atom_token' }, { type: 'ast', astType: 'wff' }, { type: 'ast', astType: 'wff', optional: true, repeat: true, separator: ',' }] },
 };
@@ -375,7 +377,7 @@ export class HSParser implements IParser {
     }
     parseDnameFn(): AST {
         let left = this.parseDnameFastRule();
-        if (this.token?.text === "(" && this.token.type === "rule-layer") {
+        while (this.token?.text === "(" && this.token.type === "rule-layer") {
             // fn(xxx,xxx)
             const tokens = new Set([this.token]);
             const start = left.start;
@@ -394,10 +396,9 @@ export class HSParser implements IParser {
             } else tokens.add(closeparen);
             const ast = new AST(NodeType.NODE_DNAME, "", left, ...args).range(start, this.tokens[this.cursor - 2].end);
             tokens.forEach(t => t.parentAST = ast);
-            return ast;
-        } else {
-            return left;
+            left = ast;
         }
+        return left;
     }
     parseDnameFastRule(): AST {
         if (this.token.type !== "rule-prefix") return this.parseDnameAtom();
@@ -552,11 +553,11 @@ export class HSParser implements IParser {
             const ast = new AST(NodeType.LOGIC, opToken.text, right).range(start, right.end);
             opToken.parentAST = ast;
             return ast;
-        } else if (this.token?.text === "+") {
-            // 一元正号：+23 等价 23（旧地图 dZop 门如 (-13)*(+23)）
-            const start = this.token.start;
-            this.nextSym();
-            return this.parseUnaryLogic(F3);
+        // } else if (this.token?.text === "+") {
+        //     // 一元正号：+23 等价 23（旧地图 dZop 门如 (-13)*(+23)）
+        //     const start = this.token.start;
+        //     this.nextSym();
+        //     return this.parseUnaryLogic(F3);
         }
         return this.parsePred(isItem);
     }

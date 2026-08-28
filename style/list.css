@@ -647,3 +647,34 @@ body {
 .extra-m {
     background-color: #fdb16b;
 }
+
+/* ===== 推理表行高亮（仅显示层，不涉逻辑） ===== */
+
+/* 所有列表通用：hover 时轻微提亮。
+   注意不能用 filter/transform：它们会让本行成为 fixed 定位后代（下拉菜单）的包含块，
+   导致菜单相对该行定位而错位、把表撑大；用背景色替代。 */
+.item-row:hover {
+    background-color: #f4f7fc;
+}
+
+/* 推理表：没有 relyAfter 的步骤（可删除/末端）淡黄提示 */
+#propListWrapper .item-row.row-no-relyafter {
+    background-color: #fef9e7;
+}
+#propListWrapper .item-row.row-no-relyafter:nth-of-type(2n) {
+    background-color: #fdf6dd;
+}
+
+/* 推理表：悬停某步骤时其 relyBefore 依赖（红）、relyAfter 后续（蓝）淡色高亮 */
+#propListWrapper .item-row.row-dep-before {
+    background-color: #fdeaea;
+}
+#propListWrapper .item-row.row-dep-before:nth-of-type(2n) {
+    background-color: #fbe3e3;
+}
+#propListWrapper .item-row.row-dep-after {
+    background-color: #e7effd;
+}
+#propListWrapper .item-row.row-dep-after:nth-of-type(2n) {
+    background-color: #dfe9fb;
+}

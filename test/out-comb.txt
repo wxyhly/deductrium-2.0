@@ -1,0 +1,72 @@
+v<a4(<a6): #nf($1,$b,$a),∀$a:$1⊢∀$b:#sb($1,$a,$c)
+  断言: {"type":"nf","name":"$1","vs":{},"qs":{}}
+  nameMap: {"$A":"$c"}
+  step 数: 4
+    step: hyp #nf($1,$b,$a)
+    step: hyp ∀$a:$1
+    step: <a6 2 $b
+    step: v<a4 3 $c
+
+v.t(<a6,<a6): #nf($1,$a),#nf($2,$a),#nf($3,$a),$1→$2,$2→$3⊢∀$a:($1→$3)
+  断言: {"type":"nf","name":"$1","vs":{},"qs":{}} | {"type":"nf","name":"$2","vs":{},"qs":{}} | {"type":"nf","name":"$3","vs":{},"qs":{}}
+  nameMap: {}
+  step 数: 8
+    step: hyp #nf($1,$a)
+    step: hyp #nf($2,$a)
+    step: hyp #nf($3,$a)
+    step: hyp $1→$2
+    step: hyp $2→$3
+    step: <a6 4 $a
+    step: <a6 5 $a
+    step: v.t 6 7
+v:mp(<a6,<a6) 失败: {
+  "type": "createRule",
+  "ruleName": {
+    "type": 16,
+    "nodes": [
+      {
+        "type": 17,
+        "nodes": [],
+        "name": "mp",
+        "start": 2,
+        "end": 4
+      },
+      {
+        "type": 16,
+        "nodes": [
+          {
+            "type": 17,
+            "nodes": [],
+            "name": "a6",
+            "start": 6,
+            "end": 8
+          }
+        ],
+        "name": "<",
+        "start": 5,
+        "end": 8
+      },
+      {
+        "type": 16,
+        "nodes": [
+          {
+            "type": 17,
+            "nodes": [],
+            "name": "a6",
+            "start": 10,
+            "end": 12
+          }
+        ],
+        "name": "<",
+        "start": 9,
+        "end": 12
+      }
+    ],
+    "name": "",
+    "start": 2,
+    "end": 13
+  },
+  "cause": {
+    "type": "combineInconsist"
+  }
+}
