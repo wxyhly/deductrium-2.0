@@ -186,6 +186,7 @@ export class ProgressLayer {
             reader.onload = () => {
                 const text = String(reader.result || "");
                 this.saveload.save(); // 刷新前保存当前进度，防丢数据
+                this.saveload.cancelPendingSave(); // 取消旧延时保存，防止覆盖导入结果
                 const ok = this.saveload.loadFromString(text);
                 if (ok) {
                     this.scheduleRefresh();
@@ -200,6 +201,9 @@ export class ProgressLayer {
         const resetBtn = document.getElementById("pg-reset") as HTMLButtonElement | null;
         resetBtn?.addEventListener("click", () => {
             if (!confirm(LangMgr.text.resetConfirm)) return;
+            // 先取消排定的延时保存：否则旧的 notifySave timer 可能在刷新生效前
+            // 触发 save()，把未重置的当前进度写回 localStorage，导致重置失败
+            this.saveload.cancelPendingSave();
             localStorage.removeItem(this.saveloadKey());
             this.scheduleRefresh();
         });
@@ -253,6 +257,7 @@ export class ProgressLayer {
                 const slotMode = slotMeta?.mode ?? this.mode;
                 if (!confirm(LangMgr.formalize.loadSlotConfirm(slotMode, this.mode))) return;
                 this.saveload.save(); // 刷新前保存当前进度
+                this.saveload.cancelPendingSave(); // 取消旧延时保存，防止覆盖槽位数据
                 this.saveload.loadFromString(data);
                 this.scheduleRefresh();
             });

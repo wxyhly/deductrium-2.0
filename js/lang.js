@@ -360,6 +360,8 @@ export class LangMgr {
                     ? `非法替换：${info.destination}中的自由变量会被量词${qList}约束。${formatCause(info.cause)}`
                     : `forbidden substitution: free variables in ${info.destination} will be captured by quantifiers ${qList}. ${formatCause(info.cause)}`;
             }
+            case "sbUndetermined":
+                return zh ? "断言包含无法化简的#sb函数，无法确定" : "assertion contains an irreducible #sb function, cannot determine";
             case "assertForeverFail":
                 return zh
                     ? `当前断言永远不满足或与其它断言矛盾：${info.ast}`

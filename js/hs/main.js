@@ -355,7 +355,8 @@ export class HSLayer {
                     // mcpt 是特殊元规则（不在 getD 中），所有 mcpt 步骤都可肢解（步骤 lazy 生成）
                     const isMcpt = dname.type === NodeType.ATOM_DNAME && dname.name === "mcpt";
                     const isMsbt = this.hilbertSystem.isMsbtDname(dname);
-                    if (isMcpt || isMsbt || this.hilbertSystem.getD(dname).step?.length) {
+                    const isMcnt = dname.type === NodeType.ATOM_DNAME && dname.name === "mcnt";
+                    if (isMcpt || isMsbt || isMcnt || this.hilbertSystem.getD(dname).step?.length) {
                         arr.push({ label: LangMgr.text.expand, action: "expand", icon: '🔧' });
                     }
                 }

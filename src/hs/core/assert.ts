@@ -496,9 +496,11 @@ export abstract class Assertion {
                     // nf a c D  ⇒  nf #sb(a,b,c) b D
                     if (!qsNodes?.nodes?.length && dst.isAtom()) {
                         if (this.check(premises, new NFAssertion(body, new Set([dst.name]), a.qs).reduce()).passed) {
+                            // 规约成功：src 已从 vs 中删去；若 vs 删空则该断言恒成立，无需再压回检查
                             const reducedA = a.clone();
                             reducedA.vs.delete(src.name);
-                            res.asts.push(reducedA); continue;
+                            if (reducedA.vs.size) res.asts.push(reducedA);
+                            continue;
                         }
                     }
                     // nf c b D2 ∧ D1 ⊆ D2  ⇒  nf #sb(a,b,c,D1) b D2
@@ -510,9 +512,11 @@ export abstract class Assertion {
                         }
                     }
                     if (this.check(premises, new NFAssertion(dst, new Set([src.name]), a.qs).reduce()).passed) {
+                        // 规约成功：src 已从 vs 中删去；若 vs 删空则该断言恒成立，无需再压回检查
                         const reducedA = a.clone();
                         reducedA.vs.delete(src.name);
-                        res.asts.push(reducedA); continue;
+                        if (reducedA.vs.size) res.asts.push(reducedA);
+                        continue;
                     }
                 }
             }
@@ -561,7 +565,7 @@ export abstract class Assertion {
             const check = Assertion.check(premises, new NFAssertion(dst, qs, new Set).reduce());
             // if dst has variables bounded by qs, then fail and throw error, else #sb(body, src, dst, qs) => dst
             if (check.passed) return mut_body.copyFrom(dst);
-            else throw HSError.sbFail(dst, qs, check.counterexample);
+            else throw HSError.sbFail(dst, qs, check.counterexample ?? HSError.sbUndetermined);
         }
         // if body is const or src = dst or #nf body src qs, then #sb(body, src, dst, qs) => body
         if (
@@ -604,6 +608,9 @@ export abstract class Assertion {
                 // innerDst in mut_body -> #sb(innerDst, src, dst, qs)
                 this.reduceSbFnInside(premises, innerDstNode, src, dst, qs);
                 // return mut_body := #sb(innerBody, innerSrc, #sb(innerDst, src, dst, qs), innerQs)
+                // 连续替换可能产生新的可化简 #sb（如 src===dst 时 #sb 可归并为 body），
+                // 对结果再次化简直到收敛（多层嵌套也能处理）
+                this.reduceSbFn(premises, mut_body);
                 return;
             }
         }

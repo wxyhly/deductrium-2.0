@@ -36,9 +36,12 @@ function genAscii2unicodeTable(strMap: Record<string, string>) {
 }
 
 const charSeps = '()[]{},;|:=+*! \t\n\\';
+// 命令名扫描分隔符：\ 不是分隔符——规则名中 \ 是合法字符（如 d\c），
+// 命令名 d 后必须跟空格等才断开（tokenizeRuleName 已用不含 \ 的 ruleCharSeps 处理规则名）
+const cmdSeps = charSeps.replace("\\", "");
 const predSyms = ["=", "@", "\\<", "\\>", "\\<=", "\\>=", "\\d", "\\c"];
 // 集合/算术二元运算（按优先级：∪ < ∩ < +- < *× < \\）
-const setSyms = ["\\u", "\\i", "+", "-", "\\", "*", "\\x"];
+const setSyms = ["\\u", "\\i", "+", "-", "\\\\", "*", "\\x"];
 
 // rulename parse rule:
 
@@ -174,7 +177,7 @@ export class HSParser implements IParser {
                 continue;
             }
             const start = this.cursor;
-            while (this.cursor < text.length && !charSeps.includes(text[this.cursor])) {
+            while (this.cursor < text.length && !cmdSeps.includes(text[this.cursor])) {
                 this.cursor++;
             }
             const word = text.slice(start, this.cursor);
@@ -338,6 +341,8 @@ export class HSParser implements IParser {
                 } else {
                     for (const p of params) {
                         if (p.type === "ast") {
+                            // 参数不足时优雅停止（剩余参数由交互式补全），避免解析崩溃
+                            if (!this.token) break;
                             args.push(this.parseWFF(p.astType === "wff" ? F3 : p.astType === "item" ? T3 : U3));
                         }
                     }
@@ -531,7 +536,7 @@ export class HSParser implements IParser {
             let domainNode: AST | undefined;
             if ((this.token.text as string) === "@" || (this.token.text as string) === ":") symTokens.push(this.token);
             if (this.acceptSym("@")) {
-                this.parseITEM(T3);
+                domainNode = this.parseITEM(T3);
                 if ((this.token.text as string) === ":") symTokens.push(this.token);
             }
             this.acceptSym(':');
@@ -553,11 +558,6 @@ export class HSParser implements IParser {
             const ast = new AST(NodeType.LOGIC, opToken.text, right).range(start, right.end);
             opToken.parentAST = ast;
             return ast;
-        // } else if (this.token?.text === "+") {
-        //     // 一元正号：+23 等价 23（旧地图 dZop 门如 (-13)*(+23)）
-        //     const start = this.token.start;
-        //     this.nextSym();
-        //     return this.parseUnaryLogic(F3);
         }
         return this.parsePred(isItem);
     }
@@ -958,7 +958,7 @@ export class HSParser implements IParser {
         }
         if (ast.type === NodeType.QUANT || ast.type === NodeType.BOUNDED_QUANT) {
             const body = ast.nodes[ast.type === NodeType.QUANT ? 1 : 2];
-            const bounded = ast.type === NodeType.BOUNDED_QUANT ? "@" + HSParser.stringify(ast.nodes[1], false) : "";
+            const bounded = ast.type === NodeType.BOUNDED_QUANT ? "∈" + HSParser.stringify(ast.nodes[1], false) : "";
             return ascii2unicodeTable[ast.name] + ast.nodes[0].name + bounded + ":" + HSParser.stringify(body, body.type === NodeType.LOGIC && body.name !== "~");
         }
         if (ast.type === NodeType.SB) {

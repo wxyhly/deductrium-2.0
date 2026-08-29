@@ -11,6 +11,7 @@ export type HSErrorInfo =
     | { type: "futureCondition"; conditionId: number; appendId: number }
     | { type: "assertFail"; assertionIndex: number; cause: unknown }
     | { type: "sbFail"; destination: AST; quantifierSet: Set<string>; cause: unknown }
+    | { type: "sbUndetermined" }
     | { type: "assertForeverFail"; ast: AST }
     | { type: "assertNeverFail"; ast: AST }
     | { type: "emptyValue" }
@@ -83,6 +84,7 @@ export const HSError: {
     futureCondition(conditionId: number, appendId: number): HSErrorInfo;
     assertFail(assertionIndex: number, cause: unknown): HSErrorInfo;
     sbFail(destination: AST, quantifierSet: Set<string>, cause: unknown): HSErrorInfo;
+    sbUndetermined: HSErrorInfo;
     assertForeverFail(ast: AST): HSErrorInfo;
     assertNeverFail(ast: AST): HSErrorInfo;
     emptyValue: HSErrorInfo;
@@ -149,6 +151,7 @@ export const HSError: {
     futureCondition(conditionId: number, appendId: number): HSErrorInfo { return { type: "futureCondition", conditionId, appendId }; },
     assertFail(assertionIndex: number, cause: unknown): HSErrorInfo { return { type: "assertFail", assertionIndex, cause }; },
     sbFail(destination: AST, quantifierSet: Set<string>, cause: unknown): HSErrorInfo { return { type: "sbFail", destination, quantifierSet, cause }; },
+    sbUndetermined: { type: "sbUndetermined" },
     assertForeverFail(ast: AST): HSErrorInfo { return { type: "assertForeverFail", ast }; },
     assertNeverFail(ast: AST): HSErrorInfo { return { type: "assertNeverFail", ast }; },
     // 无参错误：直接常量对象（不再用工厂函数）

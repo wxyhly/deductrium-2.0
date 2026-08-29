@@ -37,6 +37,13 @@ export class SaveLoad {
             }, this.timeOut);
         }
     }
+    // 取消待执行的延时保存（重置/加载槽位/导入前调用，防止旧进度在刷新间隙被写回）
+    cancelPendingSave() {
+        if (this.stateChangeTimer !== false) {
+            clearTimeout(this.stateChangeTimer);
+            this.stateChangeTimer = false;
+        }
+    }
     get storageKey() {
         return `deductrium2_${this.mode}`;
     }

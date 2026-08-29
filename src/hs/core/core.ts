@@ -424,8 +424,28 @@ export class HilbertSystem {
         if (isMcpt) {
             steps = this.genMcptSteps(data.replaceValues["$"]);
         } else if (isMcnt) {
-            // mcnt 暂不生成肢解步骤
-            throw HSError.atomicStep(dname);
+            // mcnt 换名元定理：步骤 lazy 生成（MCNT.generateStep 生成命令序列）
+            const targetIsStep = !data.replaceValues["$t"];
+            const targetAst = targetIsStep
+                ? data.conditions[data.conditions.length - 1].ast.clone()
+                : data.replaceValues["$t"]!.clone();
+            const sheetAsserts = this.getAsserts();
+            const generator = new MCNT(targetAst, targetIsStep ? data.conditions[data.conditions.length - 1].id : undefined, MCNT.getsubIndices(data.replaceValues["$i"]!) ?? new Map<number, string>(), sheetAsserts);
+            const saved = this.saveContext();
+            try {
+                this.loadContext(this.createEmptyContext());
+                // 预置当前表断言：生成 context 里 d() 的断言检查依赖这些断言
+                let assertCount = 0;
+                for (const a of sheetAsserts) {
+                    try { this.hyp(assertToAST(a)); assertCount++; } catch (e) { if ((e as HSErrorInfo)?.type === "assertNeverFail") continue; throw e; }
+                }
+                const commands = generator.generateStep(assertCount);
+                this.fromCmd(commands.map(command => new HSParser().parse(command, "cmd")));
+                steps = this.props.slice(0);
+            } finally {
+                this.loadContext(saved);
+            }
+            rule = new Deduction(new Set, dname, [], data.conditions.map(c => c.ast.clone()), p.ast.clone(), steps);
         } else if (isMsbt) {
             const isNode = dname.type === NodeType.NODE_DNAME;
             const inner = isNode ? dname.nodes[1] as AST : null;
@@ -1103,7 +1123,8 @@ export class HilbertSystem {
                     const constraint = Assertion.fromAtomic(deduction.assertions[i]).mut_replaceByMatchTable(replaceValues).reduce();
                     const check = Assertion.check(assertions, constraint);
                     if (!check.passed) {
-                        throw check.counterexample;
+                        // 无 counterexample 说明断言含无法化简的#sb函数（undetermined），给出明确报错而非 undefined
+                        throw check.counterexample ?? HSError.sbUndetermined;
                     }
                 } catch (e) {
                     throw HSError.assertFail(i + 1, e);

@@ -230,6 +230,12 @@ export class AST {
             this.nodes[1].checkWFF();
             return;
         }
+        if (this.type === NodeType.BOUNDED_QUANT) {
+            this.nodes[0].checkVAR();
+            this.nodes[1].checkITEM();
+            this.nodes[2].checkWFF();
+            return;
+        }
         if (this.type === NodeType.PRED) {
             for (let i = 0; i < this.nodes.length; i++) {
                 this.nodes[i].checkITEM();

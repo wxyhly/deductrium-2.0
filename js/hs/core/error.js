@@ -12,6 +12,7 @@ export const HSError = {
     futureCondition(conditionId, appendId) { return { type: "futureCondition", conditionId, appendId }; },
     assertFail(assertionIndex, cause) { return { type: "assertFail", assertionIndex, cause }; },
     sbFail(destination, quantifierSet, cause) { return { type: "sbFail", destination, quantifierSet, cause }; },
+    sbUndetermined: { type: "sbUndetermined" },
     assertForeverFail(ast) { return { type: "assertForeverFail", ast }; },
     assertNeverFail(ast) { return { type: "assertNeverFail", ast }; },
     // 无参错误：直接常量对象（不再用工厂函数）

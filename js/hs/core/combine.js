@@ -1268,11 +1268,16 @@ export class MCNT {
             name = "#" + (n++);
         return name;
     }
-    check(genstep) {
+    // ---- 步骤生成（肢解） ----
+    steps = [];
+    popCount = -1;
+    assertCount = 0;
+    targetNames = [];
+    // searchIter + 负索引归一 + filter（未指定/同名剔除），填充 this.res/absPosRes/targetNames
+    prepare() {
         this.searchIter(this.ast, []);
         if (!this.res.length)
             throw HSError.mcntNoMatch;
-        // 有了length，就可以把角标统一换算成正整数的位置索引了，我们这里更新this.subindices。
         if (this.subindices.size) {
             const len = this.res.length;
             const m = new Map();
@@ -1280,8 +1285,6 @@ export class MCNT {
                 m.set(idx > 0 ? idx : len + idx + 1, name);
             this.subindices = m;
         }
-        // 做一次filter，把subindices没指定替换的和替换后的名字跟ast.nodes[0].name的名字一样的也踢掉。
-        // 注意 subindices 的 key 是原始位置索引，filter 后要同步收集每个保留项的目标新名
         const keep = [];
         const targetNames = [];
         this.res.forEach((r, i) => {
@@ -1293,6 +1296,130 @@ export class MCNT {
         });
         this.res = this.res.filter((_, i) => keep[i]);
         this.absPosRes = this.absPosRes.filter((_, i) => keep[i]);
+        this.targetNames = targetNames;
+    }
+    // 生成肢解步骤（string[] 命令）。assertCount：生成上下文预置的断言数。
+    // 每点位一步 .\acn<>（当前ast↔单点换名后ast），步间 .<>t 串联；
+    // 嵌套（absPos 前缀包含）时先全部换成临时 fresh 局部变量（pass1）再换成目标（pass2），
+    // 与 check() 的替换逻辑一致——直接换目标变量会被内层量词捕获（sbFail）。
+    generateStep(assertCount = 0) {
+        this.steps = [];
+        this.popCount = -1;
+        this.assertCount = assertCount;
+        this.prepare();
+        // 步骤目标：生成上下文先 hyp 原 ast（编号 assertCount+1），unwrap 用
+        if (this.targetStepId !== undefined)
+            this.steps.push(`hyp ${this.origAst}`);
+        // 无替换：原↔原（wff 目标）；步骤目标再 unwrap 得原（=换后）
+        if (!this.res.length) {
+            this.steps.push(`d .<>i ${this.origAst}`);
+            if (this.targetStepId !== undefined) {
+                this.steps.push(`d <<.<>1 ${this.assertCount + 1} ${this.assertCount + 2}`);
+            }
+            return this.steps;
+        }
+        const isPrefix = (a, b) => a.length < b.length && a.every((v, k) => v === b[k]);
+        const hasNesting = this.absPosRes.some((p, i) => this.absPosRes.some((q, j) => j !== i && isPrefix(p, q)));
+        // 嵌套时预分配每个点位的临时变量（互不相同、避开 ast 与目标名）
+        const temps = [];
+        if (hasNesting) {
+            const used = new Set();
+            this.ast.getLocalvars(used);
+            for (const name of this.targetNames)
+                used.add(name);
+            let n = 0;
+            for (let i = 0; i < this.res.length; i++) {
+                let name = "#";
+                while (used.has(name))
+                    name = "#" + (n++);
+                used.add(name);
+                temps.push(name);
+            }
+        }
+        // 替换轮次：非嵌套 1 轮（目标），嵌套 2 轮（临时 + 目标）
+        const rounds = hasNesting
+            ? [{ names: temps }, { names: this.targetNames }]
+            : [{ names: this.targetNames }];
+        let chainIdx = 0;
+        let current = this.origAst.clone();
+        let stepCount = 0;
+        for (const round of rounds) {
+            for (let i = 0; i < this.res.length; i++) {
+                // next = 把 current 中点位 i 的绑定变量换成 round.names[i]
+                const next = current.clone();
+                const quant = this.findAt(next, this.absPosRes[i]);
+                const oldName = quant.nodes[0].name;
+                const newName = round.names[i];
+                quant.nodes[0] = new AST(NodeType.ATOM_ITEM, newName);
+                quant.nodes[1] = new AST(NodeType.SB, "", quant.nodes[1], new AST(NodeType.ATOM_ITEM, oldName), new AST(NodeType.ATOM_ITEM, newName), new AST(NodeType.FN, " "));
+                Assertion.reduceSbFn(this.asserts, quant.nodes[1]);
+                // 生成 current↔next 的证明（单点换名）
+                const stepIdx = this.genStepIter(current, next, [], this.absPosRes[i], newName);
+                if (stepCount === 0)
+                    chainIdx = stepIdx;
+                else {
+                    this.steps.push(`d .<>t ${chainIdx} ${stepIdx}`);
+                    chainIdx = this.assertCount + this.steps.length - 1 - this.popCount;
+                }
+                stepCount++;
+                current = next;
+            }
+        }
+        // 步骤目标：<<.<>1 链 原hyp → 换后ast（链为 原↔换）
+        if (this.targetStepId !== undefined) {
+            this.steps.push(`d <<.<>1 ${chainIdx} ${this.assertCount + 1}`);
+        }
+        return this.steps;
+    }
+    findAt(ast, pos) {
+        for (const i of pos)
+            ast = ast.nodes[i];
+        return ast;
+    }
+    // 生成 当前ast a ↔ 换后ast b 的单点换名证明（a 中只有 absPos=replacePos 的点位换名）。
+    // 未替换节点 .<>i；逻辑联结词 .<>rX 组合；量词 var/递归/pop + .<>r\a；
+    // 替换点位一步 .\acn<>（#nf($,$b)⊢∀$a:$↔∀$b:#sb($,$a,$b)，断言由上下文蕴含检查）。
+    genStepIter(a, b, pos, replacePos, newName) {
+        const isEq = pos.length === replacePos.length && pos.every((v, k) => v === replacePos[k]);
+        if (isEq) {
+            // a = ∀old:body，b = ∀new:#sb(body,old,new)。
+            // .\acn<> 结论 ∀$a:$↔∀$b:#sb($,$a,$b) 的 replaceNames 序 = [$a,$,$b]，
+            // 故命令参数顺序：旧变量名 body 新变量名
+            this.steps.push(`d .\\acn<> ${a.nodes[0].name} ${a.nodes[1]} ${newName}`);
+            return this.assertCount + this.steps.length - 1 - this.popCount;
+        }
+        if (a.equal(b)) {
+            this.steps.push(`d .<>i ${a}`);
+            return this.assertCount + this.steps.length - 1 - this.popCount;
+        }
+        if (a.type === NodeType.LOGIC) {
+            if (a.name === ">" || a.name === "<>" || a.name === "/\\" || a.name === "\\/") {
+                this.steps.push(`d .<>r${a.name} ${this.genStepIter(a.nodes[0], b.nodes[0], [...pos, 0], replacePos, newName)} ${this.genStepIter(a.nodes[1], b.nodes[1], [...pos, 1], replacePos, newName)}`);
+                return this.assertCount + this.steps.length - 1 - this.popCount;
+            }
+            if (a.name === "~") {
+                this.steps.push(`d .<>r~ ${this.genStepIter(a.nodes[0], b.nodes[0], [...pos, 0], replacePos, newName)}`);
+                return this.assertCount + this.steps.length - 1 - this.popCount;
+            }
+        }
+        if (a.type === NodeType.QUANT) {
+            this.steps.push("var " + a.getBoundVarName());
+            const inner = this.genStepIter(a.nodes[1], b.nodes[1], [...pos, 1], replacePos, newName);
+            this.steps.push("pop");
+            this.popCount++;
+            this.steps.push(`d .<>r${a.name} ${inner}`);
+            return this.assertCount + this.steps.length - 1 - this.popCount;
+        }
+        throw "can't reach";
+    }
+    check(genstep) {
+        this.prepare();
+        if (genstep) {
+            // 步骤生成由 generateStep 负责（expand 调用）；此处只保留原有替换计算
+            this.steps = [];
+            this.popCount = -1;
+            this.assertCount = 0;
+        }
         if (!this.res.length)
             return this.targetStepId === undefined ? new AST(NodeType.LOGIC, "<>", this.origAst, this.ast.clone()) : this.ast;
         // 检查filter后的indices对应的这些absPosRes，它们有没有互相包含的关系？（即看有没有一个数组是另一个的前段：如[]跟[0]有包含，但[0,1]跟[0,0没有）只要找到一个
@@ -1307,13 +1434,13 @@ export class MCNT {
             }
             // 第二次替换：把临时fresh变量换成真正最终变量
             for (let i = 0; i < this.res.length; i++) {
-                this.replaceOne(this.absPosRes[i], targetNames[i]);
+                this.replaceOne(this.absPosRes[i], this.targetNames[i]);
             }
         }
         else {
             // 否则一次替换搞定，不要临时变量
             for (let i = 0; i < this.res.length; i++) {
-                this.replaceOne(this.absPosRes[i], targetNames[i]);
+                this.replaceOne(this.absPosRes[i], this.targetNames[i]);
             }
         }
         // 最后该wrap/unwrap <>的在这里处理（genstep 的步骤生成留到以后，先不写）

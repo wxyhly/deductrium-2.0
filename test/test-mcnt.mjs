@@ -159,15 +159,64 @@ try {
     ok(sys.props[1].from.type === "d", "往返后 mcnt 是 d 类型");
 } catch (e) { ok(false, `test11 异常: ${JSON.stringify(e)}`); }
 
-// ===== test 12: expand 报 atomicStep（暂不生成步骤）=====
+// ===== test 12: wff 目标 expand（肢解步骤生成）=====
 sys.clear();
 try {
     const r = sys.mcnt([parser.parse("\\ax:x=y", 'wff'), parser.parse("{z}", 'item')]);
     sys.expand(r);
-    ok(false, "mcnt expand 应报 atomicStep");
-} catch (e) {
-    ok(e?.type === "expandFail" || e?.type === "atomicStep", `mcnt expand 报错（expandFail/atomicStep），实际 ${e?.type}`);
-}
+    ok(sys.props.length === 1, `单点换名 expand 后 1 步（.\acn<>），实际 ${sys.props.length}`);
+    ok(sys.props[0].ast.toString() === "∀x:x=y↔∀z:z=y", `单点换名 expand 结论正确`);
+    ok(sys.props[0].from.data.deduction.toString() === ".\\acn<>", "结论步骤是 .\acn<>");
+} catch (e) { ok(false, `test12 异常: ${JSON.stringify(e)}`); }
+
+// ===== test 12b: 嵌套 swap expand（两遍替换 + <>t 串联）=====
+sys.clear();
+try {
+    const r = sys.mcnt([parser.parse("\\ax:\\ay:x=y", 'wff'), parser.parse("{y,x}", 'item')]);
+    sys.expand(r);
+    const last = sys.props[sys.props.length - 1];
+    ok(last.ast.toString() === "∀x:∀y:x=y↔∀y:∀x:y=x", `swap expand 结论正确，实际 ${last.ast}`);
+    ok(sys.props.length >= 5, `swap expand 多步（临时变量两遍+串联），实际 ${sys.props.length}`);
+    // 有 var 文件夹（临时变量作用域）
+    const hasVar = sys.props.some(p => p.from.type === "v");
+    ok(hasVar, "swap expand 含临时变量 var 文件夹");
+} catch (e) { ok(false, `test12b 异常: ${JSON.stringify(e)}`); }
+
+// ===== test 12c: 步骤目标 expand（unwrap<>）=====
+sys.clear();
+try {
+    sys.hyp(parser.parse("\\ax:x=y", 'wff'));  // 1
+    const r = sys.mcnt([parser.parse("1", 'item'), parser.parse("{z}", 'item')]);
+    sys.expand(r);
+    ok(sys.props.length === 3, `步骤目标 expand 3 步（hyp+.\acn<>+<<.<>1），实际 ${sys.props.length}`);
+    const last = sys.props[sys.props.length - 1];
+    ok(last.ast.toString() === "∀z:z=y", `步骤目标 expand 结论 ∀z:z=y（不wrap），实际 ${last.ast}`);
+} catch (e) { ok(false, `test12c 异常: ${JSON.stringify(e)}`); }
+
+// ===== test 12d: 联结词深处 expand（.<>rX 递归）=====
+sys.clear();
+try {
+    const r = sys.mcnt([parser.parse("\\ax:x=y→\\ay:y=z", 'wff'), parser.parse("{v}", 'item')]);
+    sys.expand(r);
+    const last = sys.props[sys.props.length - 1];
+    ok(last.ast.toString() === r.ast.toString(), `联结词深处 expand 结论正确，实际 ${last.ast}`);
+} catch (e) { ok(false, `test12d 异常: ${JSON.stringify(e)}`); }
+
+// ===== test 12e: expand 往返后再 expand =====
+sys.clear();
+try {
+    const r = sys.mcnt([parser.parse("\\ax:\\ay:x=y", 'wff'), parser.parse("{y,x}", 'item')]);
+    sys.expand(r);
+    const cmds = sys.genCmd();
+    const asts = cmds.map(c => parser.parse(c, "cmd"));
+    sys.clear();
+    sys.fromCmd(asts);
+    sys.updatePropIdx();
+    const last = sys.props[sys.props.length - 1];
+    ok(last.ast.toString() === "∀x:∀y:x=y↔∀y:∀x:y=x", `expand 往返后结论正确`);
+    sys.expand(last);
+    ok(true, "往返后再 expand 成功");
+} catch (e) { ok(false, `test12e 异常: ${JSON.stringify(e)}`); }
 
 // ===== test 13: 宏规则步骤包含 mcnt（replayStepProp）=====
 sys.clear();

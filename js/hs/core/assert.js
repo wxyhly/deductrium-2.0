@@ -552,9 +552,11 @@ export class Assertion {
                     // nf a c D  ⇒  nf #sb(a,b,c) b D
                     if (!qsNodes?.nodes?.length && dst.isAtom()) {
                         if (this.check(premises, new NFAssertion(body, new Set([dst.name]), a.qs).reduce()).passed) {
+                            // 规约成功：src 已从 vs 中删去；若 vs 删空则该断言恒成立，无需再压回检查
                             const reducedA = a.clone();
                             reducedA.vs.delete(src.name);
-                            res.asts.push(reducedA);
+                            if (reducedA.vs.size)
+                                res.asts.push(reducedA);
                             continue;
                         }
                     }
@@ -568,9 +570,11 @@ export class Assertion {
                         }
                     }
                     if (this.check(premises, new NFAssertion(dst, new Set([src.name]), a.qs).reduce()).passed) {
+                        // 规约成功：src 已从 vs 中删去；若 vs 删空则该断言恒成立，无需再压回检查
                         const reducedA = a.clone();
                         reducedA.vs.delete(src.name);
-                        res.asts.push(reducedA);
+                        if (reducedA.vs.size)
+                            res.asts.push(reducedA);
                         continue;
                     }
                 }
@@ -625,7 +629,7 @@ export class Assertion {
             if (check.passed)
                 return mut_body.copyFrom(dst);
             else
-                throw HSError.sbFail(dst, qs, check.counterexample);
+                throw HSError.sbFail(dst, qs, check.counterexample ?? HSError.sbUndetermined);
         }
         // if body is const or src = dst or #nf body src qs, then #sb(body, src, dst, qs) => body
         if (bodyName?.match(/^([A-Z]|[^\$a-z\#])/) || (dst.type === NodeType.ATOM_ITEM && dst.name === src) ||
@@ -664,6 +668,9 @@ export class Assertion {
                 // innerDst in mut_body -> #sb(innerDst, src, dst, qs)
                 this.reduceSbFnInside(premises, innerDstNode, src, dst, qs);
                 // return mut_body := #sb(innerBody, innerSrc, #sb(innerDst, src, dst, qs), innerQs)
+                // 连续替换可能产生新的可化简 #sb（如 src===dst 时 #sb 可归并为 body），
+                // 对结果再次化简直到收敛（多层嵌套也能处理）
+                this.reduceSbFn(premises, mut_body);
                 return;
             }
         }
