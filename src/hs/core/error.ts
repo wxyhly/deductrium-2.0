@@ -57,6 +57,7 @@ export type HSErrorInfo =
     | { type: "replayConclusionMismatch" }
     | { type: "badMetaRule" }
     | { type: "uNeedCond"; ruleName: string }
+    | { type: "axiomRenameForbidden"; ruleName: string }
     | { type: "nestedCVFolder" }
     | { type: "mcptInCVFolder" }
     | { type: "mcptFalse"; atoms: AST[]; hyp: number }
@@ -129,6 +130,7 @@ export const HSError: {
     replayConclusionMismatch: HSErrorInfo;
     badMetaRule: HSErrorInfo;
     uNeedCond(ruleName: string): HSErrorInfo;
+    axiomRenameForbidden(ruleName: string): HSErrorInfo;
     nestedCVFolder: HSErrorInfo;
     mcptInCVFolder: HSErrorInfo;
     mcptFalse(atoms: AST[], hyp: number): HSErrorInfo;
@@ -197,6 +199,7 @@ export const HSError: {
     replayConclusionMismatch: { type: "replayConclusionMismatch" },
     badMetaRule: { type: "badMetaRule" },
     uNeedCond(ruleName: string): HSErrorInfo { return { type: "uNeedCond", ruleName }; },
+    axiomRenameForbidden(ruleName: string): HSErrorInfo { return { type: "axiomRenameForbidden", ruleName }; },
     nestedCVFolder: { type: "nestedCVFolder" },
     mcptInCVFolder: { type: "mcptInCVFolder" },
     mcptFalse(atoms: AST[], hyp: number): HSErrorInfo { return { type: "mcptFalse", atoms, hyp }; },

@@ -112,7 +112,7 @@ export const initialCreativeRules = `
         dnpair:ax: ⊢∀ₛx:∀ₛy:(x,y)={{x},{x,y}};
         dnpair3:ax: ⊢∀ₛx:∀ₛy:∀ₛz:(x,y,z)=((x,y),z);
         dn.E:ax: ⊢∀ₛz:(z∈.E↔∃ₛx:∃ₛy:(x∈y∧z=(x,y)));
-        dndom:ax: ⊢∀x:∀ₛy:(y∈dom(d)↔∃ₛy:(x,y)∈x);
+        dndom:ax: ⊢∀x:∀ₛu:(u∈dom(x)↔∃ₛv:(u,v)∈x);
         dn.U:ax: ⊢.U=dom(.E);
         dn\\\\:ax: ⊢∀x:∀y:∀ₛu:(u∈x＼y↔u∈x∧¬u∈y);
         dn\\i:ax: ⊢$A∩$B=$A＼($A＼$B);
@@ -135,7 +135,7 @@ export const initialCreativeRules = `
         anext:ax: ⊢∀x:∀y:(∀z:(z∈x↔z∈y)→x=y);
         anpair:ax: ⊢∀ₛx:∀ₛy:∃ₛz:∀ₛu:(u∈z↔u=x∨u=y);
         anmem:ax: ⊢∃e:∀ₛz:(z∈e↔∃ₛx:∃ₛy:(x∈y∧z=(x,y)));
-        andom:ax: ⊢∀x:∃d:∀ₛy:(y∈d↔∃ₛy:(x,y)∈x);
+        andom:ax: ⊢∀x:∃d:∀ₛu:(u∈d↔∃ₛv:(u,v)∈x);
         andiff:ax: ⊢∀x:∀y:∃z:∀ₛu:(u∈z↔u∈x∧¬u∈y);
         anprod:ax: ⊢∀x:∀y:∃z:∀ₛu:(u∈z↔∃v∈x:∃w∈y:u=(v,w));
         aninv:ax: ⊢∀x:∃y:∀ₛp:(p∈y↔∃ₛu:∃ₛv:((u,v)∈x∧p=(v,u)));

@@ -405,7 +405,9 @@ export class ProgressLayer {
             head.textContent = title || id; // 标题为空时兜底显示 identifier
             const body = document.createElement("div");
             body.className = "pg-kb-note-body";
-            body.innerHTML = bodyText;
+            // 用 textContent 设置：bodyText 里的 < > 是推理语法（如 [dname]<:mp[/dname]），
+            // 若走 innerHTML 会被当作 HTML 标签解析吞掉；语法高亮标记由 enhanceKbHtml 处理
+            body.textContent = bodyText;
             note.append(head, body);
             container.appendChild(note);
             this.enhanceKbHtml(body);
@@ -425,13 +427,14 @@ export class ProgressLayer {
         this.renderKnowledge();
     }
     // 将知识库面板中的 [wff][/wff] [rule][/rule] [cmds][/cmds] [dname][/dname]
-    // 标记内容替换为语法高亮 span（SyntaxViewer 渲染）
+    // [item][/item] 标记内容替换为语法高亮 span（SyntaxViewer 渲染）
     private enhanceKbHtml(panel: HTMLElement) {
         const patterns: Array<[RegExp, string]> = [
             [/\[wff\]([\s\S]*?)\[\/wff\]/g, "wff"],
             [/\[rule\]([\s\S]*?)\[\/rule\]/g, "rule"],
             [/\[cmds\]([\s\S]*?)\[\/cmds\]/g, "cmd"],
             [/\[dname\]([\s\S]*?)\[\/dname\]/g, "dname"],
+            [/\[item\]([\s\S]*?)\[\/item\]/g, "item"],
         ];
         // 递归处理文本节点，避免破坏已有 HTML
         const walk = (node: Node) => {
@@ -446,6 +449,8 @@ export class ProgressLayer {
                         const m = re.exec(text);
                         if (!m) continue;
                         changed = true;
+                        // 注意：内容经 encodeURIComponent 转义后放入 data 属性，
+                        // 浏览器不会把其中的 < > 当标签解析；渲染时 decodeURIComponent 还原
                         html = text.slice(0, m.index)
                             + `<span data-kb-highlight="${mode}" data-kb-code="${encodeURIComponent(m[1])}"></span>`
                             + text.slice(re.lastIndex);

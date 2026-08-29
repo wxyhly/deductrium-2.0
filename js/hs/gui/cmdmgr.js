@@ -255,6 +255,8 @@ export class CommandUIManager {
         this.cmdInput.disabled = false;
         this.cmdInput.setParserArgs("cmds");
         SyntaxViewer.onClickAst = this.insertText;
+        // 命令结束/取消后焦点回到命令框（d 命令等执行完也要能继续输入）
+        this.cmdInput.focus();
         // 命令结束/取消时通知外部清理（如列表行的点击回调）
         this.onClearState?.();
     }

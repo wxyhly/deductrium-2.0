@@ -58,6 +58,7 @@ export const HSError = {
     replayConclusionMismatch: { type: "replayConclusionMismatch" },
     badMetaRule: { type: "badMetaRule" },
     uNeedCond(ruleName) { return { type: "uNeedCond", ruleName }; },
+    axiomRenameForbidden(ruleName) { return { type: "axiomRenameForbidden", ruleName }; },
     nestedCVFolder: { type: "nestedCVFolder" },
     mcptInCVFolder: { type: "mcptInCVFolder" },
     mcptFalse(atoms, hyp) { return { type: "mcptFalse", atoms, hyp }; },

@@ -90,7 +90,11 @@ export class Serde {
                         v = n.name + ":" + d?.toString() + ";" + this.hs.genCmd(d.step).filter(e => !e.startsWith("hyp ")).join(";");
                     }
                     else if (d) {
-                        v = n.name + ":ax:" + d?.toString();
+                        // a/d 开头的公理：只存名称占位（内容以 init 为准，减小存档体积、便于作者更新规则）
+                        if (/^[ad]/.test(n.name) && !d.step?.length)
+                            v = n.name + ":ax:.";
+                        else
+                            v = n.name + ":ax:" + d?.toString();
                     }
                     lines.push(`(${n.uuid})${v}`);
                 }

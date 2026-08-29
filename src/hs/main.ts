@@ -12,6 +12,23 @@ import { NodeType } from "../asttype.js";
 import { LangMgr } from "../lang.js";
 import { Serde } from "./serde.js";
 import { SheetGui } from "./gui/sheet.js";
+import { initialCreativeRules, initialSurvivalRules } from "./core/initial.js";
+
+// a/d 开头的公理规则在存档中只存名称占位（name:ax:.），内容以初始定义为准：
+// 这样存档体积小、作者更新 init 规则后玩家无需重置存档。
+// 此处预解析 init 文本，构建 名字→完整规则行 的映射供占位符恢复。
+const initRuleDefs = new Map<string, string>();
+for (const text of [initialCreativeRules, initialSurvivalRules]) {
+    for (const line of text.split("\n")) {
+        const t = line.trim();
+        if (!t || t.startsWith("//") || t.startsWith("{") || t.startsWith("}")) continue;
+        const ci = t.indexOf(":");
+        if (ci <= 0) continue;
+        const name = t.slice(0, ci).trim();
+        const rest = t.slice(ci + 1).trim();
+        if (/^[ad]/.test(name) && rest.startsWith("ax:")) initRuleDefs.set(name, t);
+    }
+}
 
 export class HSLayer {
     private hilbertSystem = new HilbertSystem;
@@ -369,9 +386,10 @@ export class HSLayer {
             document.getElementById('cmd-error')! as HTMLDivElement,
             document.getElementById('cmd-prompt')! as HTMLDivElement,
             // 命令结束/取消时清除列表行的点击回调（d命令选择模式专用）
+            // 空闲时（命令状态为空）点规则表行 = 直接执行 d 规则名，等待用户输入参数
             () => {
                 this.propListView.onRowClick = () => { };
-                this.ruleListView.onRowClick = () => { };
+                this.ruleListView.onRowClick = r => { if (!(r as any).children) this.cmdEngine.run(r.name); };
             }
         );
 
@@ -906,6 +924,22 @@ export class HSLayer {
     addRules(data: string) {
         const context = this.hilbertSystem.saveContext();
         this.hilbertSystem.loadContext(this.hilbertSystem.createEmptyContext());
+        // a/d 公理占位符恢复：存档行 (uuid)name:ax:. → 替换为 init 定义行（保留 uuid 与文件夹位置）
+        const expanded: string[] = [];
+        for (const raw of data.split("\n")) {
+            const t = raw.trim();
+            const um = t.match(/^\((\d+)\)(.*)$/);
+            const content = (um ? um[2] : t).trim();
+            const ci = content.indexOf(":");
+            const name = ci > 0 ? content.slice(0, ci).trim() : "";
+            const rest = ci > 0 ? content.slice(ci + 1).trim() : "";
+            if (rest === "ax:." && initRuleDefs.has(name)) {
+                expanded.push(um ? `(${um[1]})${initRuleDefs.get(name)}` : initRuleDefs.get(name)!);
+            } else {
+                expanded.push(raw);
+            }
+        }
+        data = expanded.join("\n");
         const lines = data.split("\n").filter(e => e && e.trim() && !e.trim().startsWith("//"));
         // 文件夹栈：栈顶为当前容器（ListNode[]）；根为 this.ruleList
         const stack: ListNode[][] = [this.ruleList];

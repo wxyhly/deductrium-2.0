@@ -234,6 +234,10 @@ export class HilbertSystem {
         const D = this.rules.get(oldName);
         if (!D)
             throw HSError.dname404(oldName);
+        // a/d 开头的公理（无 step）不允许改名（存档中它们只存名称占位，内容以 init 为准）
+        if (/^[ad]/.test(oldName) && !D.step?.length && !D.error) {
+            throw HSError.axiomRenameForbidden(oldName);
+        }
         // 记录系统规则重命名：key永远是最原始的系统名（如.i），value是最新的用户名。
         // 若oldName本身就是被改过名的系统规则（即renamedSysRule的某个value），则更新该value为newName；
         // 否则若oldName以"."开头（原始系统名），新增记录。

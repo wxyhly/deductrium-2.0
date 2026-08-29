@@ -172,6 +172,9 @@ export class SheetGui {
         }
         const wasActive = index === this.activeIndex;
         this.sheets.splice(index, 1);
+        // 删除的页在活动页之前：活动页下标要左移（如 3 张删第 2 张，第 3 张变成第 2 张）
+        if (index < this.activeIndex)
+            this.activeIndex--;
         if (wasActive) {
             this.activeIndex = Math.min(index, this.sheets.length - 1);
             const next = this.sheets[this.activeIndex];

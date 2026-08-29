@@ -443,6 +443,8 @@ export class LangMgr {
                 return zh ? "错误的元规则" : "bad meta rule";
             case "uNeedCond":
                 return zh ? `u:元规则（${info.ruleName}）只能用于有条件的规则，无条件规则请使用v:元规则` : `u: meta rule (${info.ruleName}) requires at least one condition, use v: meta rule for conditionless rules`;
+            case "axiomRenameForbidden":
+                return zh ? `公理规则（${info.ruleName}）不允许改名` : `axiom rule ${info.ruleName} cannot be renamed`;
             case "mcntNoMatch":
                 return zh ? "没有找到可换名的量词" : "no quantifier found to rename";
             case "mcntBadIndex":
