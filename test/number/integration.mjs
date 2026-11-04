@@ -1,16 +1,16 @@
-// Compile this checkout first, then: node test/test-number-integration.mjs
+// Compile this checkout first, then: node test/number/integration.mjs
 import assert from 'node:assert/strict';
 import { inspect } from 'node:util';
 import { test } from 'node:test';
-import { NodeType } from '../js/asttype.js';
-import { LangMgr } from '../js/lang.js';
-import { HSLayer } from '../js/hs/main.js';
-import { Serde } from '../js/hs/serde.js';
-import { HilbertSystem } from '../js/hs/core/core.js';
-import { HSParser } from '../js/hs/core/parser.js';
-import { initialCreativeRules } from '../js/hs/core/initial.js';
-import { getNumberLiteralDefinition } from '../js/hs/core/number-literals.js';
-import { getCommand } from '../js/hs/gui/cmdmgr.js';
+import { NodeType } from '../../js/asttype.js';
+import { LangMgr } from '../../js/lang.js';
+import { HSLayer } from '../../js/hs/main.js';
+import { Serde } from '../../js/hs/serde.js';
+import { HilbertSystem } from '../../js/hs/core/core.js';
+import { HSParser } from '../../js/hs/core/parser.js';
+import { initialCreativeRules } from '../../js/hs/core/initial.js';
+import { getNumberLiteralDefinition } from '../../js/hs/core/number/literals.js';
+import { getCommand } from '../../js/hs/gui/cmdmgr.js';
 
 function parse(text, type) {
     const ast = new HSParser().parse(text, type);

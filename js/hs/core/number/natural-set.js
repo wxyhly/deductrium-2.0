@@ -351,4 +351,4 @@ closed('.<=Order', [], `Order(ℕ,${orderRelation})`, p => {
  * historical order theorems. NBG's unary Rel(r) is a different predicate.
  */
 export const naturalSetTheorems = rules.join('\n');
-//# sourceMappingURL=natural-set-proofs.js.map
+//# sourceMappingURL=natural-set.js.map

@@ -1,45 +1,45 @@
-import { NodeType } from "../../asttype.js";
-import { AST } from "./ast.js";
-import { Deduction } from "./deduction.js";
-import { HSParser } from "./parser.js";
-const parse = (text, type) => {
+import { NodeType } from "../../../asttype.js";
+import { AST, MatchTable } from "../ast.js";
+import type { HilbertSystem } from "../core.js";
+import { Deduction, Proposition } from "../deduction.js";
+import { HSParser } from "../parser.js";
+
+const parse = (text: string, type: "item" | "wff" | "dname") => {
     const ast = new HSParser().parse(text, type);
-    if (!ast)
-        throw new Error(`Invalid numeric proof expression: ${text}`);
+    if (!ast) throw new Error(`Invalid numeric proof expression: ${text}`);
     return ast;
 };
+
 /** All generated arithmetic results are kernel-checked proofs, never axioms. */
-export function generateNumberProof(system, name) {
+export function generateNumberProof(system: HilbertSystem, name: string): Deduction | undefined {
     const member = /^\.(0|[1-9][0-9]*)@N$/.exec(name);
     const operation = /^\.(0|[1-9][0-9]*)([+*])(0|[1-9][0-9]*)$/.exec(name);
-    if ((!member && !operation) || !system.rules.has("apn1"))
-        return undefined;
+    if ((!member && !operation) || !system.rules.has("apn1")) return undefined;
     // Unary Peano proofs are intentionally bounded. BigInt parsing remains exact.
-    const a = BigInt(member ? member[1] : operation[1]);
+    const a = BigInt(member ? member[1] : operation![1]);
     const b = operation ? BigInt(operation[3]) : 0n;
     if (a > 1000n || b > 1000n || (operation?.[2] === "*" && a * b > 1000n) || (operation?.[2] === "+" && a + b > 1000n)) {
         throw new Error("Numeric proof exceeds the 1000-successor budget");
     }
     const saved = system.saveContext();
     system.loadContext(system.createEmptyContext());
-    const apply = (ruleName, conditions = [], values = []) => {
+    const apply = (ruleName: string, conditions: Proposition[] = [], values: string[] = []) => {
         const rule = system.getD(parse(ruleName, "dname"));
-        if (values.length !== rule.replaceNames.length)
-            throw new Error(`Numeric proof parameters: ${ruleName}`);
-        const replacements = {};
+        if (values.length !== rule.replaceNames.length) throw new Error(`Numeric proof parameters: ${ruleName}`);
+        const replacements: MatchTable = {};
         rule.replaceNames.forEach(([key, item], i) => replacements[key] = parse(values[i], item ? "item" : "wff"));
         return system.d(rule, conditions, replacements);
     };
     // Substitute a proved equality into a concrete predicate, avoiding all
     // occurrence-index heuristics and capturing no user variables.
-    const rewrite = (equality, fact, predicate) => {
+    const rewrite = (equality: Proposition, fact: Proposition, predicate: string) => {
         const rule = system.getD(parse("a8", "dname"));
         const [left, right] = equality.ast.nodes;
         const values = [left, right, parse(predicate, "wff"), parse("#n", "item")];
         const replacements = Object.fromEntries(rule.replaceNames.map(([key], i) => [key, values[i]]));
         return apply("mp", [apply("mp", [system.d(rule, [], replacements), equality]), fact]);
     };
-    const record = (ruleName, conclusion) => {
+    const record = (ruleName: string, conclusion: Proposition) => {
         const checked = system.checkConclusionInPropList();
         if (checked.asserts.length || checked.conditions.length || !checked.conclusion.equal(conclusion.ast)) {
             throw new Error(`Numeric proof failed to close: ${ruleName}`);
@@ -49,23 +49,21 @@ export function generateNumberProof(system, name) {
         system.loadContext(system.createEmptyContext());
         return deduction;
     };
-    const nat = (n) => n === 0n ? apply("apn1") : apply(`.${n}@N`);
-    const ensureNats = (upto) => {
+    const nat = (n: bigint) => n === 0n ? apply("apn1") : apply(`.${n}@N`);
+    const ensureNats = (upto: bigint) => {
         for (let n = 1n; n <= upto; n++) {
-            if (system.rules.has(`.${n}@N`))
-                continue;
+            if (system.rules.has(`.${n}@N`)) continue;
             const previous = nat(n - 1n);
             const successor = apply("mp", [apply("<a4", [apply("apn2")], [String(n - 1n)]), previous]);
             const equal = apply(".=s", [apply(`d${n}`)]);
             record(`.${n}@N`, rewrite(equal, successor, "#n∈ℕ"));
         }
     };
-    const ensureAdd = (left, right) => {
+    const ensureAdd = (left: bigint, right: bigint) => {
         ensureNats(left + right);
         for (let n = 0n; n <= right; n++) {
             const key = `.${left}+${n}`;
-            if (system.rules.has(key))
-                continue;
+            if (system.rules.has(key)) continue;
             if (!n) {
                 record(key, apply("<d+1", [nat(left)]));
                 continue;
@@ -82,22 +80,15 @@ export function generateNumberProof(system, name) {
     try {
         if (member) {
             ensureNats(a);
-            if (!a)
-                record(name, apply("apn1"));
-        }
-        else if (operation[2] === "+") {
+            if (!a) record(name, apply("apn1"));
+        } else if (operation![2] === "+") {
             ensureAdd(a, b);
-        }
-        else {
+        } else {
             ensureNats(a * b > a ? a * b : a);
             for (let n = 0n; n <= b; n++) {
                 const key = `.${a}*${n}`;
-                if (system.rules.has(key))
-                    continue;
-                if (!n) {
-                    record(key, apply("<d*1", [nat(a)]));
-                    continue;
-                }
+                if (system.rules.has(key)) continue;
+                if (!n) { record(key, apply("<d*1", [nat(a)])); continue; }
                 ensureAdd(a * (n - 1n), a);
                 const previous = apply(`.${a}*${n - 1n}`);
                 const recurrence = apply("<<d*2", [nat(a), nat(n - 1n)]);
@@ -108,9 +99,7 @@ export function generateNumberProof(system, name) {
             }
         }
         return system.rules.get(name);
-    }
-    finally {
+    } finally {
         system.loadContext(saved);
     }
 }
-//# sourceMappingURL=number-proofs.js.map

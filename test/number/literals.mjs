@@ -5,8 +5,8 @@ import { pathToFileURL } from 'node:url';
 
 const build = process.argv[2]
     ? pathToFileURL(resolve(process.argv[2]) + sep)
-    : new URL('../js/', import.meta.url);
-const { getNumberLiteralDefinition: definition } = await import(new URL('hs/core/number-literals.js', build));
+    : new URL('../../js/', import.meta.url);
+const { getNumberLiteralDefinition: definition } = await import(new URL('hs/core/number/literals.js', build));
 const { HSParser } = await import(new URL('hs/core/parser.js', build));
 const { NodeType } = await import(new URL('asttype.js', build));
 const parser = new HSParser();

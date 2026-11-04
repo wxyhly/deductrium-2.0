@@ -7,7 +7,7 @@ import { HSParser } from '../js/hs/core/parser.js';
 import { HSLayer } from '../js/hs/main.js';
 import { HilbertSystem } from '../js/hs/core/core.js';
 import { initialCreativeRules } from '../js/hs/core/initial.js';
-import { numberSetTheorems } from '../js/hs/core/number-set-proofs.js';
+import { numberSetTheorems } from '../js/hs/core/number/set.js';
 
 const atom = name => new AST(NodeType.ATOM_ITEM, name);
 const fn = (name, ...nodes) => new AST(NodeType.FN, name, ...nodes);

@@ -1,6 +1,6 @@
-import { peanoTheorems } from "./peano-proofs.js";
-import { naturalSetBridgeTheorems, integerSetTheorems } from "./number-set-proofs.js";
-import { naturalSetTheorems } from "./natural-set-proofs.js";
+import { peanoTheorems } from "./peano.js";
+import { naturalSetBridgeTheorems, integerSetTheorems } from "./set.js";
+import { naturalSetTheorems } from "./natural-set.js";
 
 // Definition extensions of the original number systems. Derived rules below
 // carry checked proofs; they must never be promoted to axioms during migration.

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { HSLayer } from '../js/hs/main.js';
-import { HilbertSystem } from '../js/hs/core/core.js';
-import { HSParser } from '../js/hs/core/parser.js';
-import { initialCreativeRules } from '../js/hs/core/initial.js';
-import { numberSetTheorems, naturalSetBridgeTheorems, integerSetTheorems } from '../js/hs/core/number-set-proofs.js';
-import { generateIntegerProof } from '../js/hs/core/integer-proofs.js';
+import { HSLayer } from '../../js/hs/main.js';
+import { HilbertSystem } from '../../js/hs/core/core.js';
+import { HSParser } from '../../js/hs/core/parser.js';
+import { initialCreativeRules } from '../../js/hs/core/initial.js';
+import { numberSetTheorems, naturalSetBridgeTheorems, integerSetTheorems } from '../../js/hs/core/number/set.js';
+import { generateIntegerProof } from '../../js/hs/core/number/integer.js';
 
 const layer = Object.create(HSLayer.prototype);
 layer.hilbertSystem = new HilbertSystem();

@@ -1,4 +1,4 @@
-import { numberRules } from "./numbers.js";
+import { numberRules } from "./number/rules.js";
 export const initialSurvivalRules = `mp:ax: $1→$2, $1 ⊢ $2;
 a1:ax: ⊢$1→$2→$1;
 a2:ax: ⊢($1→$2→$3)→($1→$2)→($1→$3);`;

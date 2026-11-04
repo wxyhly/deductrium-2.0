@@ -272,4 +272,4 @@ theorem('.Z+s', ['$x', '$y'], (x, y) => imp(member(x, 'ℤ'), imp(member(y, 'ℤ
 export const naturalSetBridgeTheorems = rules.slice(0, integerStart).join('\n');
 export const integerSetTheorems = rules.slice(integerStart).join('\n');
 export const numberSetTheorems = [naturalSetBridgeTheorems, integerSetTheorems].join('\n');
-//# sourceMappingURL=number-set-proofs.js.map
+//# sourceMappingURL=set.js.map

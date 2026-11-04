@@ -48,4 +48,4 @@ function realDefinition(literal, boundary) {
     // is bound by separation, so these definitions need no #nf premises.
     return `⊢${literal}={x∈ℚ|x≤${boundary}∧¬(x=${boundary})}`;
 }
-//# sourceMappingURL=number-literals.js.map
+//# sourceMappingURL=literals.js.map

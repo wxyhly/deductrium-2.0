@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { HSLayer } from '../js/hs/main.js';
-import { HilbertSystem } from '../js/hs/core/core.js';
-import { HSParser } from '../js/hs/core/parser.js';
-import { initialCreativeRules } from '../js/hs/core/initial.js';
-import { naturalSetTheorems } from '../js/hs/core/natural-set-proofs.js';
-import { Serde } from '../js/hs/serde.js';
+import { HSLayer } from '../../js/hs/main.js';
+import { HilbertSystem } from '../../js/hs/core/core.js';
+import { HSParser } from '../../js/hs/core/parser.js';
+import { initialCreativeRules } from '../../js/hs/core/initial.js';
+import { naturalSetTheorems } from '../../js/hs/core/number/natural-set.js';
+import { Serde } from '../../js/hs/serde.js';
 
 const parser = new HSParser();
 const relation = '{x∈ℕ×ℕ|pr1(x)≤pr2(x)}';

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { HSLayer } from '../js/hs/main.js';
-import { HilbertSystem } from '../js/hs/core/core.js';
-import { HSParser } from '../js/hs/core/parser.js';
-import { initialCreativeRules } from '../js/hs/core/initial.js';
-import { peanoTheorems } from '../js/hs/core/peano-proofs.js';
+import { HSLayer } from '../../js/hs/main.js';
+import { HilbertSystem } from '../../js/hs/core/core.js';
+import { HSParser } from '../../js/hs/core/parser.js';
+import { initialCreativeRules } from '../../js/hs/core/initial.js';
+import { peanoTheorems } from '../../js/hs/core/number/peano.js';
 
 // Independent transcription of all derived PA rules in official 1 initial.ts.
 const expected = new Map([

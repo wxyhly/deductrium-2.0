@@ -411,4 +411,4 @@ theorem('.*e', ['$x', '$y', '$z'], (x, y, z) => imp(N(x), imp(N(y), imp(N(z), im
 });
 /** Public loader input; no theorem in this string is installed as an axiom. */
 export const peanoTheorems = rules.join('\n');
-//# sourceMappingURL=peano-proofs.js.map
+//# sourceMappingURL=peano.js.map

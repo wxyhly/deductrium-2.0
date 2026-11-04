@@ -5,9 +5,9 @@ import { combineRules, assertToAST, genConditionStep, genQuantStep, genUnivStep,
 import { Deduction, DeductionStep, Proposition } from "./deduction.js";
 import { HSError, HSErrorInfo, isHSErrorInfo } from "./error.js";
 import { HSParser } from "./parser.js";
-import { getNumberLiteralDefinition } from "./number-literals.js";
-import { generateNumberProof } from "./number-proofs.js";
-import { generateIntegerProof } from "./integer-proofs.js";
+import { getNumberLiteralDefinition } from "./number/literals.js";
+import { generateNumberProof } from "./number/natural.js";
+import { generateIntegerProof } from "./number/integer.js";
 const RuleNameNotAllowedStartsWith = "acdempuv0123456789#$%<>.";
 
 // props相关的完整状态，用于保存/恢复当前props数据
