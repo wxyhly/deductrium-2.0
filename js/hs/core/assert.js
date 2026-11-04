@@ -623,7 +623,7 @@ export class Assertion {
     static reduceSbFnInside(premises, mut_body, src, dst, qs) {
         const bodyName = mut_body.isAtom();
         // if body = src and src is not bounded by qs, then:
-        if (bodyName?.match(/^[\$a-z\#]/) && src === mut_body.name && AtomSolver.check(premises, [{ type: "nf", name: src, vs: qs, qs: new Set }])) {
+        if (bodyName?.match(/^[\$a-z\#]/) && src === mut_body.name && AtomSolver.check(premises, [{ type: "nf", name: src, vs: qs, qs: new Set }]).passed) {
             const check = Assertion.check(premises, new NFAssertion(dst, qs, new Set).reduce());
             // if dst has variables bounded by qs, then fail and throw error, else #sb(body, src, dst, qs) => dst
             if (check.passed)
@@ -644,6 +644,24 @@ export class Assertion {
             const nqs = new Set(qs);
             nqs.add(mut_body.nodes[0].name);
             this.reduceSbFnInside(premises, mut_body.nodes[1], src, dst, nqs);
+            return;
+        }
+        // Match NFAssertion/OFAssertion scopes: the domain is outside the
+        // binder; only the image (RPL) or predicate (SEP) extends qs. Never
+        // substitute the binder declaration. qs both protects bound sources
+        // and rejects free destination variables that would be captured.
+        if (mut_body.type === NodeType.RPL) {
+            this.reduceSbFnInside(premises, mut_body.nodes[2], src, dst, qs);
+            const nqs = new Set(qs);
+            nqs.add(mut_body.nodes[1].name);
+            this.reduceSbFnInside(premises, mut_body.nodes[0], src, dst, nqs);
+            return;
+        }
+        if (mut_body.type === NodeType.SEP) {
+            this.reduceSbFnInside(premises, mut_body.nodes[1], src, dst, qs);
+            const nqs = new Set(qs);
+            nqs.add(mut_body.nodes[0].name);
+            this.reduceSbFnInside(premises, mut_body.nodes[2], src, dst, nqs);
             return;
         }
         // 可移除约束变量集合中替换的源和目标中都不自由出现的变量，即若断言nf b D & nf c D成立，则#sb(a,b,c,E) <=> #sb(a,b,c,E\D)

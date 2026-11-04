@@ -1,3 +1,4 @@
+import { numberRules } from "./numbers.js";
 export const initialSurvivalRules = `mp:ax: $1→$2, $1 ⊢ $2;
 a1:ax: ⊢$1→$2→$1;
 a2:ax: ⊢($1→$2→$3)→($1→$2)→($1→$3);`;
@@ -94,7 +95,7 @@ export const initialCreativeRules = `
         d\\i:ax: ⊢$A∈$B∩$C↔$A∈$B∧$A∈$C;
         dpow:ax: ⊢$A∈pow($B)↔$A⊂$B;
         dsep:ax: #nf($A,$x)⊢$x∈{$x∈$A|$}↔$x∈$A∧$;
-        drepl:ax: #nf($A,$x),#nf($C,$x)⊢$A∈{$B|$x∈$C}↔∃$x:($x∈$C∧$B=$A);
+        drepl:ax: #nf($A,$x),#nf($C,$x)⊢$A∈{($B)|$x∈$C}↔∃$x:($x∈$C∧$B=$A);
         d\\\\:ax: #nf($A,$x),#nf($B,$x)⊢$A＼$B={$x∈$A|¬$x∈$B};
         d\\x:ax: #nf($A,$x $y),#nf($B,$x $y),#dt($x $y)⊢$A×$B=union({{($x,$y)|$y∈$B}|$x∈$A});
         d\\o:ax: ⊢∀n:(n∈ω↔∀x:({}∈x∧∀y:(y∈x→y∪{y}∈x)→n∈x));
@@ -148,5 +149,5 @@ export const initialCreativeRules = `
         angchoice:ax: ⊢∃fn:(Fn(fn)∧∀x∈.U:(¬x={}→∃y∈x:(x,y)∈fn));
     }
 }
-`;
+` + numberRules;
 //# sourceMappingURL=initial.js.map
