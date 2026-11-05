@@ -7,6 +7,7 @@ import { blockMap, nameMap, TileBlockType } from "./hy/maploader.js";
 import { LangMgr } from "./lang.js";
 import { ProgressLayer, kbFullId } from "./pg/main.js";
 import { SaveLoad } from "./saveload.js";
+import { getMapPalette } from "./hy/palette.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
 class Game {
@@ -253,14 +254,13 @@ class Game {
     }
     initHyGUI() {
         // 几何层渲染回调：tile 颜色/文字按 data/type 处理（渲染逻辑集中在 game.ts）
-        const defaultTileColor = ["rgb(255,255,255)", "rgb(220,220,220)", "rgb(250,160,20)", "rgb(200,255,20)", "rgb(180,255,240)"];
-        const defaultTextColor = ["rgb(0,80,0)", "rgb(60,60,255)", "rgb(33,38,255)", "rgb(255,0,0)", "rgb(30,20,100)"];
         this.hyLayer.world.onTileColor = (block, highLight) => {
+            const palette = getMapPalette();
             if (highLight && block?.data?.getD)
-                return "rgb(255,255,0)";
-            return defaultTileColor[block?.type ?? 1];
+                return palette.highlight;
+            return palette.tiles[block?.type ?? 1];
         };
-        this.hyLayer.world.onTextColor = block => defaultTextColor[block.type];
+        this.hyLayer.world.onTextColor = block => getMapPalette().text[block.type];
         this.hyLayer.world.onTileText = (block) => {
             const data = block.data ?? {};
             let text = typeof block.text === "string" ? block.text : block.text[LangMgr.lang] ?? Object.values(block.text)[0] ?? "";
