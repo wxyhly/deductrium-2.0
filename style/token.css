@@ -38,6 +38,19 @@
 .token-replvar-var  { color:#a36400; font-style: italic; }
 .token-sb  { color:purple}
 
+/* Assertion notation is compact only in read-only SyntaxViewer instances. */
+.ast-compact { border-radius: 4px; padding: 0 1px; }
+.ast-compact-syntax { display: none; }
+.ast-compact-nf { background: rgba(0, 255, 0, .1); border-bottom: 2px solid lightgreen; }
+.ast-compact-sb { background: rgba(255, 0, 255, .1); border-bottom: 2px solid lightpink; }
+.ast-compact-dt { background: rgba(80, 150, 255, .1); border-bottom: 2px solid lightblue; }
+.ast-compact > sub, .ast-compact > sup { font-size: .7em; line-height: 0; }
+.ast-compact-nf > .ast-compact-parameter,
+.ast-compact-nf > .ast-compact-parameter * { color: gray; }
+.ast-compact-target::before { content: '↘'; color: gray; }
+.ast-compact-scope::before { content: '∣'; color: gray; }
+.ast-compact-dt::after { content: '≠'; vertical-align: super; font-size: .7em; }
+
 .token-rule-prefix{ color: #a32100;}
 .token-rule-atom{ color: rgb(97, 90, 120);}
 .token-rule-axiom{ color: rgb(140, 130, 0);}
