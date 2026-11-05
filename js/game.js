@@ -373,7 +373,7 @@ class Game {
         const defaultTileColor = ["rgb(255,255,255)", "rgb(220,220,220)", "rgb(250,160,20)", "rgb(200,255,20)", "rgb(180,255,240)"];
         const defaultTextColor = ["rgb(0,80,0)", "rgb(60,60,255)", "rgb(33,38,255)", "rgb(255,0,0)", "rgb(30,20,100)"];
         this.hyLayer.world.onTileColor = (block, highLight) => {
-            if (highLight && block?.data?.getD && this.gotRewards.has("highlightd"))
+            if (highLight && block?.data?.getD && !block.data.got && this.gotRewards.has("highlightd"))
                 return "rgb(255,255,0)";
             return defaultTileColor[block?.type ?? 1];
         };

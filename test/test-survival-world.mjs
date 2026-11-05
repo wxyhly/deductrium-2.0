@@ -281,6 +281,57 @@ test('highlightd controls cash highlighting immediately after rewards and save c
     assert.equal(color(true), 'rgb(255,255,0)', 'loading the earned reward restores highlighting');
 });
 
+for (const named of [false, true]) test(`claimed cash stops highlighting and survives reload (${named ? 'name' : 'tile hash'} key)`, t => {
+    let game = makeGame();
+    const [hash, cash] = [...blockMap].find(([, tile]) => named
+        ? tile.name === 'JJZ-1' : !tile.name && tile.type === Type.Reward && tile.data?.getD === 100);
+    const key = cash.name || hash;
+    const [otherHash] = [...blockMap].find(([h, tile]) => h !== hash && tile.type === Type.Reward && tile.data?.getD === 100);
+    const snapshot = () => {
+        const world = game.hyLayer.world, tile = blockMap.get(hash);
+        return { key, type: tile.type, got: !!tile.data.got, recorded: game.gotRewards.has(key),
+            color: world.onTileColor(tile, world.highLightGetD), text: world.onTileText(tile), D: game.deductrium };
+    };
+    const checkClaimed = () => {
+        const world = game.hyLayer.world, tile = blockMap.get(hash);
+        assert.equal(tile.type, Type.Road);
+        assert.equal(tile.data.got, true);
+        assert(game.gotRewards.has(key));
+        for (const highlight of [false, true]) assert.equal(world.onTileColor(tile, highlight), 'rgb(255,255,255)');
+        assert.match(world.onTileText(tile), /^Obtained /);
+        const other = blockMap.get(otherHash);
+        assert(!other.data.got);
+        assert.equal(world.onTileColor(other, true), game.gotRewards.has('highlightd') ? 'rgb(255,255,0)' : 'rgb(200,255,20)');
+        assert.match(world.onTileText(other), /^Obtain /);
+    };
+    const before = snapshot();
+    assert.equal(before.color, 'rgb(200,255,20)');
+    hit(game, 'highlightd');
+    assert.equal(snapshot().color, 'rgb(255,255,0)');
+    hit(game, key);
+    t.diagnostic(JSON.stringify({ before, after: snapshot() }));
+    assert.equal(game.deductrium, cash.data.getD);
+    checkClaimed();
+    hit(game, key);
+    assert.equal(game.deductrium, cash.data.getD, 'revisiting does not pay again');
+    const earned = structuredClone(game.saveload.serialize());
+    assert(earned.rw.includes(key), 'unnamed cash is persisted by its actual tile hash');
+    quiet(() => game.saveload.deserialize(saveData()));
+    assert.equal(snapshot().color, 'rgb(200,255,20)');
+    assert.equal(snapshot().got, false);
+    assert.match(snapshot().text, /^Obtain /);
+    quiet(() => game.saveload.deserialize(earned));
+    checkClaimed();
+    assert.equal(game.deductrium, cash.data.getD);
+    game = makeGame(earned);
+    checkClaimed();
+    assert.equal(game.deductrium, cash.data.getD, 'constructor restoration does not pay again');
+    game = makeGame(saveData([key], [], cash.data.getD));
+    checkClaimed();
+    hit(game, 'highlightd');
+    checkClaimed();
+});
+
 test('preord requires 256 actual step callbacks and I1I2I3 requires all three reward callbacks', () => {
     let game = makeGame();
     for (let i = 0; i < 255; i++) game.hyLayer.world.onStepToAnotherTile('');
