@@ -47,5 +47,6 @@ export function targetList(text: string): string[] {
 }
 
 export function targetAtom(text: string): AST {
-    return new AST(NodeType.ATOM_ITEM, text.trim());
+    const name = text.trim();
+    return new AST(NodeType.ATOM_ITEM, name.startsWith('"') ? JSON.parse(name) : name);
 }

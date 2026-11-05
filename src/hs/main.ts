@@ -1,7 +1,8 @@
 import { HSParser } from "./core/parser.js";
 import { highlightHTML, SyntaxEditor, SyntaxViewer } from "../astrender.js";
 import { TreeListViewer, ListNode, makeResizable } from "../listmgr.js";
-import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, ParamRequest } from "./gui/cmdmgr.js";
+import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, getCommandNames, ParamRequest } from "./gui/cmdmgr.js";
+import { CommandCompletion, CompletionEntry } from "./gui/completion.js";
 import { AST, MatchTable } from "./core/ast.js";
 import { Deduction, Proposition } from "./core/deduction.js";
 import { HilbertSystem } from "./core/core.js";
@@ -371,9 +372,10 @@ export class HSLayer {
         // 命令栏
         makeResizable(document.getElementById("cmdFooter")!, document.getElementById("cmdResizeHandle")!, true);
         const executeBtn = document.getElementById('cmd-ok-btn')!;
-        executeBtn.addEventListener('click', () => this.cmdEngine.run(this.cmdInput.getValue()));
+        let completion: CommandCompletion;
+        executeBtn.addEventListener('click', () => { completion.hide(); this.cmdEngine.run(this.cmdInput.getValue()); });
         const escBtn = document.getElementById('cmd-esc-btn')!;
-        escBtn.addEventListener('click', () => this.cmdEngine.handleEsc());
+        escBtn.addEventListener('click', () => { completion.hide(); this.cmdEngine.handleEsc(); });
         this.cmdUIMgr = new CommandUIManager(
             this.cmdEngine, this.cmdInput,
             document.getElementById('cmd-error')! as HTMLDivElement,
@@ -381,6 +383,7 @@ export class HSLayer {
             // 命令结束/取消时清除列表行的点击回调（d命令选择模式专用）
             // 空闲时（命令状态为空）点规则表行 = 直接执行 d 规则名，等待用户输入参数
             () => {
+                completion?.hide();
                 this.propListView.onRowClick = () => { };
                 this.ruleListView.onRowClick = r => { if (!r.children) this.cmdEngine.run((this.navigator.active ? "entr " : "") + r.name); };
                 if (this.navigator.active) {
@@ -389,6 +392,34 @@ export class HSLayer {
                 }
             }
         );
+        completion = new CommandCompletion(this.cmdInput, document.getElementById('hs-cmd-input')!, () => {
+            const targets: CompletionEntry[] = [];
+            const folders: CompletionEntry[] = [];
+            const steps = (props: Proposition[]) => {
+                for (const prop of props) {
+                    const entry = { hint: prop.ast.toString(), expandable: prop.from.type === "d", inlinable: ["d", "f", "c", "v"].includes(prop.from.type) };
+                    targets.push({ name: String(prop.id), ...entry });
+                    if (prop.name) targets.push({ name: prop.name, ...entry });
+                    if (prop.children) steps(prop.children);
+                }
+            };
+            steps(this.hilbertSystem.props);
+            const rules = [...this.hilbertSystem.rules].map(([name, rule]) => {
+                const entry = { name, hint: rule.toString(), expandable: !!rule.step?.length && !rule.error,
+                    derived: rule.error ? undefined : { conditions: rule.conditions.length, implication: rule.conclusion.type === NodeType.LOGIC && rule.conclusion.name === ">" } };
+                if (rule.step || rule.error) targets.push(entry);
+                return entry;
+            });
+            const visit = (nodes: ListNode[]) => {
+                for (const node of nodes) if (node.children) {
+                    folders.push({ name: node.name });
+                    visit(node.children);
+                }
+            };
+            visit(this.ruleList);
+            return { commands: getCommandNames(), rules, targets, folders,
+                pending: this.cmdEngine.getCompletionContext(), inspecting: this.navigator.active };
+        });
 
         // 推理表sheet：SheetGui内部处理全部sheet操作，HSLayer只注入刷新/变更/守卫/展开状态回调
         this.sheetGui.guard = () => {
@@ -462,7 +493,7 @@ export class HSLayer {
     private editingChoices = new WeakMap<AST, EditingTarget>();
     private editingConfirmations = new WeakMap<AST, { plan: DeletionPlan; contexts: import("./core/core.js").HSContext[] }>();
     private editRequest(prompt: string, parse: (text: string) => AST = targetAtom): ParamRequest {
-        this.cmdInput.setParserArgs("item");
+        this.cmdInput.setParserArgs("name");
         return { prompt, default: "", parse: text => {
             try {
                 if (!text.trim()) throw HSError.emptyValue;

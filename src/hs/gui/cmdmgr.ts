@@ -45,6 +45,10 @@ export function getCommand(name: string): CommandDefinition | undefined {
     return registry.get(name);
 }
 
+export function getCommandNames(): string[] {
+    return [...registry.keys()];
+}
+
 export interface CommandFragment {
     text: string;   // 原始文本（用于回退显示）
     ast: AST;       // 解析后的 CMD 节点（name 不为空）
@@ -113,6 +117,10 @@ export class ExecutionEngine {
 
     isExecuting() {
         return !!this.currentDef;
+    }
+
+    getCompletionContext(): { command: string; argumentCount: number } | undefined {
+        return this.currentDef ? { command: this.currentDef.name, argumentCount: this.currentArgs.length } : undefined;
     }
 
     run(input: string) {

@@ -10,6 +10,9 @@ export function defineCommand(name, getNextParam, execute, options = {}) {
 export function getCommand(name) {
     return registry.get(name);
 }
+export function getCommandNames() {
+    return [...registry.keys()];
+}
 export function splitCommands(input) {
     const result = [];
     let start = 0;
@@ -48,6 +51,9 @@ export class ExecutionEngine {
     ui = null;
     isExecuting() {
         return !!this.currentDef;
+    }
+    getCompletionContext() {
+        return this.currentDef ? { command: this.currentDef.name, argumentCount: this.currentArgs.length } : undefined;
     }
     run(input) {
         try {

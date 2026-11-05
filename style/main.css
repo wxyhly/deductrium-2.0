@@ -103,10 +103,40 @@
 }
 
 #hs-cmd-input {
+  position: relative;
   /* flex: 1 1 0%; */
   flex: 1 0.5 auto;
   min-height: 1.8em;
 }
+
+.cmd-completions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: min(240px, 35vh);
+  overflow-y: auto;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  background: #fff;
+  color: #222;
+  border: 1px solid #b9c9d8;
+  border-radius: 4px;
+  box-shadow: 0 -3px 12px #0002;
+  z-index: 2;
+  touch-action: pan-y;
+}
+.cmd-completions[hidden] { display: none; }
+.cmd-completions li {
+  display: flex;
+  gap: 1em;
+  padding: 5px 8px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.cmd-completions li:hover, .cmd-completions li.active { background: #e2effa; }
+.completion-hint { color: #666; min-width: 0; }
 
 div.smooth-height {
   transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);

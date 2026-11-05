@@ -192,11 +192,18 @@ export class HSParser {
                 const limit = end < 0 ? text.length : this.cursor + end;
                 const rest = text.slice(this.cursor, limit);
                 // Editing targets are names, not formulas. Keep punctuation and quoted folder names literal.
-                const parts = word === "rename" ? [...rest.matchAll(/"([^"\n]*)"|'([^'\n]*)'|[^\s]+/g)] : rest.trim() ? [{ 0: rest.trim(), index: rest.search(/\S/) }] : [];
+                const parts = word === "rename" ? [...rest.matchAll(/"((?:\\.|[^"\\\n])*)"|'([^'\n]*)'|[^\s]+/g)] : rest.trim() ? [{ 0: rest.trim(), index: rest.search(/\S/) }] : [];
+                let gapStart = this.cursor;
                 for (const part of parts) {
-                    const value = part[1] ?? part[2] ?? part[0];
-                    this.tokens.push({ type: "cmd-atom-param", text: value, displayText: part[0], start: this.cursor + part.index, end: this.cursor + part.index + part[0].length });
+                    const partStart = this.cursor + part.index;
+                    if (gapStart < partStart)
+                        this.tokens.push({ type: "space", text: text.slice(gapStart, partStart), displayText: text.slice(gapStart, partStart), start: gapStart, end: partStart });
+                    const value = part[1] !== undefined ? JSON.parse(part[0]) : part[2] ?? part[0];
+                    gapStart = partStart + part[0].length;
+                    this.tokens.push({ type: "cmd-atom-param", text: value, displayText: part[0], start: partStart, end: gapStart });
                 }
+                if (gapStart < limit)
+                    this.tokens.push({ type: "space", text: text.slice(gapStart, limit), displayText: text.slice(gapStart, limit), start: gapStart, end: limit });
                 this.cursor = limit;
                 continue;
             }
@@ -333,6 +340,11 @@ export class HSParser {
     replvarTable;
     // ---- 解析入口 ----
     parse(text, type, replvarTable) {
+        if (type === "name") {
+            // Editing prompts contain literal names, not mathematical expressions.
+            this.tokens = [{ type: "cmd-atom-param", text, displayText: text, start: 0, end: text.length }];
+            return new AST(NodeType.ATOM_ITEM, text).range(0, text.length);
+        }
         if (!text)
             return null;
         this.replvarTable = replvarTable;

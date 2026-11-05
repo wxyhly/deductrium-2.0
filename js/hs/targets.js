@@ -43,6 +43,7 @@ export function targetList(text) {
     return names;
 }
 export function targetAtom(text) {
-    return new AST(NodeType.ATOM_ITEM, text.trim());
+    const name = text.trim();
+    return new AST(NodeType.ATOM_ITEM, name.startsWith('"') ? JSON.parse(name) : name);
 }
 //# sourceMappingURL=targets.js.map
