@@ -29,6 +29,8 @@ export type HSErrorInfo =
     | { type: "dname404"; ruleName: string }
     | { type: "pname404"; propName: string }
     | { type: "unknownCmd"; command: string }
+    | { type: "lockedFeature"; feature: string }
+    | { type: "quantifyAxiomOnly" }
     | { type: "argNotEnough"; command: string }
     | { type: "cmdIsRunning" }
     | { type: "pListIsntEmpty" }
@@ -106,6 +108,8 @@ export const HSError: {
     dname404(ruleName: string): HSErrorInfo;
     pname404(propName: string): HSErrorInfo;
     unknownCmd(command: string): HSErrorInfo;
+    lockedFeature(feature: string): HSErrorInfo;
+    quantifyAxiomOnly: HSErrorInfo;
     argNotEnough(command: string): HSErrorInfo;
     delFail(item: { name: string, id: number }, rely: { name: string, id: number }[], cause: unknown): HSErrorInfo;
     invalidPropDir: HSErrorInfo;
@@ -175,6 +179,8 @@ export const HSError: {
     dname404(ruleName: string): HSErrorInfo { return { type: "dname404", ruleName }; },
     pname404(propName: string): HSErrorInfo { return { type: "pname404", propName }; },
     unknownCmd(command: string): HSErrorInfo { return { type: "unknownCmd", command }; },
+    lockedFeature(feature: string): HSErrorInfo { return { type: "lockedFeature", feature }; },
+    quantifyAxiomOnly: { type: "quantifyAxiomOnly" },
     argNotEnough(command: string): HSErrorInfo { return { type: "argNotEnough", command }; },
     delFail(item: { name: string, id: number }, rely: { name: string, id: number }[], cause: unknown): HSErrorInfo { return { type: "delFail", item, rely, cause }; },
     invalidPropDir: { type: "invalidPropDir" },

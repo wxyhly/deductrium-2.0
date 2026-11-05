@@ -9,6 +9,12 @@ import { ProgressLayer, kbFullId } from "./pg/main.js";
 import { SaveLoad } from "./saveload.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
+// 旧地图的 dstr 是展示文字；目标必须按稳定 ID 查找，不能解析本地化文案。
+const legacyDestructionTargets = {
+    "del<>": "port-iff", delK: "K", delL: "L", "del-pn": ".pn",
+    delAl: "Aleph", delAlw: "AlephW", "del-W": "W", "del-ttAleph": "ttpAleph",
+    mnt: "port-rp", mcvt: "V", omega: "w",
+};
 class Game {
     gotRewards = new Set;
     destructedGates = new Set;
@@ -23,6 +29,8 @@ class Game {
     hsLayer = new HSLayer;
     ttLayer = new TTLayer(gameMode === "creative");
     hyLayer = new HyLayer;
+    // 同页切换存档时先还原地图初始状态，再重放当前存档，避免继承上个槽位的奖励/拆门。
+    initialMapState = new Map(Array.from(blockMap, ([hash, block]) => [hash, { type: block.type, data: { ...block.data } }]));
     saveload = new SaveLoad(gameMode, () => {
         // 创造模式目前只有推理层（hs）+ 类型层（tt）；几何层/奖励/成就/经济仅生存模式
         if (gameMode === "creative")
@@ -55,6 +63,11 @@ class Game {
             this.deductrium = data.D ?? 0;
             this.deductriumConsumed = data.DC ?? 0;
             this.tilesParcour = data.tp ?? 0;
+            this.applyGotRewards();
+            this.updateStats();
+            this.progressLayer.refreshAchievements();
+            this.progressLayer.refreshSymbols();
+            this.progressLayer.refreshKnowledge();
         }
         this.switchLayer(data.ly);
     });
@@ -213,6 +226,16 @@ class Game {
     }
     // 已获得的奖励：按 gotRewards 里的 key（name 或 hash）直查砖块，置 got=true、type→road 并执行解锁效果
     applyGotRewards() {
+        this.hsLayer.configureSurvival(this.gotRewards);
+        for (const [hash, initial] of this.initialMapState) {
+            const block = blockMap.get(hash);
+            if (!block)
+                continue;
+            block.type = initial.type;
+            block.data = { ...initial.data };
+        }
+        for (const layer of ["D-layer", "P-layer"])
+            this.showLayerButton(layer, false);
         for (const key of this.gotRewards) {
             // key 可能是 name（经 nameMap 转 hash）或 hash 本身
             const hash = nameMap.get(key) ?? key;
@@ -221,16 +244,49 @@ class Game {
                 continue; // 地图改版后砖块可能不存在
             block.data ??= {};
             block.data.got = true;
-            if (block.type === TileBlockType.Reward)
+            if (block.type === TileBlockType.Reward && !/^JJZ[OI]-[12]$/.test(block.name ?? "")) {
                 block.type = TileBlockType.Road;
+            }
             this.applyUnlockEffect(block);
         }
+        for (const key of this.destructedGates)
+            this.destructGate(key);
+        this.hyLayer.needUpdate = true;
     }
-    // 单个砖块的解锁效果：目前是 unl:{layer:xxx} → 显示该层导航按钮（后续可扩展其它效果）
+    destructGate(key, block = blockMap.get(nameMap.get(key) ?? key)) {
+        if (!block || (block.type !== TileBlockType.Gate && block.type !== TileBlockType.Ordinal && !block.data?.del))
+            return;
+        block.data ??= {};
+        block.data.del = true;
+        block.type = TileBlockType.Road;
+        this.destructedGates.add(block.name || key);
+    }
+    // 单个奖励的独立效果：层按钮、推理层奖励与定点拆门；不发钱、不重置救济站。
     applyUnlockEffect(block) {
+        if (block.name)
+            this.hsLayer.applyReward(block.name);
         const unl = block.data?.unl;
         if (unl && unl.layer) {
             document.querySelector(`.layer-buttons button[data-layer="${unl.layer}"]`)?.classList.remove("hide");
+        }
+        const targets = block.data?.dstrTarget ?? legacyDestructionTargets[block.name ?? ""] ?? block.data?.dstr;
+        for (const target of Array.isArray(targets) ? targets : [targets]) {
+            if (typeof target === "string")
+                this.destructGate(target);
+        }
+    }
+    resetReliefStation(station) {
+        for (const name of [`JJZI-${station}`, `JJZ-${station}`]) {
+            const hash = nameMap.get(name);
+            this.gotRewards.delete(name);
+            if (hash)
+                this.gotRewards.delete(hash);
+            const block = blockMap.get(hash ?? name);
+            if (!block)
+                continue;
+            block.data ??= {};
+            block.data.got = false;
+            block.type = TileBlockType.Reward;
         }
     }
     initLayerGUI() {
@@ -256,7 +312,7 @@ class Game {
         const defaultTileColor = ["rgb(255,255,255)", "rgb(220,220,220)", "rgb(250,160,20)", "rgb(200,255,20)", "rgb(180,255,240)"];
         const defaultTextColor = ["rgb(0,80,0)", "rgb(60,60,255)", "rgb(33,38,255)", "rgb(255,0,0)", "rgb(30,20,100)"];
         this.hyLayer.world.onTileColor = (block, highLight) => {
-            if (highLight && block?.data?.getD)
+            if (highLight && block?.data?.getD && this.gotRewards.has("highlightd"))
                 return "rgb(255,255,0)";
             return defaultTileColor[block?.type ?? 1];
         };
@@ -276,7 +332,7 @@ class Game {
                 text = LangMgr.text.dstrPrefix + data.dstr;
             if (data.getD)
                 text = LangMgr.formalize.getD(stringifyDeductriumAmout(data.getD), data.got);
-            if (data.payD)
+            if (data.payD && !data.requiresReward)
                 text = LangMgr.formalize.payD(stringifyDeductriumAmout(data.payD));
             if (data.unl)
                 text = (data.got ? LangMgr.text.unlockedPrefix : LangMgr.text.unlockPrefix) + text;
@@ -286,20 +342,28 @@ class Game {
         // 游戏中获取推理素（加载存档时直接读存档总量，不重复加钱）
         this.hyLayer.world.onGetReward = (hash, block, isLoading) => {
             block.data ??= {};
+            const alreadyGot = this.gotRewards.has(block.name || hash);
             block.data.got = true;
             this.gotRewards.add(block.name || hash);
             this.applyUnlockEffect(block);
             if (block.type === TileBlockType.Reward)
                 block.type = TileBlockType.Road;
+            // 入口/内部说明牌每次进入都需触发；读档只恢复显示，不改变本轮标记和终点。
+            const relief = block.name?.match(/^JJZ([OI])-([12])$/);
+            if (relief) {
+                block.type = TileBlockType.Reward;
+                if (!isLoading && relief[1] === "O")
+                    this.resetReliefStation(relief[2]);
+            }
             // 成就：方块带 data.ac 则通过即完成（奖励/路/门都算）
             if (!isLoading && block.data.ac)
                 this.finishAchievement(block.data.ac);
             // 知识库：方块带 data.info 解锁该 identifier；奖励名匹配也解锁
             if (!isLoading && block.data.info)
                 this.unlockInfo(block.data.info);
-            if (block.name)
+            if (!isLoading && block.name)
                 this.unlockInfo(block.name);
-            if (!isLoading && block.data.getD !== undefined) {
+            if (!isLoading && !alreadyGot && block.data.getD !== undefined) {
                 this.addDeductrium(block.data.getD);
             }
         };
@@ -307,6 +371,13 @@ class Game {
         this.hyLayer.world.onPassGate = (name, tile, hash) => {
             const gateTest = () => {
                 const data = tile.data ?? {};
+                const relief = tile.name?.match(/^JJZP-([12])$/);
+                if (relief)
+                    return this.gotRewards.has(`JJZI-${relief[1]}`)
+                        || (!this.gotRewards.has("dG") && this.deductrium < 4);
+                const required = data.requiresReward ?? (tile.name === "mct2mdt" ? "mct" : undefined);
+                if (required && !this.gotRewards.has(required))
+                    return false;
                 if (data.payD !== undefined) {
                     const needed = data.payD;
                     // 余额不足不能过门
@@ -343,10 +414,7 @@ class Game {
                 this.unlockInfo(tile.data.info);
             // dG（拆门技能）：能通过的门拆除，变为 road（旧版 delgate 逻辑）
             if (this.gotRewards.has("dG") && tile.type !== TileBlockType.Ordinal) {
-                tile.data ??= {};
-                tile.data.del = true;
-                tile.type = TileBlockType.Road;
-                this.destructedGates.add(name || hash);
+                this.destructGate(name || hash, tile);
             }
             return true;
         };

@@ -422,6 +422,10 @@ export class LangMgr {
                 return zh ? `未知推理步骤：${info.propName}` : `unknown deduction step: ${info.propName}`;
             case "unknownCmd":
                 return zh ? `未知命令：${info.command}` : `unknown command: ${info.command}`;
+            case "lockedFeature":
+                return zh ? `尚未解锁：${info.feature}` : `not unlocked: ${info.feature}`;
+            case "quantifyAxiomOnly":
+                return zh ? "当前概括仅允许无条件的公理规则；请先解锁条件概括元定理" : "generalization currently accepts only unconditional axioms; unlock conditional generalization first";
             case "argNotEnough":
                 return zh ? `命令${info.command}的参数不足` : `not enough arguments for command ${info.command}`;
             case "delFail":

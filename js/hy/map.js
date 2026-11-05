@@ -51,7 +51,7 @@ export const mapData = `
 :%,2$[=getD:8]
 :dL,2#[p]A→(A→A)
 :%*,3#[[preord]][zh]健身俱乐部会员：[n]进度层中累计的[n]总方块步数达到[n]256步才能通过此门[en]Jogging Club Member:[n]To pass through this gate[n]The total block steps in progress layer[n]must reach 256 steps
-:%*,3,1$[[omega]][=dstr:"#ω"]
+:%*,3,1$[[omega]][=dstrTarget:"w"][=dstr:"#ω"]
 :%,4@[zh]提示：解锁符号“~”后[n]才能开这些门[n]另外：[n]大写字母为系统保留[n]建议输入小写字母[en]Hint: You can only open these[n] gates after unlocking the symbol "~"[n]Other Hints: Uppercase[n] letters are reserved by the system[n]Lowercase letters are recommended
 :%,4@[zh]向前走，有推出[n]A>A[n]的提示[en]Go forward for a hint[n] on deriving A>A
 :%,5@
@@ -102,7 +102,7 @@ export const mapData = `
 
 :nd,2$[[JJZO-2]][zh]被耗光了推理素[n]但不想重置游戏？[n]请跟我来！[en]Ran out of Deductrium[n]but don't want to reset the game?[n]Follow me!
 :%,3#[[JJZP-2]][zh]只有没解锁拆门技能[n]且推理素余额小于4µg[n]才能通过此门[n]#救济站[en]Only players who have not unlocked[n]the gate destruction skill[n]and have less than 4 µg of Deductrium[n]may pass through this gate[n]#ReliefStation
-:%,3$[[JJZI-1]][zh]请向前走40格[n]领取救济站发放的[n]！！~免费推理素~！！[n]5 µ g ！[en]Please move forward 40 tiles[n]to collect the relief station's[n]!! ~FREE DEDUCTRIUM~ !![n]5 µ g !
+:%,3$[[JJZI-2]][zh]请向前走40格[n]领取救济站发放的[n]！！~免费推理素~！！[n]5 µ g ！[en]Please move forward 40 tiles[n]to collect the relief station's[n]!! ~FREE DEDUCTRIUM~ !![n]5 µ g !
 :%,3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3;3@
 :%,3$[[JJZ-2]][=getD:5]
 
@@ -116,7 +116,7 @@ export const mapData = `
 
 :dG,3#[d]¬($0→$1)⊢¬$1
 :dG,4#[d]$0,¬$1⊢¬($0→$1)
-:%*,3$[[del<>]][=dstr:"#<>(↔)\\n提示：该门后才解锁相应符号"]
+:%*,3$[[del<>]][=dstrTarget:"port-iff"][=dstr:"#<>(↔)\\n提示：该门后才解锁相应符号"]
 :%*,3,3$[[base-7]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%,1#[d]¬($0→$1)⊢$0
 :%*,3$[[andor]][=ac:"andor"][=unl:true][zh]逻辑符号[n]“∧”（&）与“∨”（|）[en]logical symbols[n]“∧” (&) and “∨” (|)
@@ -197,7 +197,7 @@ export const mapData = `
 // 自动推理
 
 :%,5#[=payD:130]
-:%,2$[[delL]][=dstr:"#L"]
+:%,2$[[delL]][=dstrTarget:"L"][=dstr:"#L"]
 // :%,2$[[mcpt]]解锁完备性元定理[n]（命题逻辑自动推理）
 :dG,2;5;5;0@
 :dG,5;2;2;1@
@@ -214,7 +214,7 @@ export const mapData = `
 
 // mdt后好证的从#p门含义出来的岔路：
 
-:ccmp,1#[[mct2mdt]][zh]通过此门需[n]1.解锁条件演绎元定理[n]2.消耗推理素20µg[en]To pass this gate you need:[n]1. Unlock the Conditional Deduction Metatheorem[n]2. Consume 20µg of Deductrium
+:ccmp,1#[[mct2mdt]][=requiresReward:"mct",payD:20][zh]通过此门需[n]1.解锁条件演绎元定理[n]2.消耗推理素20µg[en]To pass this gate you need:[n]1. Unlock the Conditional Deduction Metatheorem[n]2. Consume 20µg of Deductrium
 :%*,2$[[mdt]][=ac:"mdt"][=unl:true][zh]演绎元定理[n]解锁演绎元定理[n]解锁演绎元定理[en]Deduction Metatheorem![n]Go for Unlock Deduction Metatheorem![n]Go for Unlock Deduction Metatheorem!
 :%,1@[zh]重要的元定理说三遍[n]重要的元定理说三遍[n]重要的元定理说三遍[en]Something is worth repeating 3 times[n]Something is worth repeating 3 times[n]Something is worth repeating 3 times
 :%,4#[p]($0→($1→$2))→(($0→($1→($2→$3)))→($0→($1→$3)))
@@ -242,7 +242,7 @@ export const mapData = `
 :%,2#[p]($0→$1)→(¬$1→¬$0)
 :%,5#[p]($0→¬$1)→($1→¬$0)
 :%,5#[p](¬$0→$1)→(¬$1→$0)
-:%,4$[[delK]][=dstr:"#K"]
+:%,4$[[delK]][=dstrTarget:"K"][=dstr:"#K"]
 :%,2$[=getD:15]
 2,2,2,4,2#[p]¬¬A→(¬¬¬¬A→¬¬A)
 :%*,3$[=getD:1]
@@ -402,7 +402,7 @@ export const mapData = `
 :%*,4,1,2,1,1,1,1,1,1#[=payD:5e3]
 :%,1#[d]$0=$1,$1=$2⊢$0=$2
 :%*,3#[p](∀x:∃y:f(x)=g(y)) ↔(∀m:∃n:f(m)=g(n))
-:%*,3,5$[[mnt]][=ac:"mnt"][=dstr:"#rp"]
+:%*,3,5$[[mnt]][=dstrTarget:"port-rp"][=ac:"mnt"][=dstr:"#rp"]
 :%*,3,4$[=getD:333]
 :%,2#[=payD:100]
 :%*,5$[[type]][=ac:"type"][=unl:true][zh]类型层[en]type layer
@@ -424,7 +424,7 @@ export const mapData = `
 // mcvt, mvt, vxvy = vyvx
 :1st,3,3#[=payD:100]
 :%*,4$[[base-3]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
-:%*,5$[[mcvt]][=unl:true][zh]条件概括元定理[n]并拆除门#V[n](门#V后解锁概括元定理)[en]conditional generalization metatheorem[n]and destruct gate #V[n](Unlock Generalization metatheorem behind gate #V)
+:%*,5$[[mcvt]][=dstrTarget:"V"][=unl:true][zh]条件概括元定理[n]并拆除门#V[n](门#V后解锁概括元定理)[en]conditional generalization metatheorem[n]and destruct gate #V[n](Unlock Generalization metatheorem behind gate #V)
 :%,1#[=payD:100]
 :%*,4$[[base-4]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%*,2#[[V]][zh]该门后可解锁概括元定理[n]#V[en]Generalization metatheorem #V[n]can be unlocked behind this gate
@@ -618,7 +618,7 @@ export const mapData = `
 :%,2;1;1;1;1;1;1@...............
 :%,1#[[.pn5]][d]#nf($0,x) ⊢ #rp($0,$1,{})→(∀x:(x∈ω→(#rp($0,$1,x)→#rp($0,$1,x∪{x})))→∀x:(x∈ω→#rp($0,$1,x)))
 :%,2;1;1;1@................
-:%,1$[[del-pn]][=dstr:"#pn"]
+:%,1$[[del-pn]][=dstrTarget:".pn"][=dstr:"#pn"]
 :%,1#[[.pn]][zh]未解锁的闸门无法通过[n]请寻找线索解开闸门[n]#pn[en]Locked gate cannot be passed.[n]Find clues to unlock it[n]#pn.
 :%,4$[=getD:1e4]
 :.pn,3$[[dSd0]][=ac:"dSd0"][=unl:true][zh]自然数与[n]后继函数[n]的集合论定义[en]the ZFC set definitions of [n]natural numbers and successor function
@@ -652,7 +652,7 @@ export const mapData = `
 :%,2$[=getD:1.5e6]
 :%,1@[zh]提示：利用反证法[n]假设存在双射r，则可[n]通过“对角线法则”[n]构造矛盾[en]Hint: Use proof by contradiction[n]Assume bijection r exists, then[n]construct contradiction via "diagonal method"
 :%,1#[p]¬∃quiv(ω,Pow(ω))
-:%,1$[[delAl]][=ac:"delAl"][=dstr:"#א"]
+:%,1$[[delAl]][=dstrTarget:"Aleph"][=ac:"delAl"][=dstr:"#א"]
 :%,1$[=getD:1.2345678899999999e7]
 :%,1@[zh]提示：门#א在序数的尽头之后[en]Hint: Gate #א is beyond end of ordinals
 :aChoice,2#[[vwo]][=ac:"vwo"][p]∀x∃r:WellOrder(x, r)
@@ -1562,7 +1562,7 @@ export const mapData = `
 :%,5#[t]Pm:nat,Pn:nat,[n](Aleph m~=Aleph n)[n] -> m = n
 :%,0#[t](Sn:nat, Aleph n)~=(Pn:nat,Aleph (succ n))
 :%*,0#[t]Pn:nat, not (Aleph n[n]~= (Sn:nat, Aleph n))
-:%*,0,5$[[delAlw]][=dstr:"#א_ω"]
+:%*,0,5$[[delAlw]][=dstrTarget:"AlephW"][=dstr:"#א_ω"]
 
 
 
@@ -1610,7 +1610,7 @@ export const mapData = `
 :%*,3,3,5#[=payD:8e3]
 :%*,3,4#[t]Pa:U,(Px:List a,x=nil)~=(not a)
 :%*,3,4,4$[=getD:3e3]
-:%*,3,3,5,5$[[del-W]][=dstr:"#W\\n提示：也可以选择不拆除它"]
+:%*,3,3,5,5$[[del-W]][=dstrTarget:"W"][=dstr:"#W\\n提示：也可以选择不拆除它"]
 :%*,3,2$[=getD:660]
 :%*,4#[[:=count_0]][zh]请定义一个函数count_0 :[n]List nat -> nat[n]统计列表中0出现的次数，如[n]count_0 (cons 0 (cons 10 (cons 0 nil)))[n] === 2[n]#t:=[en]Please define a function count_0 :[n]List nat -> nat[n]which counts the number of occurrences of 0[n]in the list, for example[n]count_0 (cons 0 (cons 10 (cons 0 nil)))[n] === 2[n]#t:=
 :%*,4,4$[=getD:600]
@@ -1672,7 +1672,7 @@ export const mapData = `
 :%,1#[t]Pn:nat,eq [n](mul n 2) (double n)
 :%,1#[t]Px:nat,Py:nat,eq (mul x y) (mul y x)
 :%*,3#[=payD:1e4]
-:%*,3,1$[[del-ttAleph]][=dstr:"#Aleph\\n提示：也可以选择不拆除它"]
+:%*,3,1$[[del-ttAleph]][=dstrTarget:"ttpAleph"][=dstr:"#Aleph\\n提示：也可以选择不拆除它"]
 :%*,4$[[ttpow]][=unl:true][zh]幂函数[n]pow : nat->nat->nat[en]exponentiation function[n]pow : nat->nat->nat
 :%*,4,5#[t]Pm:nat,Pn:nat,Sx:nat,mul x [n](mul (factorial m) (factorial n))[n] = factorial (add m n)
 :%*,4,5,2$[=getD:660]
