@@ -234,6 +234,32 @@ test('ordinary dG gates, save callback, and constructor restore are idempotent',
     assert(game.hsLayer.applied.includes('hyp'));
 });
 
+test('recorded ccmp and mct2mdt gates stay demolished when restoring the enclosed mdt reward', () => {
+    // Minimized from a real save: the reward and both gate records are present,
+    // without ordinal metadata. Loading must replay dg, never charge the fee again.
+    const data = { ...saveData(['dG', 'mct', 'mdt'], ['ccmp', 'mct2mdt'], 24), DC: 27 };
+    const game = makeGame(data);
+    const check = () => {
+        assert(game.gotRewards.has('mdt'));
+        for (const name of data.dg) {
+            assert.equal(block(name).type, Type.Road, name);
+            assert.equal(block(name).data.del, true, name);
+            assert.equal(hit(game, name), true, name);
+        }
+        assert.equal(game.deductrium, 24);
+        assert.equal(game.deductriumConsumed, 27);
+        assert.equal(confirmations, 0);
+        assert.deepEqual([...game.destructedGates], data.dg);
+    };
+    check();
+    quiet(() => game.saveload.deserialize(saveData()));
+    for (const name of data.dg) assert.equal(block(name).type, Type.Gate, 'fresh slot clears demolition');
+    quiet(() => game.saveload.deserialize(data));
+    check();
+    game.applyGotRewards();
+    check();
+});
+
 test('creative initialization keeps its existing full command unlock path', () => {
     const game = makeGame(undefined, 'creative');
     assert.equal(game.hsLayer.creative, true);

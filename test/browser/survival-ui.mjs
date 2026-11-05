@@ -146,6 +146,37 @@ try {
             assert.match(await input.inputValue(), /\$p/, 'last gate click inserts a command parameter');
             assert.deepEqual(errors, []);
             console.log(JSON.stringify({ viewport, mode, checks, gateClick: true }));
+            if (mode === 'survival') {
+                // Reload through the real compressed SaveLoad path, including Game's constructor.
+                await page.evaluate(() => {
+                    const game = window.game;
+                    game.saveload.cancelPendingSave();
+                    const data = { ...game.saveload.serialize(), rw: ['dG', 'mct', 'mdt'],
+                        dg: ['ccmp', 'mct2mdt'], D: 24, DC: 27 };
+                    delete data.mo; delete data.ob; // The original reported save predates these fields.
+                    localStorage.setItem('deductrium2_survival', LZString.compressToUTF16(JSON.stringify({
+                        version: 0, mode: 'survival', timestamp: 0, data,
+                    })));
+                });
+                await page.reload();
+                await page.waitForFunction(() => window.game?.hyLayer?.world);
+                const restored = await page.evaluate(async () => {
+                    const { blockMap, nameMap } = await import('/js/hy/maploader.js');
+                    const game = window.game;
+                    const gates = ['ccmp', 'mct2mdt'].map(name => {
+                        const hash = nameMap.get(name), tile = blockMap.get(hash);
+                        return { name, type: tile.type, del: tile.data.del,
+                            pass: game.hyLayer.world.hitTest(hash.split(',').map(Number)) };
+                    });
+                    return { gates, reward: game.gotRewards.has('mdt'), D: game.deductrium, DC: game.deductriumConsumed };
+                });
+                assert.deepEqual(restored, {
+                    gates: ['ccmp', 'mct2mdt'].map(name => ({ name, type: 0, del: true, pass: true })),
+                    reward: true, D: 24, DC: 27,
+                });
+                assert.deepEqual(errors, []);
+                console.log(JSON.stringify({ viewport, savedGateRestoration: true }));
+            }
             await context.close();
         }
     }
