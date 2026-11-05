@@ -31,7 +31,7 @@ const theme = async (page, value) => {
 };
 try {
     for (const viewport of [{width:1440,height:1000},{width:390,height:844}]) {
-        const context = await browser.newContext({viewport,colorScheme:'dark',locale:'en-US'});
+        const context = await browser.newContext({viewport,hasTouch:viewport.width===390,colorScheme:'dark',locale:'en-US'});
         const page = await context.newPage();
         const errors = [];
         page.on('pageerror', error => errors.push(String(error)));
@@ -80,6 +80,39 @@ try {
         check(lightMap.road==='rgb(255,255,255)', 'light map retains original road color');
         check(lightMap.p.edges[1]==='rgba(0,0,255,1)', 'light player retains original color');
         check(await state(page)===before, 'theme switching preserves progress and proof state');
+        // selectOption does not focus the native select: use the actual chooser.
+        await page.locator('#theme-select').click();
+        await page.keyboard.press('End');
+        await page.keyboard.press('Enter');
+        check(await page.locator('#theme-select').inputValue()==='dark', 'native theme chooser changes the theme');
+        await page.keyboard.down('w');
+        check(await page.evaluate(()=>window.game.hyLayer.keyDowns.size===0), 'WASD stays blocked while editing the theme selector');
+        await page.keyboard.up('w');
+        await page.locator('#hyper').click({position:{x:100,y:100}});
+        for (const [key,code] of [['w','KeyW'],['a','KeyA'],['s','KeyS'],['d','KeyD']]) {
+            const position=await page.evaluate(()=>window.game.hyLayer.serialize());
+            await page.keyboard.down(key);
+            try {
+                check(await page.evaluate(code=>window.game.hyLayer.keyDowns.has(code),code), `${code} resumes after returning to the map from the theme chooser`);
+                await page.waitForFunction(before=>window.game.hyLayer.serialize()!==before,position,{timeout:2000});
+            } finally { await page.keyboard.up(key); }
+            check(await page.evaluate(()=>window.game.hyLayer.keyDowns.size===0), `${code} releases after moving the actual world`);
+        }
+        await page.keyboard.down('w');
+        await page.locator('#theme-select').focus();
+        check(await page.evaluate(()=>window.game.hyLayer.keyDowns.size===0), 'focusing the selector clears an actual held movement key');
+        await page.keyboard.up('w');
+        if (viewport.width===390) {
+            const box=await page.locator('#hyper').boundingBox();
+            await page.touchscreen.tap(box.x+100,box.y+100);
+            const position=await page.evaluate(()=>window.game.hyLayer.serialize());
+            await page.keyboard.down('w');
+            try {
+                check(await page.evaluate(()=>window.game.hyLayer.keyDowns.has('KeyW')), 'touching the map releases selector focus and restores movement');
+                await page.waitForFunction(before=>window.game.hyLayer.serialize()!==before,position,{timeout:2000});
+            } finally { await page.keyboard.up('w'); }
+        }
+        await theme(page,'light');
         await page.emulateMedia({colorScheme:'light'});
         check(await page.locator('html').getAttribute('data-theme')==='light', 'explicit light ignores system changes');
         await theme(page,'dark');
@@ -94,6 +127,12 @@ try {
         check(await page.locator('html').getAttribute('data-theme')==='dark', 'theme shared across game modes');
         await page.locator('button[data-layer="D-layer"]').click();
         const input=page.locator('#hs-cmd-input textarea');
+        await input.fill('d a1');
+        for (const key of ['w','ArrowLeft']) {
+            await page.keyboard.down(key);
+            try { check(await page.evaluate(()=>window.game.hyLayer.keyDowns.size===0), `${key} edits the command input without steering the map`); }
+            finally { await page.keyboard.up(key); }
+        }
         await input.fill('d a1');
         const proof=await state(page);
         await theme(page,'light');

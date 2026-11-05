@@ -37,6 +37,10 @@ export class HyLayer {
         });
         const isControl = (target: EventTarget | null) => target instanceof Element &&
             target.closest('input, textarea, select, button, [contenteditable]:not([contenteditable="false"])');
+        const releaseControlFocus = () => {
+            const control = document.activeElement;
+            if (control instanceof HTMLElement && isControl(control)) control.blur();
+        };
         document.addEventListener("focusin", ev => {
             if (isControl(ev.target)) this.keyDowns.clear();
         });
@@ -55,6 +59,7 @@ export class HyLayer {
         })
         this.canvas.addEventListener("mousedown", ev => {
             // if (ev.button !== 2) return;
+            releaseControlFocus();
             ev.preventDefault();
             ev.stopPropagation();
 
@@ -63,6 +68,7 @@ export class HyLayer {
             this.needUpdate = true;
         });
         this.canvas.addEventListener("touchstart", ev => {
+            releaseControlFocus();
             ev.preventDefault();
             ev.stopPropagation();
             this.touchStartX = ev.targetTouches[0].clientX;
