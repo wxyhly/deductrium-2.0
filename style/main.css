@@ -124,7 +124,7 @@
   border: 1px solid #b9c9d8;
   border-radius: 4px;
   box-shadow: 0 -3px 12px #0002;
-  z-index: 2;
+  z-index: 11;
   touch-action: pan-y;
 }
 .cmd-completions[hidden] { display: none; }

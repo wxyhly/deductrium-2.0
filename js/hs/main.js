@@ -502,7 +502,7 @@ export class HSLayer {
             };
             steps(this.hilbertSystem.props);
             const rules = [...this.hilbertSystem.rules].map(([name, rule]) => {
-                const entry = { name, hint: rule.toString(), hintType: "rule", expandable: !!rule.step?.length && !rule.error,
+                const entry = { name, kind: "D", hint: rule.toString(), hintType: "rule", expandable: !!rule.step?.length && !rule.error,
                     derived: rule.error ? undefined : { conditions: rule.conditions.length, implication: rule.conclusion.type === NodeType.LOGIC && rule.conclusion.name === ">" } };
                 if (rule.step || rule.error)
                     targets.push(entry);

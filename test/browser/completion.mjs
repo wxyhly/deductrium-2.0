@@ -46,6 +46,30 @@ try {
             l.hilbertSystem.loadContext(l.hilbertSystem.createEmptyContext());l.propListView.refresh();
             l.cmdInput.setValue('');
         });
+        await page.evaluate(async()=>{
+            const layer=window.game.hsLayer,{HSParser}=await import('/js/hs/core/parser.js'),parser=new HSParser();
+            layer.hilbertSystem.fromCmd([parser.parse('d .i $p','cmd')]);layer.hilbertSystem.m('ss1');
+            layer.hilbertSystem.fromCmd(['d ss1 $p','name 1 ss1'].map(text=>parser.parse(text,'cmd')));
+            layer.ruleList.push({name:'ss1',uuid:0});layer.ruleListView.refresh();layer.propListView.refresh();
+        });
+        for(const command of ['del','rename','inln','entr']) {
+            await input.fill(command+' ss1');
+            const labels=await list.locator('.completion-name').allTextContents();
+            check(labels.length===2&&labels[0]==='[P] ss1'&&labels[1]==='[D] ss1',command+' preserves same-named proof and macro as separate candidates');
+        }
+        for(const kind of ['P','D']) {
+            await input.fill('del ss1');
+            await list.locator('li').filter({hasText:'['+kind+'] ss1'}).click();
+            check((await state()).executing&&/1:.*2:/s.test(await page.locator('#cmd-prompt').textContent()),kind+' candidate retains explicit ambiguity selection');
+            await reset();
+            if(kind==='P') await page.evaluate(async()=>{
+                const layer=window.game.hsLayer,{HSParser}=await import('/js/hs/core/parser.js'),parser=new HSParser();
+                layer.hilbertSystem.fromCmd(['d .i $p','name 1 ss1'].map(text=>parser.parse(text,'cmd')));layer.propListView.refresh();
+            });
+        }
+        await page.evaluate(()=>{
+            const layer=window.game.hsLayer;layer.hilbertSystem.rules.delete('ss1');layer.ruleList.splice(layer.ruleList.findIndex(node=>node.name==='ss1'),1);layer.ruleListView.refresh();
+        });
         // Typing a replacement-trigger character must not discard intervening
         // whitespace from the editor's token-based normalization.
         for (const command of ['del', 'inln', 'entr', 'rename']) {

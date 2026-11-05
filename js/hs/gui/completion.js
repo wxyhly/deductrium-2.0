@@ -147,7 +147,7 @@ export function completeCommand(text, cursor, selectionEnd, source) {
     const add = (kind, entry, value, lookup, query) => {
         if (!lookup.toLowerCase().startsWith(query.toLowerCase()))
             return;
-        const key = value;
+        const key = kind + "\0" + value;
         if (seen.has(key))
             return;
         seen.add(key);
@@ -164,7 +164,7 @@ export function completeCommand(text, cursor, selectionEnd, source) {
             // Only rename supports quoted folder names in the command grammar.
             if (command !== "rename" && /\s/.test(entry.name))
                 continue;
-            add("P", entry, value, entry.name, query);
+            add(entry.kind ?? "P", entry, value, entry.name, query);
         }
         if (proofTarget) {
             const ruleNames = new Set(source.rules.map(entry => entry.name));

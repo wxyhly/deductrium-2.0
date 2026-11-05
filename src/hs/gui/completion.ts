@@ -5,6 +5,7 @@ type PreviewType = "rule" | "wff" | "item" | "assert" | "name";
 
 export interface CompletionEntry {
     name: string;
+    kind?: "P" | "D";
     hint?: string;
     hintType?: PreviewType;
     expandable?: boolean;
@@ -145,7 +146,7 @@ export function completeCommand(text: string, cursor: number, selectionEnd: numb
     const seen = new Set<string>();
     const add = (kind: Completion["kind"], entry: CompletionEntry, value: string, lookup: string, query: string) => {
         if (!lookup.toLowerCase().startsWith(query.toLowerCase())) return;
-        const key = value;
+        const key = kind + "\0" + value;
         if (seen.has(key)) return;
         seen.add(key);
         results.push({ kind, label: value, hint: entry.hint ?? "", hintType: entry.hintType, text: value, start, end });
@@ -158,7 +159,7 @@ export function completeCommand(text: string, cursor: number, selectionEnd: numb
             const value = quoted || /[\s"\\]/.test(entry.name) ? JSON.stringify(entry.name) : entry.name;
             // Only rename supports quoted folder names in the command grammar.
             if (command !== "rename" && /\s/.test(entry.name)) continue;
-            add("P", entry, value, entry.name, query);
+            add(entry.kind ?? "P", entry, value, entry.name, query);
         }
         if (proofTarget) {
             const ruleNames = new Set(source.rules.map(entry => entry.name));

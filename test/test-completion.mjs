@@ -9,7 +9,7 @@ const source = {
         {name:'a1',hint:'⊢$1→$2→$1',derived:{conditions:0,implication:true}}, {name:'a2',derived:{conditions:0,implication:true}}, {name:'.i',expandable:true},
         {name:'zMacro',expandable:true,derived:{conditions:0,implication:true}}, {name:'zMore',expandable:true}, {name:'mp',derived:{conditions:2,implication:false}},
     ],
-    targets: [{name:'1',expandable:true},{name:'12',expandable:true},{name:'zMacro',expandable:true},{name:'stepName',expandable:false}],
+    targets: [{name:'1',expandable:true},{name:'12',expandable:true},{name:'zMacro',kind:'D',expandable:true},{name:'stepName',expandable:false}],
     folders: [{name:'my folder'},{name:'zFolder'}],
 };
 const complete = (text, extra = {}, cursor = text.length) => completeCommand(text,cursor,cursor,{...source,...extra});
@@ -23,6 +23,16 @@ test('idle rules and commands, stable order, case insensitive names',()=>{
     assert.deepEqual(labels(complete('m')),['mp','m','mcpt']);
     assert.deepEqual(complete(''),[]);
     assert.deepEqual(labels(complete('del', {commands:['d']})),[]);
+});
+test('same-named proof and macro remain separate P and D candidates',()=>{
+    const macro={name:'ss1',kind:'D',expandable:true,hint:'⊢$p→$p'};
+    const extra={rules:[macro],targets:[{name:'ss1',expandable:true,hint:'$p→$p'},macro,macro]};
+    for(const command of ['del','rename','inln','entr']) {
+        const result=complete(command+' ss1',extra);
+        assert.deepEqual(result.map(({kind,label})=>({kind,label})),[{kind:'P',label:'ss1'},{kind:'D',label:'ss1'}],command);
+        assert.equal(result[0].hint,'$p→$p');
+        assert.equal(result[1].hint,'⊢$p→$p');
+    }
 });
 test('rule prompts only complete the name, never proof/formula/new-name parameters',()=>{
     assert.deepEqual(labels(complete('a',{pending:{command:'d',argumentCount:0}})),['a1','a2']);
