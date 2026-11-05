@@ -110,33 +110,59 @@ export class ExecutionEngine {
                 }
                 return;
             }
+            if (this.currentDef) {
+                let rewind = !this.hasError;
+                if (this.hasError) {
+                    try {
+                        // A parse error leaves a usable request; a rejected collected
+                        // argument may make even this request lookup throw.
+                        rewind = !this.currentDef.getNextParam(this.currentArgs, true);
+                    }
+                    catch {
+                        rewind = true;
+                    }
+                }
+                if (rewind) {
+                    if (this.hasError) {
+                        this.hasError = false;
+                        this.ui.clearError();
+                    }
+                    this.rewindParameter();
+                }
+            }
+            if (this.hasError) {
+                this.hasError = false;
+                this.ui.clearError();
+            }
         }
         catch (e) {
             this.reportError(e);
+        }
+    }
+    rewindParameter() {
+        while (this.currentArgs.length) {
+            this.currentArgs.pop();
+            const lastText = this.currentArgTexts.pop() ?? '';
+            let req;
+            try {
+                req = this.currentDef.getNextParam(this.currentArgs, false);
+            }
+            catch (e) {
+                // Earlier targets can also become stale. Keep the command and
+                // rewind to the nearest request that can actually be edited.
+                if (this.currentArgs.length)
+                    continue;
+                throw e;
+            }
+            if (!req)
+                continue;
+            this.ui.showPrompt(req.prompt, "");
+            this.ui.setInputText(lastText);
             return;
         }
-        if (this.currentDef && (!this.hasError || !this.currentDef.getNextParam(this.currentArgs, true))) {
-            if (this.currentArgs.length > 0) {
-                // 回退一步：弹出最后一个 AST 和对应的文本
-                this.currentArgs.pop();
-                const lastText = this.currentArgTexts.pop() ?? '';
-                // 显示上一步的提示（期间可能改变高亮方式）
-                const req = this.currentDef.getNextParam(this.currentArgs, false);
-                this.ui.showPrompt(req.prompt, "");
-                // 将上一个参数的文本回填到输入框（改了高亮再显示）
-                this.ui.setInputText(lastText);
-            }
-            else {
-                // 完全取消，恢复原始命令文本
-                const text = this.savedCommandText;
-                this.clearState();
-                this.ui.setInputText(text);
-            }
-        }
-        if (this.hasError) {
-            this.hasError = false;
-            this.ui.clearError();
-        }
+        const text = this.savedCommandText;
+        this.clearState();
+        this.ui.setInputText(text);
     }
     // ---------------------- 内部方法 ----------------------
     parseAll(input) {
@@ -265,12 +291,45 @@ export class CommandUIManager {
     cmdInput;
     engine;
     onClearState;
+    ownerDocument;
+    previousOnEnter;
+    previousAstClick;
+    onEnter = () => this.engine.run(this.cmdInput.getValue());
+    onDocumentKeyDown = (e) => {
+        if (e.key !== "Escape" || e.defaultPrevented || e.isComposing)
+            return;
+        if (!this.errorDiv.isConnected || !this.promptDiv.isConnected)
+            return;
+        const target = e.target;
+        if (!this.cmdInput.isFocused()) {
+            // Disabled textareas may deliver Escape to the document/body. Do
+            // not take that Escape from another editor or an unrelated dialog.
+            if (target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))
+                return;
+            const dialog = target?.closest?.('dialog,[role="dialog"]');
+            if (dialog && !dialog.contains(this.promptDiv))
+                return;
+            if (!this.errorDiv.parentElement?.getClientRects().length)
+                return;
+        }
+        if (this.cmdInput.disabled || this.cmdInput.isFocused()) {
+            e.preventDefault();
+            this.engine.handleEsc();
+        }
+        else {
+            this.cmdInput.focus();
+            this.cmdInput.setSelectionRange(0, this.cmdInput.getValue().length);
+        }
+    };
     constructor(engine, cmdInput, errorDiv, promptDiv, onClearState) {
         this.engine = engine;
         this.cmdInput = cmdInput;
         this.errorDiv = errorDiv;
         this.promptDiv = promptDiv;
         this.onClearState = onClearState;
+        this.ownerDocument = errorDiv.ownerDocument;
+        this.previousOnEnter = cmdInput.onEnter;
+        this.previousAstClick = SyntaxViewer.onClickAst;
         // 将自身作为 engine 的 ui 回调对象
         engine.ui = {
             setClearState: () => this.setClearState(),
@@ -279,19 +338,16 @@ export class CommandUIManager {
             clearError: () => this.clearError(),
             setInputText: (text) => this.setInputText(text),
         };
-        this.cmdInput.onEnter = () => this.engine.run(this.cmdInput.getValue());
-        document.addEventListener('keydown', e => {
-            if (e.key !== "Escape")
-                return;
-            if (this.cmdInput.disabled || this.cmdInput.isFocused()) {
-                this.engine.handleEsc();
-            }
-            else {
-                this.cmdInput.focus();
-                this.cmdInput.setSelectionRange(0, this.cmdInput.getValue().length);
-            }
-        });
+        this.cmdInput.onEnter = this.onEnter;
+        this.ownerDocument.addEventListener('keydown', this.onDocumentKeyDown);
         SyntaxViewer.onClickAst = this.insertText;
+    }
+    destroy() {
+        this.ownerDocument.removeEventListener('keydown', this.onDocumentKeyDown);
+        if (this.cmdInput.onEnter === this.onEnter)
+            this.cmdInput.onEnter = this.previousOnEnter;
+        if (SyntaxViewer.onClickAst === this.insertText)
+            SyntaxViewer.onClickAst = this.previousAstClick;
     }
     setClearState() {
         this.errorDiv.style.display = 'none';
@@ -326,6 +382,7 @@ export class CommandUIManager {
     clearError() {
         this.errorDiv.style.display = 'none';
         this.cmdInput.disabled = false;
+        this.cmdInput.focus();
     }
     setInputText(text) {
         this.cmdInput.setValue(text);

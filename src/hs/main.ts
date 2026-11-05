@@ -397,7 +397,9 @@ export class HSLayer {
             const folders: CompletionEntry[] = [];
             const steps = (props: Proposition[]) => {
                 for (const prop of props) {
-                    const entry = { hint: prop.ast.toString(), expandable: prop.from.type === "d", inlinable: ["d", "f", "c", "v"].includes(prop.from.type) };
+                    const entry: Omit<CompletionEntry, "name"> = { hint: prop.ast.toString(),
+                        hintType: prop.ast.type === NodeType.ASSERT ? "assert" : prop.from.type === "v" ? "item" : prop.from.type === "f" ? "name" : "wff",
+                        expandable: prop.from.type === "d", inlinable: ["d", "f", "c", "v"].includes(prop.from.type) };
                     targets.push({ name: String(prop.id), ...entry });
                     if (prop.name) targets.push({ name: prop.name, ...entry });
                     if (prop.children) steps(prop.children);
@@ -405,7 +407,7 @@ export class HSLayer {
             };
             steps(this.hilbertSystem.props);
             const rules = [...this.hilbertSystem.rules].map(([name, rule]) => {
-                const entry = { name, hint: rule.toString(), expandable: !!rule.step?.length && !rule.error,
+                const entry: CompletionEntry = { name, hint: rule.toString(), hintType: "rule", expandable: !!rule.step?.length && !rule.error,
                     derived: rule.error ? undefined : { conditions: rule.conditions.length, implication: rule.conclusion.type === NodeType.LOGIC && rule.conclusion.name === ">" } };
                 if (rule.step || rule.error) targets.push(entry);
                 return entry;

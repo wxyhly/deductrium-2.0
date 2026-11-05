@@ -59,6 +59,10 @@ try {
         }
         await input.fill('a');
         check(await list.isVisible(),'input displays candidates');
+        const rulePreview=list.locator('li').filter({hasText:'[D] a1'}).first();
+        check(await rulePreview.locator('.completion-hint .token-replvar-wff').count()>0,'rule preview uses formula token highlighting');
+        check(await rulePreview.locator('.completion-name .token-rule-axiom').count()>0,'candidate rule name uses rule highlighting');
+        check(await rulePreview.locator('.completion-hint .token-replvar-wff').first().evaluate(el=>getComputedStyle(el).color)==='rgb(252, 93, 73)','preview uses the existing token palette');
         await input.press('ArrowDown');await input.press('ArrowDown');
         await input.press('Tab');
         check(await input.inputValue()==='a2','arrows select, Tab fills without executing');
@@ -91,6 +95,15 @@ try {
         check(!(await list.isVisible()),'formula prompt has no rule suggestions');
         await input.fill('$p');await input.press('Enter');
         check((await state()).props===1&&!(await state()).executing,'formula parameter executes normally');
+        await input.fill('del 1');
+        check(await list.locator('.completion-hint .token-replvar-wff').count()>0,'proof target preview highlights its formula');
+        await reset();
+        await input.fill('hy');
+        check(await list.locator('.completion-name .token-cmd').count()>0,'command candidate name uses command highlighting');
+        await input.fill('.i');
+        const formulaBox=await list.locator('.completion-hint').first().boundingBox();
+        await page.mouse.click(formulaBox.x+formulaBox.width/2,formulaBox.y+formulaBox.height/2);
+        check((await state()).executing&&(await input.inputValue())==='$'&&(await completionState()).pending.argumentCount===1,'clicking highlighted preview selects the candidate without inserting formula fragments');
         await reset();
         await input.fill('a');await input.press('ArrowDown');await input.press('Enter');
         check((await state()).executing,'Enter accepts selected candidate and executes it');

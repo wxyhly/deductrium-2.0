@@ -1,8 +1,12 @@
-import { SyntaxEditor } from "../../astrender.js";
+import { SyntaxEditor, SyntaxViewer } from "../../astrender.js";
+import { HSParser } from "../core/parser.js";
+
+type PreviewType = "rule" | "wff" | "item" | "assert" | "name";
 
 export interface CompletionEntry {
     name: string;
     hint?: string;
+    hintType?: PreviewType;
     expandable?: boolean;
     inlinable?: boolean;
     /** Rule shape only; omitted for broken rules. */
@@ -21,6 +25,7 @@ export interface Completion {
     kind: "D" | "C" | "P";
     label: string;
     hint: string;
+    hintType?: PreviewType;
     text: string;
     start: number;
     end: number;
@@ -143,7 +148,7 @@ export function completeCommand(text: string, cursor: number, selectionEnd: numb
         const key = value;
         if (seen.has(key)) return;
         seen.add(key);
-        results.push({ kind, label: value, hint: entry.hint ?? "", text: value, start, end });
+        results.push({ kind, label: value, hint: entry.hint ?? "", hintType: entry.hintType, text: value, start, end });
     };
     if (editing) {
         const entries = [...source.targets, ...(command === "rename" ? source.folders : [])];
@@ -183,6 +188,8 @@ export class CommandCompletion {
     private composing = false;
     private snapshot = "";
     private cursor = -1;
+    private previews: SyntaxViewer[] = [];
+    private previewParser = new HSParser();
     constructor(private editor: SyntaxEditor, mount: HTMLElement, private source: () => CompletionSource) {
         this.textarea = mount.querySelector("textarea")!;
         this.list.id = "hs-completions";
@@ -201,6 +208,7 @@ export class CommandCompletion {
         this.textarea.addEventListener("blur", () => this.hide());
     }
     hide() {
+        this.clearPreviews();
         this.items = [];
         this.active = -1;
         this.list.hidden = true;
@@ -214,6 +222,7 @@ export class CommandCompletion {
         this.snapshot = this.editor.getValue();
         this.cursor = this.textarea.selectionStart;
         this.active = -1;
+        this.clearPreviews();
         this.list.replaceChildren();
         this.textarea.removeAttribute("aria-activedescendant");
         this.list.hidden = !this.items.length;
@@ -224,15 +233,35 @@ export class CommandCompletion {
             li.setAttribute("role", "option");
             li.setAttribute("aria-selected", "false");
             const name = document.createElement("span");
-            name.textContent = `[${item.kind}] ${item.label}`;
+            name.className = "completion-name";
+            name.append(`[${item.kind}] `);
+            const label = document.createElement("span");
+            if (item.kind === "P") label.textContent = item.label;
+            else this.renderPreview(label, item.label, item.kind === "C" ? "cmd" : "dname");
+            name.appendChild(label);
             const hint = document.createElement("span");
             hint.className = "completion-hint";
-            hint.textContent = item.hint;
+            if (item.hint && item.hintType && item.hintType !== "name") this.renderPreview(hint, item.hint, item.hintType);
+            else hint.textContent = item.hint;
             li.append(name, hint);
             li.addEventListener("mousedown", e => e.preventDefault());
             li.addEventListener("click", () => { this.accept(i); if (item.kind !== "C") this.editor.onEnter?.(); });
             this.list.appendChild(li);
         });
+    }
+    private clearPreviews() {
+        this.previews.forEach(viewer => viewer.destroy());
+        this.previews.length = 0;
+    }
+    private renderPreview(host: HTMLElement, text: string, type: PreviewType | "cmd" | "dname") {
+        // Candidate selection owns clicks; a formula fragment must not insert
+        // itself into the command prompt through SyntaxViewer's global handler.
+        host.classList.add("completion-syntax");
+        const viewer = new SyntaxViewer(host, this.previewParser, text, type);
+        if (host.textContent !== text) {
+            viewer.destroy();
+            host.textContent = text;
+        } else this.previews.push(viewer);
     }
     private accept(index: number) {
         const item = this.items[index];
