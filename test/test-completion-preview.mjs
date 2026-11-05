@@ -83,7 +83,13 @@ test('completeCommand uses real core formulas for prefixed and complete applicat
         }
         assert.equal(complete(system,name,{pending:{command:'d',argumentCount:0}})[0].hint,fixture().getD(parse(name)).toString());
     }
-    assert.equal(complete(system,'d c(mp(sn').find(item=>item.label==='sni').hint,fixture().getD(parse('c(mp(sni,#))')).toString());
+    for(const text of ['d c(mp(sn','st(st(sne','d st(st(sne))']) {
+        const cursor=text.indexOf('sne')>=0?text.indexOf('sne')+3:text.length;
+        const candidate=completeCommand(text,cursor,cursor,source(system)).find(item=>item.label===(text.includes('sne')?'sne':'sni'));
+        assert.ok(candidate,text);
+        assert.equal(candidate.hint,system.rules.get(candidate.label).toString(),text+' previews its displayed name');
+        assert.equal(text.slice(0,candidate.start)+candidate.text+text.slice(candidate.end),text.endsWith('sn')?text+'i':text);
+    }
     assert.deepEqual(complete(system,'d sni(sni)'),[],'invalid complete application has no false formula');
 });
 

@@ -16,12 +16,12 @@ const complete = (text, extra = {}, cursor = text.length) => completeCommand(tex
 const labels = xs => xs.map(x=>x.label);
 const apply = (text,item) => text.slice(0,item.start)+item.text+text.slice(item.end);
 
-test('derived previews use the completed whole rule name after matching and limiting candidates', () => {
+test('derived previews use the displayed candidate name after matching and limiting candidates', () => {
     const calls=[];
     const previewRule=name=>{calls.push(name);return 'preview:'+name;};
     for(const [text,cursor,expected] of [
-        ['d ca',4,'ca1'], ['vc<a',4,'vc<a1'], ['d c(a',5,'c(a1)'],
-        ['d mp(#,a',8,'mp(#,a1)'], ['d c(a2) $p',5,'c(a1)'],
+        ['d ca',4,'ca1'], ['vc<a',4,'vc<a1'], ['d c(a',5,'a1'],
+        ['d mp(#,a',8,'a1'], ['d c(a2) $p',5,'a1'],
         ['hyp $p; d ca $q',12,'ca1'],
     ]) {
         calls.length=0;

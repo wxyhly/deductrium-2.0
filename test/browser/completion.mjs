@@ -236,7 +236,7 @@ try {
             run('hyp $1→$2;hyp $1;d mp 1 2');system.m('r');
             run('d .i $');system.m('s');
             system.renameD('.<>','s<>');system.renameD('.<>s','s<>s');
-            const names=['<sni','vsni','csni','esni','vc<sni','<sne(mp)','r(s,#)','c(mp(s,#))','s<>(>s<>s,>s<>s)'];
+            const names=['sne','<sni','vsni','csni','esni','vc<sni','<sne(mp)','r(s,#)','c(mp(s,#))','s<>(>s<>s,>s<>s)'];
             const expected=Object.fromEntries(names.map(name=>[name,system.getD(parser.parse(name,'dname')).toString()]));
             system.hyp(parser.parse('A','wff'));system.c(parser.parse('B','wff'));
             layer.propListView.refresh();layer.ruleListView.refresh();
@@ -262,6 +262,17 @@ try {
                 check(await input.inputValue()===prefix+name&&!(await state()).executing,prefix+name+' Tab keeps the complete expression without executing');
                 check(await proofUnchanged(),prefix+name+' preview preserves proof, active folder, schemas and caches');
             }
+        }
+        for(const text of ['st(st(sne','d st(st(sne))']) {
+            await input.fill(text);
+            const cursor=text.indexOf('sne')+3;
+            await input.evaluate((el,cursor)=>{el.setSelectionRange(cursor,cursor);el.dispatchEvent(new Event('input',{bubbles:true}));},cursor);
+            const candidate=list.locator('li').filter({has:page.locator('.completion-name').filter({hasText:/^\[D\] sne$/})});
+            check(await candidate.count()===1,text+' displays the inner rule name');
+            check(await candidate.locator('.completion-hint').innerText()===expectedPreviews.sne,text+' previews sne itself, matching its displayed name');
+            await input.press('Tab');
+            check(await input.inputValue()===text,text+' preserves the surrounding composition when completing sne');
+            check(await proofUnchanged(),text+' candidate preview leaves the live proof unchanged');
         }
         for(const name of ['<sne(mp)','r(s,#)']) {
             await input.fill('d');await input.press('Enter');await input.fill(name);

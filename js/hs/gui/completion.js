@@ -117,7 +117,6 @@ export function completeCommand(text, cursor, selectionEnd, source) {
     if (!fragment)
         return [];
     // Complete the innermost atom in a prefixed/composed rule name.
-    const ruleStart = start;
     let prefix = "";
     const composed = /[(),:]/.test(fragment);
     const proofTarget = command === "entr" || command === "inln";
@@ -200,23 +199,9 @@ export function completeCommand(text, cursor, selectionEnd, source) {
     return results.slice(0, 100).map(item => {
         if (item.kind !== "D" || (command !== "d" && !proofTarget) || (!prefix && !composed))
             return item;
-        // Preserve the outer application and the suffix beyond the caret. Close
-        // unfinished parentheses just for preview; insertion still fills the atom.
-        const ruleEnd = ruleStart + (/^[^\s;\n]*/.exec(text.slice(ruleStart))?.[0].length ?? 0);
-        let name = text.slice(ruleStart, item.start) + item.text + text.slice(item.end, ruleEnd);
-        let balance = 0;
-        for (const char of name) {
-            if (char === "(")
-                balance++;
-            if (char === ")")
-                balance--;
-            if (balance < 0)
-                return { ...item, hint: "", hintType: undefined };
-        }
-        if (balance > 24)
-            return { ...item, hint: "", hintType: undefined };
-        name += ")".repeat(balance);
-        const hint = source.previewRule?.(name) ?? "";
+        // Atom candidates describe their displayed name. Only the closed-rule
+        // candidate above describes the full surrounding composition.
+        const hint = source.previewRule?.(item.label) ?? "";
         return { ...item, hint, hintType: hint ? "rule" : undefined };
     });
 }
