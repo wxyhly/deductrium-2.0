@@ -6,6 +6,22 @@ import { HilbertSystem } from '../js/hs/core/core.js';
 import { HSParser } from '../js/hs/core/parser.js';
 import { NodeType } from '../js/asttype.js';
 
+test('editing command tokens retain every space before and after literal arguments', () => {
+    const parser = new HSParser();
+    for (const command of ['del', 'inln', 'entr', 'rename']) {
+        for (const suffix of ['', 's', 's   ', 'someName,  anotherName']) {
+            const text = `${command}${' '.repeat(12)}${suffix}`;
+            parser.parse(text, 'cmd');
+            const tokens = parser.getTokens();
+            assert.equal(tokens.map(token => text.slice(token.start, token.end)).join(''), text);
+            assert.equal(tokens.map(token => token.displayText).join(''), text);
+        }
+    }
+    const text = 'rename   "old folder"      "new folder"   ';
+    parser.parse(text, 'cmd');
+    assert.equal(parser.getTokens().map(token => text.slice(token.start, token.end)).join(''), text);
+});
+
 test('prompt atoms preserve ordinary names and confirmation values', () => {
     for (const name of ['1', '1.2', 'savedProof', 'mp(a1,#)', 'a,b', 'my folder', 'y', 'n', '1:macro', "'literal'", '']) {
         const atom = targetAtom(` \t${name} \t`);

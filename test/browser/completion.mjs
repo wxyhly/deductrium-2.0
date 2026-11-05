@@ -46,6 +46,17 @@ try {
             l.hilbertSystem.loadContext(l.hilbertSystem.createEmptyContext());l.propListView.refresh();
             l.cmdInput.setValue('');
         });
+        // Typing a replacement-trigger character must not discard intervening
+        // whitespace from the editor's token-based normalization.
+        for (const command of ['del', 'inln', 'entr', 'rename']) {
+            await input.fill(command);
+            for (let i=0;i<12;i++) await input.press('Space');
+            check((await completionState()).normalized===command+' '.repeat(12),command+' retains spaces without an argument');
+            await input.press('s');
+            const typed=await completionState();
+            check(typed.value===command+' '.repeat(12)+'s'&&typed.normalized===typed.value,command+' retains spaces when s triggers normalization');
+            check(typed.cursor[0]===command.length+13&&typed.cursor[1]===typed.cursor[0],command+' retains the insertion cursor');
+        }
         await input.fill('a');
         check(await list.isVisible(),'input displays candidates');
         await input.press('ArrowDown');await input.press('ArrowDown');
