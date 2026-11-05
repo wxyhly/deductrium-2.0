@@ -157,94 +157,6 @@ export class SyntaxHighlighter {
         return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 }
-/** Compact assertion notation for read-only views. Keep every source token in
- * DOM order so source offsets and getCode() still refer to the original syntax. */
-export function compactAssertions(fragment, tokens) {
-    const spans = Array.from(fragment.children);
-    const assertions = new Map();
-    tokens.forEach((token, index) => {
-        const ast = token.parentAST;
-        let open = index + 1;
-        while (tokens[open]?.type === 'space')
-            open++;
-        if (!ast || tokens[open]?.text !== '(')
-            return;
-        const kind = ast.type === NodeType.SB ? 'sb'
-            : ast.type === NodeType.ASSERT && ['nf', 'dt'].includes(ast.name) ? ast.name : '';
-        if (!kind || token.text !== '#' + kind)
-            return;
-        // Parenthesizing an expression widens its AST span. Locate the call's
-        // own parentheses instead of hiding the surrounding expression.
-        let depth = 0, end = open;
-        for (; end < tokens.length; end++) {
-            if (tokens[end].text === '(')
-                depth++;
-            if (tokens[end].text === ')' && --depth === 0) {
-                end++;
-                break;
-            }
-        }
-        // A failed/partial parse must retain literal syntax.
-        if (depth === 0 && end <= tokens.length &&
-            tokens[end - 1].text === ')' && tokens[end - 1].parentAST === ast) {
-            assertions.set(index, { ast, open, end, kind });
-        }
-    });
-    if (!assertions.size)
-        return;
-    const bounds = (node) => {
-        if (node.start !== undefined && node.end !== undefined)
-            return [node.start, node.end];
-        const children = node.nodes.map(bounds).filter((b) => !!b);
-        return children.length ? [children[0][0], children[children.length - 1][1]] : undefined;
-    };
-    const append = (parent, start, end) => {
-        for (let i = start; i < end;) {
-            const entry = assertions.get(i);
-            if (!entry || entry.end > end) {
-                parent.appendChild(spans[i++]);
-                continue;
-            }
-            const { ast, kind } = entry;
-            const wrapper = document.createElement('span');
-            wrapper.className = 'ast-compact ast-compact-' + kind;
-            wrapper.dataset.parentStart = String(tokens[i].start);
-            wrapper.dataset.parentEnd = String(tokens[entry.end - 1].end);
-            wrapper.title = tokens.slice(i, entry.end).map(t => t.displayText).join('');
-            if (kind === 'dt')
-                wrapper.title += ' — 变量两两不同';
-            const groups = kind === 'dt'
-                ? [{ range: [tokens[entry.open].end, tokens[entry.end - 1].start], tag: 'span', cls: 'variables' }]
-                : ast.nodes.map((node, index) => ({
-                    range: bounds(node),
-                    tag: kind === 'nf' ? (index === 1 ? 'sub' : index === 2 ? 'sup' : 'span')
-                        : index === 1 || index === 3 ? 'sup' : index === 2 ? 'sub' : 'span',
-                    cls: index === 0 ? 'body' : (kind === 'nf' && index === 2 || kind === 'sb' && index === 3)
-                        ? 'scope' : kind === 'sb' && index === 2 ? 'target' : 'parameter'
-                }));
-            for (let j = i; j < entry.end;) {
-                const group = groups.find(g => g.range && tokens[j].start >= g.range[0] && tokens[j].end <= g.range[1]);
-                if (group?.range) {
-                    let last = j + 1;
-                    while (last < entry.end && tokens[last].end <= group.range[1])
-                        last++;
-                    const element = document.createElement(group.tag);
-                    element.className = 'ast-compact-' + group.cls;
-                    append(element, j, last);
-                    wrapper.appendChild(element);
-                    j = last;
-                }
-                else {
-                    spans[j].classList.add('ast-compact-syntax');
-                    wrapper.appendChild(spans[j++]);
-                }
-            }
-            parent.appendChild(wrapper);
-            i = entry.end;
-        }
-    };
-    append(fragment, 0, tokens.length);
-}
 // ========== 高亮管理器 ==========
 export class HighlightManager {
     codeElement;
@@ -331,7 +243,6 @@ export class BaseSyntaxViewer {
     parserArgs;
     // 子类需提供 code 容器元素给 HighlightManager
     codeElement;
-    compact = false;
     constructor(parser, codeElement, ...parserArgs) {
         this.parser = parser;
         this.codeElement = codeElement;
@@ -378,8 +289,6 @@ export class BaseSyntaxViewer {
         }
         const tokens = this.parseTokens(unicodeText);
         const fragment = this.highlighter.highlightDOM(tokens);
-        if (this.compact)
-            compactAssertions(fragment, tokens);
         this.codeElement.replaceChildren(fragment);
     }
     replaceText(str) {
@@ -412,19 +321,13 @@ export class BaseSyntaxViewer {
 // ========== 只读视图 ==========
 export class SyntaxViewer extends BaseSyntaxViewer {
     static onClickAst = null;
-    static copyDocuments = new WeakSet();
     constructor(dom, parser, initialCode, ...parserArgs) {
         // 调用基类构造函数
         super(parser, dom, ...parserArgs);
-        this.compact = true;
         // 绑定鼠标事件
         dom.addEventListener('mousemove', this.onMouseMove);
         dom.addEventListener('mouseleave', this.onMouseLeave);
         dom.addEventListener('click', this.onClick);
-        if (!SyntaxViewer.copyDocuments.has(dom.ownerDocument)) {
-            dom.ownerDocument.addEventListener('copy', SyntaxViewer.onCopy);
-            SyntaxViewer.copyDocuments.add(dom.ownerDocument);
-        }
         // 初始内容
         if (initialCode)
             this.setCode(initialCode);
@@ -464,59 +367,11 @@ export class SyntaxViewer extends BaseSyntaxViewer {
             text = fullText.substring(parseInt(parentStart), parseInt(parentEnd));
         }
         else {
-            text = span.textContent || '';
+            text = span.innerText; // 或 span.textContent
         }
         SyntaxViewer.onClickAst(text, e, this.parser, this.parserArgs);
         // 已按 AST 片段处理（如插入输入框），阻止冒泡，避免外层行点击回调再次触发覆盖行为
         e.stopPropagation();
-    };
-    static onCopy = (e) => {
-        const selection = e.currentTarget.getSelection();
-        if (!selection?.rangeCount || selection.isCollapsed || !e.clipboardData)
-            return;
-        const range = selection.getRangeAt(0).cloneRange();
-        // Selecting a displayed annotation copies its complete, parseable source.
-        const compactAt = (node) => (node instanceof Element ? node : node.parentElement)?.closest('.ast-compact');
-        let first = compactAt(range.startContainer), last = compactAt(range.endContainer);
-        while (first?.parentElement?.closest('.ast-compact'))
-            first = first.parentElement.closest('.ast-compact');
-        while (last?.parentElement?.closest('.ast-compact'))
-            last = last.parentElement.closest('.ast-compact');
-        if (!first && !last && !range.cloneContents().querySelector('.ast-compact'))
-            return;
-        if (first)
-            range.setStartBefore(first);
-        if (last)
-            range.setEndAfter(last);
-        // Range.toString() drops row boundaries. Serialize source tokens while
-        // retaining the line separators of block elements (including table rows).
-        const sourceText = (node) => {
-            if (node instanceof Element && getComputedStyle(node).display === 'none' &&
-                !node.classList.contains('ast-compact-syntax'))
-                return '';
-            if (node.nodeType === Node.TEXT_NODE) {
-                const text = node.textContent || '';
-                return text.slice(node === range.startContainer ? range.startOffset : 0, node === range.endContainer ? range.endOffset : text.length);
-            }
-            if (node.nodeName === 'BR')
-                return '\n';
-            let text = '', previousBlock = false;
-            for (const child of Array.from(node.childNodes)) {
-                if (!range.intersectsNode(child))
-                    continue;
-                const part = sourceText(child);
-                if (!part)
-                    continue;
-                const block = child instanceof Element && /^(block|flow-root|flex|grid|list-item|table|table-row|table-caption)$/.test(getComputedStyle(child).display);
-                if (text && (block || previousBlock) && !text.endsWith('\n') && !part.startsWith('\n'))
-                    text += '\n';
-                text += part;
-                previousBlock = block;
-            }
-            return text;
-        };
-        e.clipboardData.setData('text/plain', sourceText(range.commonAncestorContainer));
-        e.preventDefault();
     };
     // 覆写 destroy 以移除 DOM 和事件
     destroy() {
