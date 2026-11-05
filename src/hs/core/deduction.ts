@@ -123,7 +123,7 @@ export class Proposition {
             const name = data.deduction.toString();
             // 名称不是命令关键字（hyp/pop等）时省略"d "前缀（解析时默认按d命令处理）；
             // mcpt 等独立命令名的d步骤直接序列化为裸命令，重放时走对应命令分支。
-            const kw = new Set(["hyp", "cond", "var", "dir", "d", "clear", "b", "pop", "cd", "name", "del", "m"]);
+            const kw = new Set(["hyp", "cond", "var", "dir", "d", "clear", "b", "pop", "cd", "name", "del", "m", "inln", "entr", "rename"]);
             const cond = data.conditions.map(p => p.id).join(" ");
             const prefix = kw.has(name) ? "d " : "";
             let values = Object.values(data.replaceValues);

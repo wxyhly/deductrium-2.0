@@ -27,6 +27,7 @@ export interface CommandDefinition {
     name: string;
     getNextParam: GetNextParam;
     execute: (args: AST[]) => Promise<string | void> | string | void;
+    onEscape?: () => boolean;
 }
 
 const registry = new Map<string, CommandDefinition>();
@@ -34,9 +35,10 @@ const registry = new Map<string, CommandDefinition>();
 export function defineCommand(
     name: string,
     getNextParam: GetNextParam,
-    execute: CommandDefinition['execute']
+    execute: CommandDefinition['execute'],
+    options: Pick<CommandDefinition, 'onEscape'> = {}
 ) {
-    registry.set(name, { name, getNextParam, execute });
+    registry.set(name, { name, getNextParam, execute, ...options });
 }
 
 export function getCommand(name: string): CommandDefinition | undefined {
@@ -81,6 +83,9 @@ export interface HighlightContext {
     errorMessage?: string;
 }
 export class ExecutionEngine {
+    onIdleEscape?: () => boolean;
+    beforeCommand?: (name: string) => void;
+    transformInput?: (input: string) => string;
     // private state: EngineState = 'IDLE';
     private fragments: CommandFragment[] = [];  // 本次执行的所有命令
     // private currentIndex = 0;                   // 下一条待执行命令的索引
@@ -111,9 +116,17 @@ export class ExecutionEngine {
     }
 
     run(input: string) {
+        try {
+            this.runInput(input);
+        } catch (e) {
+            this.reportError(e as HSErrorInfo);
+        }
+    }
+
+    private runInput(input: string) {
         if (!input.trim()) return;
         if (!this.currentDef) {
-            this.fragments = this.parseAll(input);
+            this.fragments = this.parseAll(this.transformInput?.(input) ?? input);
             this.advance();
             return;
         }
@@ -137,6 +150,28 @@ export class ExecutionEngine {
     }
 
     handleEsc() {
+        try {
+            if (!this.currentDef) {
+                this.onIdleEscape?.();
+            } else if (this.currentDef.onEscape) {
+                if (this.currentDef.onEscape()) {
+                    const req = this.currentDef.getNextParam(this.currentArgs, false);
+                    if (req) this.ui.showPrompt(req.prompt, req.default);
+                } else {
+                    const text = this.savedCommandText;
+                    this.clearState();
+                    this.ui.setInputText(text);
+                }
+                if (this.hasError) {
+                    this.hasError = false;
+                    this.ui.clearError();
+                }
+                return;
+            }
+        } catch (e) {
+            this.reportError(e as HSErrorInfo);
+            return;
+        }
         if (this.currentDef && (!this.hasError || !this.currentDef.getNextParam(this.currentArgs, true))) {
             if (this.currentArgs.length > 0) {
                 // 回退一步：弹出最后一个 AST 和对应的文本
@@ -216,6 +251,7 @@ export class ExecutionEngine {
 
         // 检查参数是否已经足够
         try {
+            this.beforeCommand?.(def.name);
             const enough = this.isArgsEnough(def, initialArgs);
             if (enough) {
                 // 参数齐全，直接执行

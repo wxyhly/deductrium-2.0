@@ -63,6 +63,9 @@ const commandDefs: Record<string, CommandDef> = {
     cd: { params: [{ type: 'ast', astType: 'item' }] },
     name: { params: [{ type: 'ast', astType: 'item' }, { type: 'ast', astType: 'item' }] },
     del: { params: [{ type: 'ast', astType: 'item' }] },
+    inln: { params: [] },
+    entr: { params: [] },
+    rename: { params: [] },
     dir: { params: [{ type: 'ast', astType: 'item' }] },
     m: { params: [{ type: 'rulename' }] },
     mcpt: { params: [{ type: 'ast', astType: 'wff' }] },
@@ -138,6 +141,7 @@ export class HSParser implements IParser {
                 this.cursor++;
             }
             const word = text.slice(start, this.cursor);
+
             this.tokens.push({
                 type: "atom",
                 text: word,
@@ -181,6 +185,20 @@ export class HSParser implements IParser {
                 this.cursor++;
             }
             const word = text.slice(start, this.cursor);
+            if (["del", "inln", "entr", "rename"].includes(word)) {
+                this.tokens.push({ type: "cmd", text: word, displayText: word, start, end: this.cursor });
+                const end = text.slice(this.cursor).search(/[;\n]/);
+                const limit = end < 0 ? text.length : this.cursor + end;
+                const rest = text.slice(this.cursor, limit);
+                // Editing targets are names, not formulas. Keep punctuation and quoted folder names literal.
+                const parts = word === "rename" ? [...rest.matchAll(/"([^"\n]*)"|'([^'\n]*)'|[^\s]+/g)] : rest.trim() ? [{ 0: rest.trim(), index: rest.search(/\S/) }] : [];
+                for (const part of parts) {
+                    const value = (part as RegExpMatchArray)[1] ?? (part as RegExpMatchArray)[2] ?? part[0];
+                    this.tokens.push({ type: "cmd-atom-param", text: value, displayText: part[0], start: this.cursor + part.index!, end: this.cursor + part.index! + part[0].length });
+                }
+                this.cursor = limit;
+                continue;
+            }
             let cmdFormat = commandDefs[word];
             if (!cmdFormat) {
                 this.cursor = start;
@@ -330,6 +348,14 @@ export class HSParser implements IParser {
         const cmdToken = this.token;
         let args: AST[] = [];
         this.nextSym();
+        if (["del", "inln", "entr", "rename"].includes(cmd) && cmdToken.type === "cmd") {
+            while (this.token?.type === "cmd-atom-param") {
+                const arg = new AST(NodeType.ATOM_ITEM, this.token.text);
+                arg.start = this.token.start; arg.end = this.token.end;
+                args.push(arg); this.nextSym();
+            }
+            return new AST(NodeType.CMD, cmd, ...args);
+        }
         if (cmdToken.type === "cmd") {
             if (this.token) {
                 const params = commandDefs[cmd].params;

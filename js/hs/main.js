@@ -13,6 +13,9 @@ import { LangMgr } from "../lang.js";
 import { Serde } from "./serde.js";
 import { SheetGui } from "./gui/sheet.js";
 import { initialCreativeRules, initialSurvivalRules } from "./core/initial.js";
+import { checkDeletion, deleteSelection, planDeletion } from "./editing.js";
+import { findTargets, targetAtom, targetList } from "./targets.js";
+import { ProofNavigator } from "./proof-navigation.js";
 // a/d 开头的公理规则在存档中只存名称占位（name:ax:.），内容以初始定义为准：
 // 这样存档体积小、作者更新 init 规则后玩家无需重置存档。
 // 此处预解析 init 文本，构建 名字→完整规则行 的映射供占位符恢复。
@@ -42,6 +45,9 @@ export class HSLayer {
     cmdUIMgr;
     serde = new Serde(this, this.hilbertSystem, this.ruleList, this.propListView, this.ruleListView);
     sheetGui = new SheetGui(this.hilbertSystem);
+    navigator = new ProofNavigator(this.hilbertSystem, () => this.refreshInspection());
+    inspectionExpanded = null;
+    inspectionRuleExpanded = null;
     onchange;
     getSheetGui() { return this.sheetGui; }
     // [p]门判定：任意sheet满足（无断言/假设 + 某步骤wrap后ast等于目标）
@@ -97,6 +103,7 @@ export class HSLayer {
         return false;
     }
     constructor() {
+        this.ruleListView.allowDrop = () => !this.cmdEngine.isExecuting() && !this.navigator.active;
         // 规则表
         this.ruleListView.renderExtra = it => {
             const span = document.createElement('span');
@@ -115,11 +122,13 @@ export class HSLayer {
         };
         this.ruleListView.renderName = it => it.children ? "" : it.name;
         this.ruleListView.onRename = (r, name) => {
+            if (this.navigator.active)
+                return false;
             if (r.children)
                 return true;
             if (!name?.trim())
                 return false;
-            if (this.cmdEngine.isExecuting()) {
+            if (this.cmdEngine.isExecuting() || this.navigator.active) {
                 this.cmdEngine.reportError(HSError.cmdIsRunning);
                 return false;
             }
@@ -160,13 +169,14 @@ export class HSLayer {
             }
             else if (rule?.step) {
                 arr.push({ label: LangMgr.text.loadMacro, action: "load", icon: '📥' });
+                arr.push({ label: LangMgr.text.inspectProof, action: "inspect", icon: '🔎' });
                 arr.push({ label: LangMgr.text.copyCode, action: "copy", icon: '📋' });
                 arr.push({ label: LangMgr.text.delete, action: "delete", icon: '🗑️', danger: true });
             }
             return arr;
         };
         this.ruleListView.onMenuAction = (r, action) => {
-            if (this.cmdEngine.isExecuting()) {
+            if (this.cmdEngine.isExecuting() || this.navigator.active) {
                 this.cmdEngine.reportError(HSError.cmdIsRunning);
                 return;
             }
@@ -201,34 +211,42 @@ export class HSLayer {
                 this.cmdInput.setValue(rule.error.cmds || "");
             }
             else if (action === "delete") {
-                if (this.ruleListView.deleteNode(r.uuid)) {
-                    if (r === this.activeRuleFolder)
-                        this.activeRuleFolder = null;
-                    this.hilbertSystem.rules.delete(r.name);
-                    this.ruleListView.refresh();
+                if (r.children) {
+                    const names = [];
+                    const collect = (nodes) => { for (const n of nodes) {
+                        if (n.children)
+                            collect(n.children);
+                        else
+                            names.push(n.name);
+                    } };
+                    collect(r.children);
+                    if (names.length)
+                        this.cmdEngine.run("del " + names.join(","));
+                    else {
+                        this.ruleListView.deleteNode(r.uuid);
+                        if (r === this.activeRuleFolder)
+                            this.activeRuleFolder = null;
+                        this.ruleListView.refresh();
+                    }
                 }
+                else
+                    this.cmdEngine.run("del " + r.name);
             }
             else if (action === "load") {
-                if (this.hilbertSystem.props.length) {
-                    this.sheetGui.addSheet();
-                    // 把名称设为当前规则名，方便用户识别
-                    this.sheetGui.sheets[this.sheetGui.activeIndex].name = r.name;
-                    this.sheetGui.render();
-                }
-                // 重放规则step的cmd生成全新props：不直接共享step的Proposition引用
-                // （后续在推理表中expand会修改命题对象，若与规则step共享会导致规则自身被污染）；
-                // fromCmd会重新走addP/d()创建对象，跨c/v层级的依赖也由cd命令正确重建
-                const step = this.hilbertSystem.rules.get(r.name).step;
-                const cmds = this.hilbertSystem.genCmd(step).map(e => new HSParser().parse(e, "cmd"));
-                this.hilbertSystem.fromCmd(cmds);
-                this.hilbertSystem.updatePropIdx();
-                this.propListView.refresh();
+                this.cmdEngine.run("inln " + r.name);
+            }
+            else if (action === "inspect") {
+                this.cmdEngine.run("entr " + r.name);
             }
             else if (action === "copy") {
                 this.cmdInput.setValue(this.hilbertSystem.genCmd(this.hilbertSystem.rules.get(r.name).step).join(";"));
             }
         };
         document.getElementById("ruleAddFolder").addEventListener("click", () => {
+            if (this.navigator.active) {
+                this.cmdEngine.reportError(HSError.cmdIsRunning);
+                return;
+            }
             // 新文件夹添加到活动文件夹末尾（无活动则为根目录末尾），并立即激活就地改名
             const folder = { name: LangMgr.text.newFolder, uuid: 0, children: [] };
             if (this.activeRuleFolder)
@@ -246,7 +264,7 @@ export class HSLayer {
         this.propListView.renderName = it => it.name || String(it.id);
         this.propListView.wideToggleFolderRange = it => it.from.type === "f";
         this.propListView.allowDrop = (src, dst, pos) => {
-            if (this.cmdEngine.isExecuting())
+            if (this.cmdEngine.isExecuting() || this.navigator.active)
                 return false;
             // dst为null表示拖到列表末尾的占位符：等价于移动到src所在父级的末尾
             if (!dst) {
@@ -346,11 +364,13 @@ export class HSLayer {
             return span;
         };
         this.propListView.onRename = (p, name) => {
+            if (this.navigator.active)
+                return false;
             if (name === "")
                 return true;
             if (!name?.trim())
                 return false;
-            if (this.cmdEngine.isExecuting()) {
+            if (this.cmdEngine.isExecuting() || this.navigator.active) {
                 this.cmdEngine.reportError(HSError.cmdIsRunning);
                 return false;
             }
@@ -377,6 +397,7 @@ export class HSLayer {
                     const isMcnt = dname.type === NodeType.ATOM_DNAME && dname.name === "mcnt";
                     if (isMcpt || isMsbt || isMcnt || this.hilbertSystem.getD(dname).step?.length) {
                         arr.push({ label: LangMgr.text.expand, action: "expand", icon: '🔧' });
+                        arr.push({ label: LangMgr.text.inspectProof, action: "inspect", icon: '🔎' });
                     }
                 }
                 catch { }
@@ -398,35 +419,18 @@ export class HSLayer {
             return arr;
         };
         this.propListView.onMenuAction = (p, action) => {
-            if (this.cmdEngine.isExecuting()) {
+            if (this.cmdEngine.isExecuting() || this.navigator.active) {
                 this.cmdEngine.reportError(HSError.cmdIsRunning);
                 return;
             }
             if (action === "delete") {
-                try {
-                    this.hilbertSystem.delP(p);
-                    this.propListView.refresh();
-                }
-                catch (e) {
-                    this.cmdEngine.reportError(e);
-                    return false;
-                }
+                this.cmdEngine.run("del " + p.id);
             }
             else if (action === "expand") {
-                try {
-                    const newFolders = this.hilbertSystem.expand(p) || [];
-                    // 肢解新建的文件夹默认展开，避免全部收起
-                    for (const f of newFolders) {
-                        if (!f.uuid)
-                            f.uuid = this.propListView.idCounter++;
-                        this.propListView.expandedFolders.add(f.uuid);
-                    }
-                    this.propListView.refresh();
-                }
-                catch (e) {
-                    this.cmdEngine.reportError(e);
-                    return false;
-                }
+                this.cmdEngine.run("inln " + p.id);
+            }
+            else if (action === "inspect") {
+                this.cmdEngine.run("entr " + p.id);
             }
             else if (action === "setActiveFolder") {
                 try {
@@ -451,6 +455,13 @@ export class HSLayer {
         };
         // 规则表文件夹收起时若取消活动文件夹，同步清 activeRuleFolder（否则菜单状态不更新）
         this.ruleListView.onFolderActiveCancel = () => {
+            if (this.navigator.active) {
+                if (this.activeRuleFolder)
+                    this.activeRuleFolder.active = true;
+                if (this.inspectionRuleExpanded)
+                    this.ruleListView.expandedFolders = new Set(this.inspectionRuleExpanded);
+                return;
+            }
             this.activeRuleFolder = null;
         };
         // 命令栏
@@ -465,15 +476,36 @@ export class HSLayer {
         () => {
             this.propListView.onRowClick = () => { };
             this.ruleListView.onRowClick = r => { if (!r.children)
-                this.cmdEngine.run(r.name); };
+                this.cmdEngine.run((this.navigator.active ? "entr " : "") + r.name); };
+            if (this.navigator.active) {
+                this.propListView.onRowClick = p => this.cmdEngine.run("entr " + p.id);
+                this.cmdEngine.ui.showPrompt(LangMgr.text.editInspect, "entr ");
+            }
         });
         // 推理表sheet：SheetGui内部处理全部sheet操作，HSLayer只注入刷新/变更/守卫/展开状态回调
         this.sheetGui.guard = () => {
-            if (this.cmdEngine.isExecuting()) {
+            if (this.cmdEngine.isExecuting() || this.navigator.active) {
                 this.cmdEngine.reportError(HSError.cmdIsRunning);
                 return false;
             }
             return true;
+        };
+        this.sheetGui.contextForSave = () => this.navigator.rootContext;
+        this.cmdEngine.onIdleEscape = () => {
+            if (!this.navigator.active)
+                return false;
+            this.navigator.back();
+            if (!this.navigator.active)
+                this.cmdEngine.ui.setClearState();
+            else
+                this.cmdEngine.ui.showPrompt(LangMgr.text.editInspect, "entr ");
+            this.cmdInput.setValue(this.navigator.active ? "entr " : "");
+            return true;
+        };
+        this.cmdEngine.transformInput = input => this.navigator.active && !/\s|;/.test(input.trim()) && input.trim() !== "entr" ? "entr " + input.trim() : input;
+        this.cmdEngine.beforeCommand = name => {
+            if (this.navigator.active && name !== "entr")
+                throw HSError.cmdIsRunning;
         };
         this.sheetGui.onRefresh = () => this.propListView.setData(this.hilbertSystem.props);
         this.sheetGui.onChange = () => this.onchange?.();
@@ -511,7 +543,209 @@ export class HSLayer {
     executeCmd(cmd) {
         this.cmdEngine.run(cmd);
     }
+    refreshInspection() {
+        if (this.navigator.active && !this.inspectionExpanded) {
+            this.inspectionExpanded = new Set(this.propListView.expandedFolders);
+            this.inspectionRuleExpanded = new Set(this.ruleListView.expandedFolders);
+        }
+        if (!this.navigator.active && this.inspectionExpanded) {
+            this.propListView.expandedFolders = this.inspectionExpanded;
+            this.inspectionExpanded = null;
+            this.ruleListView.expandedFolders = this.inspectionRuleExpanded;
+            this.inspectionRuleExpanded = null;
+            this.ruleListView.refresh();
+        }
+        this.propListView.setData(this.hilbertSystem.props);
+        this.propListView.onRowClick = this.navigator.active ? p => this.cmdEngine.run("entr " + p.id) : () => { };
+        this.ruleListView.onRowClick = r => { if (!r.children)
+            this.cmdEngine.run((this.navigator.active ? "entr " : "") + r.name); };
+    }
+    editingChoices = new WeakMap();
+    editingConfirmations = new WeakMap();
+    editRequest(prompt, parse = targetAtom) {
+        this.cmdInput.setParserArgs("item");
+        return { prompt, default: "", parse: text => {
+                try {
+                    if (!text.trim())
+                        throw HSError.emptyValue;
+                    return { success: true, value: parse(text.trim()) };
+                }
+                catch (e) {
+                    return { success: false, error: typeof e === "string" || e instanceof Error ? HSError.unknownCmd(String(e)) : e };
+                }
+            } };
+    }
+    editSelection(args, operation, choiceStart) {
+        const names = operation === "del" ? targetList(args[0].name) : [args[0].name];
+        if (operation !== "del" && /,/.test(names[0]) && !/\(/.test(names[0]))
+            throw LangMgr.text.editSingle;
+        const targets = [];
+        let index = choiceStart;
+        for (const name of names) {
+            const candidates = findTargets(this.hilbertSystem, this.ruleList, name, operation);
+            if (!candidates.length)
+                throw HSError.pname404(name);
+            if (candidates.length === 1) {
+                targets.push(candidates[0]);
+                continue;
+            }
+            const selected = args[index++];
+            if (selected) {
+                const target = this.editingChoices.get(selected);
+                if (!target || !candidates.some(c => c.kind === target.kind && (c.kind !== "folder" || c.node === target.node) && (c.kind !== "step" || c.step === target.step)))
+                    throw LangMgr.text.editAnswer;
+                targets.push(target);
+            }
+            else {
+                const labels = candidates.map((c, i) => `${i + 1}: ${LangMgr.text[c.kind === "step" ? "editStep" : c.kind === "macro" ? "editMacro" : "editFolder"]}${c.kind === "step" ? ` ${c.step.id}` : c.kind === "folder" ? ` #${c.node.uuid}` : ""}`).join("; ");
+                const displayName = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                return { targets, end: index, next: this.editRequest(`${displayName}: ${LangMgr.text.editChoice}${labels}`, text => {
+                        const number = Number(text);
+                        if (!Number.isInteger(number) || number < 1 || number > candidates.length)
+                            throw LangMgr.text.editAnswer;
+                        const atom = targetAtom(text);
+                        this.editingChoices.set(atom, candidates[number - 1]);
+                        return atom;
+                    }) };
+            }
+        }
+        return { targets, end: index };
+    }
+    editingContexts() {
+        this.sheetGui.saveCurrentSheet();
+        return this.sheetGui.sheets.map(s => s.ctx);
+    }
+    finishDeletion(plan, contexts) {
+        deleteSelection(this.hilbertSystem, plan, contexts);
+        const prune = (nodes) => {
+            for (let i = nodes.length - 1; i >= 0; i--) {
+                if (nodes[i].children)
+                    prune(nodes[i].children);
+                else if (plan.macros.has(nodes[i].name))
+                    nodes.splice(i, 1);
+            }
+        };
+        prune(this.ruleList);
+        this.propListView.setData(this.hilbertSystem.props);
+        this.ruleListView.refresh();
+    }
+    inlineTarget(target) {
+        if (target.kind === "step") {
+            const folders = this.hilbertSystem.expand(target.step) || [];
+            for (const f of folders) {
+                if (!f.uuid)
+                    f.uuid = this.propListView.idCounter++;
+                this.propListView.expandedFolders.add(f.uuid);
+            }
+        }
+        else {
+            const rule = this.hilbertSystem.getD(new HSParser().parse(target.name, "dname"));
+            if (!rule.step || rule.error)
+                throw HSError.atomicStep(rule.name);
+            // Validate in isolation before opening a new sheet or mutating the current proof.
+            const check = new HilbertSystem();
+            check.rules = new Map(this.hilbertSystem.rules);
+            check.fromCmd(this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd")));
+            if (this.hilbertSystem.props.length) {
+                this.sheetGui.addSheet(false);
+                this.sheetGui.sheets[this.sheetGui.activeIndex].name = target.name;
+                this.sheetGui.render();
+            }
+            this.hilbertSystem.loadContext(check.saveContext());
+        }
+        this.propListView.setData(this.hilbertSystem.props);
+    }
+    renameTarget(target, name) {
+        if (!name.trim() || /[;\n,]/.test(name))
+            throw HSError.invalidPropName;
+        if (target.kind === "step") {
+            if (target.step.name !== name)
+                this.hilbertSystem.checkPname(name);
+            target.step.name = name;
+        }
+        else if (target.kind === "folder") {
+            target.node.name = name;
+        }
+        else {
+            const old = target.name;
+            const contexts = this.editingContexts();
+            this.hilbertSystem.renameD(old, name);
+            for (const ctx of contexts)
+                this.hilbertSystem.renameDnameInProps(ctx.props, old, name);
+            const rename = (nodes) => { for (const node of nodes) {
+                if (node.children)
+                    rename(node.children);
+                else if (node.name === old)
+                    node.name = name;
+            } };
+            rename(this.ruleList);
+        }
+        this.hilbertSystem.updatePropIdx();
+        this.propListView.refresh();
+        this.ruleListView.refresh();
+    }
+    unlockEditingCommands() {
+        defineCommand("del", args => {
+            if (!args.length)
+                return this.editRequest(LangMgr.text.editTargets);
+            const selected = this.editSelection(args, "del", 1);
+            if (selected.next)
+                return selected.next;
+            if (args.length > selected.end + 1)
+                throw LangMgr.text.editAnswer;
+            if (args.length === selected.end + 1) {
+                if (!this.editingConfirmations.has(args[selected.end]))
+                    throw LangMgr.text.editAnswer;
+                return null;
+            }
+            const contexts = this.editingContexts();
+            const plan = planDeletion(this.hilbertSystem, selected.targets.flatMap(t => t.kind === "step" ? [t.step] : []), selected.targets.flatMap(t => t.kind === "macro" ? [t.name] : []));
+            checkDeletion(this.hilbertSystem, plan, contexts);
+            const prompt = LangMgr.text.editConfirm.replace("{steps}", String(plan.steps.size)).replace("{macros}", String(plan.macros.size));
+            return this.editRequest(prompt, text => {
+                if (!/^[yn]$/i.test(text))
+                    throw LangMgr.text.editAnswer;
+                const answer = targetAtom(text.toLowerCase());
+                this.editingConfirmations.set(answer, { plan, contexts });
+                return answer;
+            });
+        }, args => {
+            const answer = args[args.length - 1];
+            const confirmation = this.editingConfirmations.get(answer);
+            if (!confirmation)
+                throw LangMgr.text.editAnswer;
+            if (answer.name === "y")
+                this.finishDeletion(confirmation.plan, confirmation.contexts);
+        });
+        for (const operation of ["inln", "entr", "rename"])
+            defineCommand(operation, args => {
+                if (!args.length)
+                    return this.editRequest(LangMgr.text.editTarget);
+                if (operation === "rename" && args.length === 1)
+                    return this.editRequest(LangMgr.text.plsEnterNewProp);
+                const selected = this.editSelection(args, operation, operation === "rename" ? 2 : 1);
+                if (selected.next)
+                    return selected.next;
+                if (args.length !== selected.end)
+                    throw LangMgr.text.editSingle;
+                return null;
+            }, args => {
+                const target = this.editSelection(args, operation, operation === "rename" ? 2 : 1).targets[0];
+                if (operation === "inln")
+                    this.inlineTarget(target);
+                else if (operation === "rename")
+                    this.renameTarget(target, args[1].name);
+                else {
+                    this.sheetGui.saveCurrentSheet();
+                    if (target.kind === "step")
+                        this.navigator.enterStep(target.step);
+                    else
+                        this.navigator.enterRule(new HSParser().parse(target.name, "dname"));
+                }
+            });
+    }
     unlockBasicPropCmd() {
+        this.unlockEditingCommands();
         defineCommand('b', () => null, async () => {
             this.hilbertSystem.b();
             this.propListView.refresh();
@@ -630,33 +864,6 @@ export class HSLayer {
             });
             const replaceValues = Object.fromEntries(args.slice(1 + deduction.conditions.length).map((e, idx) => [deduction.replaceNames[idx][0], e]));
             this.hilbertSystem.d(deduction, conds, replaceValues);
-            this.propListView.refresh();
-        });
-        defineCommand('del', (args) => {
-            if (args.length === 0) {
-                this.cmdInput.setParserArgs("item");
-                return {
-                    prompt: LangMgr.text.plsEnterProp, default: "", parse: e => {
-                        let ast;
-                        try {
-                            ast = new HSParser().parse(e, "wff");
-                            return { success: true, value: ast };
-                        }
-                        catch (e) {
-                            return { success: false, error: e };
-                        }
-                    }
-                };
-            }
-            return null;
-        }, async (args) => {
-            if (!args[0])
-                throw HSError.emptyValue;
-            const n = args[0].name;
-            const p = this.hilbertSystem.getP(n);
-            if (!p)
-                throw HSError.pname404(n);
-            this.hilbertSystem.delP(p);
             this.propListView.refresh();
         });
         defineCommand('name', (args) => {
@@ -1173,6 +1380,6 @@ export class HSLayer {
         this.ruleListView.refresh();
     }
     serialize() { return this.serde.serialize(); }
-    deserialize(data) { return this.serde.deserialize(data); }
+    deserialize(data) { this.navigator.close(); return this.serde.deserialize(data); }
 }
 //# sourceMappingURL=main.js.map

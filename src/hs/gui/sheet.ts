@@ -44,6 +44,8 @@ export class SheetGui {
     restoreExpanded: (ids: number[]) => void = () => { };
     // 操作守卫：命令执行中禁止切换/新建/删除；返回false则中断（守卫内部已上报错误）
     guard: () => boolean = () => true;
+    // Proof inspection displays a temporary context; saves must retain the original sheet.
+    contextForSave?: () => HSContext | undefined;
 
     constructor(hs: HilbertSystem) {
         this.hs = hs;
@@ -128,6 +130,8 @@ export class SheetGui {
     saveCurrentSheet() {
         const s = this.sheets[this.activeIndex];
         if (!s) return;
+        const original = this.contextForSave?.();
+        if (original) { s.ctx = original; return; }
         s.ctx = this.hs.saveContext();
         s.pe = this.captureExpanded();
     }
@@ -142,8 +146,8 @@ export class SheetGui {
         this.restoreExpanded(target.pe);
         this.afterChange();
     }
-    addSheet() {
-        if (!this.guard()) return;
+    addSheet(checkGuard = true) {
+        if (checkGuard && !this.guard()) return;
         this.saveCurrentSheet();
         const sheet = this.newSheet();
         this.sheets.push(sheet);
@@ -181,6 +185,7 @@ export class SheetGui {
         this.afterChange();
     }
     renameSheet(index: number, name: string) {
+        if (!this.guard()) return;
         const s = this.sheets[index];
         if (!s) return;
         s.name = name.trim() || s.name;
@@ -484,6 +489,7 @@ export class SheetGui {
     private preventScroll = (e: TouchEvent) => { e.preventDefault(); };
 
     private startRename(index: number, tab: HTMLElement) {
+        if (!this.guard()) return;
         const nameEl = tab.querySelector('.sheet-tab-name') as HTMLElement | null;
         if (!nameEl) return;
         const orig = nameEl.textContent || "";
