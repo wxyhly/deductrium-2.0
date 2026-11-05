@@ -45,7 +45,36 @@ export class HSLayer {
     private sheetGui = new SheetGui(this.hilbertSystem);
     onchange?: () => void;
     private survivalAccess: SurvivalAccess | null = null;
+    private lastGateAST: AST | null = null;
+    private lastGateViewer?: SyntaxViewer;
     getSheetGui() { return this.sheetGui; }
+
+    rememberGate(ast: AST) {
+        if (this.survivalAccess && !this.survivalAccess.rewards.has("copygateD")) return;
+        this.lastGateAST = ast;
+        this.refreshRewardUI();
+    }
+
+    private refreshRewardUI() {
+        if (typeof document === "undefined") return;
+        const rewards = this.survivalAccess?.rewards;
+        const layer = document.querySelector('div[data-layer="D-layer"]');
+        layer?.classList.toggle("hs-plain-items", !!rewards && !rewards.has("italic-item"));
+        layer?.classList.toggle("hs-literal-assertions", !!rewards && !rewards.has("omit-fn"));
+        document.getElementById("ruleAddFolder")?.classList.toggle("hide", !!rewards && !rewards.has("mkdir"));
+        const gateRow = document.getElementById("hs-last-gate");
+        const gateContent = document.getElementById("hs-last-gate-content");
+        if (gateRow && gateContent) {
+            gateRow.classList.toggle("hide", !this.lastGateAST || !!rewards && !rewards.has("copygateD"));
+            this.lastGateViewer?.destroy();
+            this.lastGateViewer = undefined;
+            gateContent.replaceChildren();
+            if (this.lastGateAST && (!rewards || rewards.has("copygateD"))) {
+                this.lastGateViewer = new SyntaxViewer(gateContent, new HSParser(), this.lastGateAST.toString(),
+                    this.lastGateAST.type === NodeType.RULE ? "rule" : "wff");
+            }
+        }
+    }
 
     // [p]门判定：任意sheet满足（无断言/假设 + 某步骤wrap后ast等于目标）
     // 步骤在 c/v 文件夹内时，ast 需包上相应条件/量词（captureScope 得层级再 wrap）
@@ -112,6 +141,10 @@ export class HSLayer {
         this.ruleListView.renderName = it => it.children ? "" : it.name;
         this.ruleListView.onRename = (r, name) => {
             if (r.children) return true;
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("renameD")) {
+                this.cmdEngine.reportError(HSError.lockedFeature("renameD"));
+                return false;
+            }
             if (!name?.trim()) return false;
             if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
             try { this.hilbertSystem.renameD(r.name, name) } catch (e) { this.cmdEngine.reportError(e as any); return false; };
@@ -124,9 +157,10 @@ export class HSLayer {
             return true;
         };
         this.ruleListView.menuItems = r => {
-            const arr: any[] = [
-                { label: LangMgr.text.rename, action: "rename", icon: '✏️' },
-            ];
+            const arr: any[] = [];
+            if (r.children || !this.survivalAccess || this.survivalAccess.rewards.has("renameD")) {
+                arr.push({ label: LangMgr.text.rename, action: "rename", icon: '✏️' });
+            }
             if (r.children) {
                 if (r === this.activeRuleFolder) {
                     arr.push({ label: LangMgr.text.clearActiveFolder, action: "clearActiveFolder", icon: '⭐' },);
@@ -201,6 +235,10 @@ export class HSLayer {
             }
         }
         document.getElementById("ruleAddFolder")!.addEventListener("click", () => {
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("mkdir")) {
+                this.cmdEngine.reportError(HSError.lockedFeature("mkdir"));
+                return;
+            }
             // 新文件夹添加到活动文件夹末尾（无活动则为根目录末尾），并立即激活就地改名
             const folder: ListNode = { name: LangMgr.text.newFolder, uuid: 0, children: [] };
             if (this.activeRuleFolder) this.activeRuleFolder.children!.push(folder);
@@ -438,6 +476,7 @@ export class HSLayer {
             );
         };
         this.sheetGui.render();
+        this.refreshRewardUI();
     }
     executeCmd(cmd: string) {
         this.cmdEngine.run(cmd);
@@ -452,9 +491,11 @@ export class HSLayer {
     }
     configureSurvival(rewards: Iterable<string>) {
         this.survivalAccess = new SurvivalAccess();
+        this.lastGateAST = null;
         clearCommands();
         this.unlockBasicPropCmd();
         for (const reward of rewards) this.applyReward(reward);
+        this.refreshRewardUI();
     }
     applyReward(reward: string) {
         // Creative mode already exposes the full library and command set.
@@ -467,8 +508,9 @@ export class HSLayer {
         if (reward === "mct" || reward === "mdt" || reward === "mcpt") this.unlockMetaBlock("c");
         if (reward === "1st" || reward === "mcvt" || reward === "mvt" || reward === "met") this.unlockMetaBlock("v");
         if (reward === "mkdir") this.unlockMetaBlock("f");
-        const rules = getSurvivalRules(this.survivalAccess.rewards, this.hilbertSystem.rules);
+        const rules = getSurvivalRules(this.survivalAccess.rewards, this.hilbertSystem.rules, this.hilbertSystem.renamedSysRule);
         if (rules) this.addRules(rules);
+        this.refreshRewardUI();
     }
     unlockBasicPropCmd() {
         defineCommand('b', () => null, async () => {

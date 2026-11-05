@@ -17,6 +17,13 @@ const directRewards = new Map([
     ["dU", ["dunion", "d\\u"]], ["dI", ["d\\i"]], ["dPow", ["dpow"]],
     ["d{@|}", ["dsep"]], ["d{|@}", ["drepl"]],
     ["dsub", ["d\\\\"]], ["dX", ["d\\x"]], ["dw", ["d\\o"]],
+    ["peano", ["apn1", "apn2", "apn3", "apn4", "apn5", ...Array.from({ length: 10 }, (_, i) => `d${i + 1}`)]],
+    ["add-mul", ["d+1", "d+2", "d*1", "d*2"]],
+    ["dSd0", ["d0", "dS", "dN"]], ["d<=", ["d<=", "d>="]], ["ddiv", ["d/|"]],
+    ["dRel", ["dRel"]], ["dOrder", ["dOrder", "dWOrder"]], ["dEquiv", ["dEquiv"]],
+    ["dPrime", ["dPrime"]], ["dfZ", ["dfZ"]], ["dZ", ["dZ"]],
+    ["dZ+", ["dZ+"]], ["dZ*", ["dZ*"]], ["dZ<=", ["dZ<="]],
+    ["dZn", ["dZ-2", "dZ-1", "dZ0", "dZ1", "dZ2"]],
 ]);
 // Explicit selections, not every rule in a creative-mode folder. Unported
 // theorems have no entry and are never replaced with an axiom.
@@ -33,6 +40,14 @@ const toolkits = new Map([
     // Old .zfc added simplified aliases only for axioms already earned.
     // Current builtins already use those forms and have no dot aliases.
     [".zfc", []],
+    ["kit+*", [
+            ".=Se", ".=Si", ".=S", ".=r+", ".=r*", ".0+", ".S+", ".+@N", ".pred",
+            ".+s", ".+a", ".+e", ".+=0", ".0*", ".*@N", ".S*", ".*s", ".*+d",
+            ".+*d", ".*a", ".*=0", ".*n=0", ".*e",
+        ]],
+    // Existing checked bridges used by the dynamic number proof engines.
+    ["natop", [".=s"]], ["dZop", [".@Z", ".Zr", ".Xi", ".Pr1", ".Pr2"]],
+    [".filter", [".filter"]],
 ]);
 function definitions(text) {
     const result = new Map();
@@ -129,25 +144,91 @@ function matchesBuiltin(rule, builtin) {
         && rule.assertions.length === assertions.length
         && rule.assertions.every((assertion, i) => AtomSolver.print(assertion) === AtomSolver.print(assertions[i]));
 }
+function renamedDefinition(name, builtin, renamed) {
+    if (!renamed.size)
+        return builtin.line;
+    const renameDname = (ast) => {
+        if (ast.type === NodeType.ATOM_DNAME) {
+            const alias = ast.name === "#" ? undefined : renamed.get(ast.name);
+            if (alias === undefined || alias === ast.name)
+                return false;
+            ast.name = alias;
+            return true;
+        }
+        let changed = false;
+        if (ast.type === NodeType.NODE_DNAME) {
+            for (const child of ast.nodes)
+                if (renameDname(child))
+                    changed = true;
+        }
+        return changed;
+    };
+    const colon = builtin.line.indexOf(":");
+    const prefix = (renamed.get(name) ?? name) + builtin.line.slice(colon);
+    if (builtin.axiom)
+        return prefix;
+    const proof = builtin.proof.split(";").map(text => {
+        if (!text.trim())
+            return text;
+        const cmd = parser.parse(text, "cmd");
+        if (cmd.name !== "d")
+            return text;
+        const dname = cmd.nodes[0];
+        if (!renameDname(dname))
+            return text;
+        if (dname.start === undefined || dname.end === undefined)
+            throw new Error("Missing builtin deduction range");
+        // Rewrite only the deduction AST's source range. Headers, formula/item
+        // arguments, proposition IDs and non-deduction commands stay verbatim.
+        return text.slice(0, dname.start) + dname.toString() + text.slice(dname.end);
+    }).join(";");
+    return prefix.slice(0, prefix.indexOf(";") + 1) + proof;
+}
 /**
  * Return only missing builtin definitions, with dependencies before users.
  * Recompute from the complete reward set so acquisition order does not matter.
  * Existing rules are never changed; conflicting names also block dependants.
  * Only directly earned axiom/definition leaves may enter a toolkit closure.
  * Internal MCPT proof support does not grant the interactive MCPT permission.
+ * Alias keys stay canonical across repeated renames; values are current names.
  */
-export function getSurvivalRules(rewards, existing) {
+export function getSurvivalRules(rewards, existing, renamed = new Map()) {
     const earned = new Set(baseNames);
     for (const [reward, names] of directRewards)
         if (rewards.has(reward))
             names.forEach(name => earned.add(name));
+    const actualNames = new Map();
+    const owners = new Map();
+    const blocked = new Set();
+    for (const name of builtins.keys()) {
+        const actual = renamed.get(name) ?? name;
+        if (actual !== name) {
+            try {
+                const ast = parser.parse(actual, "dname");
+                if (ast.type !== NodeType.ATOM_DNAME || ast.name !== actual || actual === "#")
+                    throw new Error("Invalid builtin alias");
+            }
+            catch {
+                blocked.add(name);
+                continue;
+            }
+        }
+        actualNames.set(name, actual);
+        const owner = owners.get(actual);
+        if (owner !== undefined) {
+            blocked.add(name);
+            blocked.add(owner);
+        }
+        else
+            owners.set(actual, name);
+    }
     const result = new Map();
     for (const [name, builtin] of builtins) {
-        if (earned.has(name) && !existing.has(name))
-            result.set(name, builtin.line);
+        if (earned.has(name) && !blocked.has(name) && !existing.has(actualNames.get(name))) {
+            result.set(name, renamedDefinition(name, builtin, renamed));
+        }
     }
     const resolved = new Set();
-    const blocked = new Set();
     const visit = (name, visiting, pending) => {
         if (resolved.has(name) || pending.has(name))
             return true;
@@ -156,7 +237,7 @@ export function getSurvivalRules(rewards, existing) {
         const builtin = builtins.get(name);
         if (!builtin || (builtin.axiom && !earned.has(name)))
             return false;
-        const previous = existing.get(name);
+        const previous = existing.get(actualNames.get(name));
         if (previous && !matchesBuiltin(previous, builtin)) {
             blocked.add(name);
             return false;
@@ -170,7 +251,7 @@ export function getSurvivalRules(rewards, existing) {
             return false;
         }
         if (!previous)
-            pending.set(name, builtin.line);
+            pending.set(name, renamedDefinition(name, builtin, renamed));
         return true;
     };
     for (const [reward, targets] of toolkits) {

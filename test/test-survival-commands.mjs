@@ -5,6 +5,7 @@ import { HSParser } from '../js/hs/core/parser.js';
 import { Deduction } from '../js/hs/core/deduction.js';
 import { initialCreativeRules } from '../js/hs/core/initial.js';
 import { getCommand } from '../js/hs/gui/cmdmgr.js';
+import { SurvivalAccess } from '../js/hs/access.js';
 
 const parser = new HSParser();
 const layer = Object.create(HSLayer.prototype);
@@ -86,6 +87,62 @@ system.rules.set('zPrimitive', new Deduction(new Set(), parser.parse('zPrimitive
     [], mp.conditions, mp.conclusion));
 await rejects('d vzPrimitive 1 2 x', 'quantifyAxiomOnly');
 
+// Numeric permissions classify names before generation, even when rules were
+// cached/preloaded. Check the exact literal aliases supported by number/main.
+const numberCases = [
+    ['natop', ['d11', 'd123', '.0@N', '.7@N', '.2+3', '.2*3']],
+    ['dZn', ['dZ0', 'dZ+0', 'dZ-0', 'dZ17', 'dZ+17', 'dZ-17']],
+    ['dZop', ['.0@Z', '.+2@Z', '.-2@Z', '.+2+3', '.2+-3', '.-2*-3', '.2-3']],
+];
+const permits = (access, name) => access.checkRuleName(parser.parse(name, 'dname'), system);
+for (const [reward, names] of numberCases) for (const name of names) {
+    assert.throws(() => permits(new SurvivalAccess(), name), error => error?.type === 'lockedFeature', name);
+    assert.doesNotThrow(() => permits(new SurvivalAccess(new Set([reward])), name), name);
+    for (const [other] of numberCases) if (other !== reward) {
+        assert.throws(() => permits(new SurvivalAccess(new Set([other])), name), error => error?.type === 'lockedFeature', name);
+    }
+}
+for (const name of ['d1', 'd10']) {
+    assert.throws(() => permits(new SurvivalAccess(), name), error => error?.type === 'lockedFeature');
+    permits(new SurvivalAccess(new Set(['peano'])), name);
+    permits(new SurvivalAccess(new Set(['natop'])), name);
+}
+for (const name of ['dQ0', 'dQ+17q', 'd-17q', 'd1.25', 'dQ-1.25q', 'dR0', 'dR+17r', 'd-17r', 'd1.25r', 'dR-1.25']) {
+    assert.throws(() => permits(new SurvivalAccess(new Set(['natop', 'dZn', 'dZop'])), name),
+        error => error?.type === 'lockedFeature', name);
+}
+const wrapped = new SurvivalAccess(new Set(['mct', 'mcmt']));
+for (const name of ['cd11', 'c.2+3', 'c.+2@Z', 'a1:.2*3']) {
+    assert.throws(() => permits(wrapped, name), error => error?.type === 'lockedFeature', name);
+}
+for (const name of ['d0', 'dZ', 'dZ+', 'dZ*', '.+s', '.Zr', 'd01', 'dZ01', '.01@N']) permits(new SurvivalAccess(), name);
+
+if (system.rules.has('apn1')) {
+    system.clear();
+    layer.configureSurvival([]);
+    for (const name of ['d17', 'dZ+17', '.2@N', '.2+3', '.+2@Z', '.+2+-1']) {
+        const before = new Map(system.rules);
+        await rejects('d ' + name, 'lockedFeature');
+        assert.deepEqual(system.rules, before, 'locked generation has no cache side effect');
+        assert.throws(() => getCommand('d').getNextParam([parser.parse(name, 'dname')]), error => error?.type === 'lockedFeature');
+    }
+    layer.configureSurvival(['natop', 'dZn', 'dZop']);
+    for (const name of ['d17', 'dZ+17', '.2@N', '.2+3', '.2*3', '.+2@Z', '.+2+-1', '.-1*+2']) {
+        await run('d ' + name);
+        assert(system.rules.has(name), 'generated ' + name);
+        if (name.startsWith('.')) assert(system.rules.get(name).step?.length, name + ' is proved');
+    }
+    const source = system.props.find(prop => prop.from.type === 'd' && prop.from.data.deduction.name === '.2+3');
+    assert(source);
+    layer.configureSurvival([]);
+    for (const name of ['d17', 'dZ+17', '.2@N', '.2+3', '.+2@Z', '.+2+-1']) await rejects('d ' + name, 'lockedFeature');
+    assert.throws(() => layer.survivalAccess.checkReplay([parser.parse('d .2+3', 'cmd')], system), error => error?.type === 'lockedFeature');
+    assert.throws(() => layer.survivalAccess.checkMove(source, null, system), error => error?.type === 'lockedFeature');
+    layer.configureSurvival(['hyp', 'mct', '1st', 'mcvt', 'mdt', 'midt', 'mcmt']);
+    assert.throws(() => layer.survivalAccess.checkExpand(source, system), error => error?.type === 'lockedFeature'
+        && ['natural literals', 'natural arithmetic'].includes(error.feature));
+}
+
 // Loading a less advanced save resets the shared UI command registry.
 layer.configureSurvival([]);
 assert.deepEqual(unlocked(), []);
@@ -96,4 +153,4 @@ layer.unlockMetaBlock('c'); layer.unlockMetaBlock('v'); layer.unlockMetaBlock('f
 assert.deepEqual(unlocked(), commandNames);
 system.clear();
 await run('var x'); await run('d .i $p');
-console.log('PASS survival command progression, mq-only blocks, reset and creative commands');
+console.log('PASS survival commands, mq-only, numeric permissions, cached reset, replay, move, expansion and creative commands');

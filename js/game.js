@@ -7,6 +7,7 @@ import { blockMap, nameMap, TileBlockType } from "./hy/maploader.js";
 import { LangMgr } from "./lang.js";
 import { ProgressLayer, kbFullId } from "./pg/main.js";
 import { SaveLoad } from "./saveload.js";
+import { calcMaxReachOrd, cmp, printOrd } from "./hy/ordinal.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
 // 旧地图的 dstr 是展示文字；目标必须按稳定 ID 查找，不能解析本地化文案。
@@ -14,6 +15,10 @@ const legacyDestructionTargets = {
     "del<>": "port-iff", delK: "K", delL: "L", "del-pn": ".pn",
     delAl: "Aleph", delAlw: "AlephW", "del-W": "W", "del-ttAleph": "ttpAleph",
     mnt: "port-rp", mcvt: "V", omega: "w",
+};
+const ordinalRewardTargets = {
+    "w^2": [1, 2, 2], "w^3": [1, 2, 2, 2], "ww2": [1, 2, 3, 2, 3],
+    "w4234": [1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 1, 2, 2, 1, 2, 2, 1, 2, 2],
 };
 class Game {
     gotRewards = new Set;
@@ -25,12 +30,16 @@ class Game {
     deductrium = 0; // 拥有推理素
     deductriumConsumed = 0; // 累计消耗推理素
     tilesParcour = 0; // 总方块步数
+    maxOrd = [];
+    nextOrd = [1];
+    ordBase = 15;
     langMgr = new LangMgr(SaveLoad.getSavedLang());
     hsLayer = new HSLayer;
     ttLayer = new TTLayer(gameMode === "creative");
     hyLayer = new HyLayer;
     // 同页切换存档时先还原地图初始状态，再重放当前存档，避免继承上个槽位的奖励/拆门。
-    initialMapState = new Map(Array.from(blockMap, ([hash, block]) => [hash, { type: block.type, data: { ...block.data } }]));
+    initialMapState = new Map(Array.from(blockMap, ([hash, block]) => [hash, { ...block, data: { ...block.data } }]));
+    initialMapNames = new Map(nameMap);
     saveload = new SaveLoad(gameMode, () => {
         // 创造模式目前只有推理层（hs）+ 类型层（tt）；几何层/奖励/成就/经济仅生存模式
         if (gameMode === "creative")
@@ -47,6 +56,8 @@ class Game {
             D: this.deductrium,
             DC: this.deductriumConsumed,
             tp: this.tilesParcour,
+            mo: this.maxOrd.slice(),
+            ob: this.ordBase,
         };
     }, (data) => {
         if (data.hs)
@@ -56,6 +67,8 @@ class Game {
         if (gameMode === "survival") {
             if (data.hy)
                 this.hyLayer.deserialize(data.hy);
+            else
+                this.hyLayer.world.currentOrd = [];
             this.gotRewards = new Set(data.rw);
             this.destructedGates = new Set(data.dg);
             this.gotAchievements = new Set(data.ac);
@@ -63,6 +76,9 @@ class Game {
             this.deductrium = data.D ?? 0;
             this.deductriumConsumed = data.DC ?? 0;
             this.tilesParcour = data.tp ?? 0;
+            // 接线前的存档没有 mo/ob，仍可从当前位置和奖励恢复已有进度。
+            this.maxOrd = [...(data.mo ?? this.hyLayer.world.currentOrd ?? [])];
+            this.ordBase = data.ob ?? 15;
             this.applyGotRewards();
             this.updateStats();
             this.progressLayer.refreshAchievements();
@@ -223,17 +239,54 @@ class Game {
         setText("pg-stat-deductrium", stringifyDeductriumAmout(this.deductrium));
         setText("pg-stat-consumed", stringifyDeductriumAmout(this.deductriumConsumed));
         setText("pg-stat-parcours", String(this.tilesParcour));
+        setText("pg-stat-max-ord", printOrd(this.maxOrd));
+        setText("pg-stat-next-ord", printOrd(this.nextOrd));
+        setText("pg-stat-ord-base", String(this.ordBase + 1));
+    }
+    updateOrdinalProgress() {
+        // 基底由奖励集合算出上限，重复恢复不会再次扣减。
+        let base = 15;
+        for (let i = 1; i <= 10; i++)
+            if (this.gotRewards.has(`base-${i}`))
+                base--;
+        for (const [reward, cap] of [["base5", 4], ["base4", 3], ["base3", 2], ["base2", 1]]) {
+            if (this.gotRewards.has(reward))
+                base = Math.min(base, cap);
+        }
+        this.ordBase = Math.min(this.ordBase, base);
+        for (const [reward, target] of Object.entries(ordinalRewardTargets)) {
+            if (this.gotRewards.has(reward) && cmp(target, this.maxOrd) > 0)
+                this.maxOrd = target.slice();
+        }
+        this.nextOrd = calcMaxReachOrd(this.maxOrd, this.ordBase, this.gotRewards.has("stepw"));
+        this.updateStats();
+    }
+    restoreOrdinalMap() {
+        const ord = this.hyLayer.world.currentOrd ?? [];
+        // 沿已存序数的前缀找已有节点，仍由 HWorld 的原生成器展开后续区域。
+        for (let i = 1; i <= ord.length; i++) {
+            const prefix = ord.slice(0, i);
+            const hash = nameMap.get("O" + prefix.join(","));
+            if (!hash)
+                break;
+            if (i === ord.length || !nameMap.has("O" + ord.slice(0, i + 1).join(","))) {
+                this.hyLayer.world.onPassOrd(hash, prefix);
+            }
+        }
     }
     // 已获得的奖励：按 gotRewards 里的 key（name 或 hash）直查砖块，置 got=true、type→road 并执行解锁效果
     applyGotRewards() {
         this.hsLayer.configureSurvival(this.gotRewards);
-        for (const [hash, initial] of this.initialMapState) {
-            const block = blockMap.get(hash);
-            if (!block)
-                continue;
-            block.type = initial.type;
-            block.data = { ...initial.data };
-        }
+        this.hyLayer.world.navigateDraw = this.gotRewards.has("cmpss");
+        this.hyLayer.world.highLightGetD = this.gotRewards.has("highlightd");
+        // 清除上一槽位展开的序数砖块，同时恢复初始地图的名称/文本/奖励状态。
+        blockMap.clear();
+        nameMap.clear();
+        for (const [hash, initial] of this.initialMapState)
+            blockMap.set(hash, { ...initial, data: { ...initial.data } });
+        for (const [name, hash] of this.initialMapNames)
+            nameMap.set(name, hash);
+        this.restoreOrdinalMap();
         for (const layer of ["D-layer", "P-layer"])
             this.showLayerButton(layer, false);
         for (const key of this.gotRewards) {
@@ -251,6 +304,7 @@ class Game {
         }
         for (const key of this.destructedGates)
             this.destructGate(key);
+        this.updateOrdinalProgress();
         this.hyLayer.needUpdate = true;
     }
     destructGate(key, block = blockMap.get(nameMap.get(key) ?? key)) {
@@ -265,6 +319,13 @@ class Game {
     applyUnlockEffect(block) {
         if (block.name)
             this.hsLayer.applyReward(block.name);
+        if (block.name === "cmpss")
+            this.hyLayer.world.navigateDraw = true;
+        if (block.name === "highlightd")
+            this.hyLayer.world.highLightGetD = true;
+        if (block.name && (/^base(?:-\d+|[2-5])$/.test(block.name)
+            || block.name === "stepw" || Object.hasOwn(ordinalRewardTargets, block.name)))
+            this.updateOrdinalProgress();
         const unl = block.data?.unl;
         if (unl && unl.layer) {
             document.querySelector(`.layer-buttons button[data-layer="${unl.layer}"]`)?.classList.remove("hide");
@@ -369,8 +430,36 @@ class Game {
         };
         // 闸门通过判定：payD 扣费（移植旧版逻辑）+ dG 拆门技能
         this.hyLayer.world.onPassGate = (name, tile, hash) => {
+            const automaticExit = Object.values(typeof tile.text === "string" ? { text: tile.text } : tile.text)
+                .some(text => text.endsWith("#imm"));
             const gateTest = () => {
                 const data = tile.data ?? {};
+                if (tile.type === TileBlockType.Ordinal) {
+                    if (!/^O[1-9]\d*(?:,[1-9]\d*)*$/.test(tile.name ?? ""))
+                        return true;
+                    const ord = tile.name.slice(1).split(",").map(Number);
+                    this.hyLayer.world.onPassOrd(hash, ord);
+                    if (cmp(ord, this.maxOrd) > 0) {
+                        if (cmp(ord, this.nextOrd) > 0)
+                            return false;
+                        this.maxOrd = ord;
+                        this.updateOrdinalProgress();
+                        if (cmp(ord, [1, 2, 3]) >= 0)
+                            this.finishAchievement("w2");
+                        if (cmp(ord, [1, 2, 3, 4, 5]) >= 0)
+                            this.finishAchievement("w4");
+                    }
+                    this.hyLayer.world.currentOrd = ord;
+                    return true;
+                }
+                if (tile.name === "preord")
+                    return this.tilesParcour >= 256;
+                if (tile.name === "I1I2I3")
+                    return ["I1", "I2", "I3"].every(key => this.gotRewards.has(key));
+                if (automaticExit) {
+                    // 复用公开存档接口中的规则名；旧版同样检查 a 开头、x 结尾的错误公理。
+                    return !this.hsLayer.serialize().r.split("\n").some(line => /^(?:\([^)]*\))?a[^:]*x:/.test(line));
+                }
                 const relief = tile.name?.match(/^JJZP-([12])$/);
                 if (relief)
                     return this.gotRewards.has(`JJZI-${relief[1]}`)
@@ -395,11 +484,15 @@ class Game {
                 // [p]门：任意sheet满足（无断言/假设 + 某步骤wrap后ast等于门文本）
                 if (data.p) {
                     const ast = parseGateAst(tile, "wff");
+                    if (ast)
+                        this.hsLayer.rememberGate(ast);
                     return ast ? this.hsLayer.checkPropGate(ast) : false;
                 }
                 // [d]门：规则表中存在文本等价规则
                 if (data.d) {
                     const ast = parseGateAst(tile, "rule");
+                    if (ast)
+                        this.hsLayer.rememberGate(ast);
                     return ast ? this.hsLayer.checkRuleGate(ast) : false;
                 }
                 return false;
@@ -413,7 +506,7 @@ class Game {
             if (tile.data?.info)
                 this.unlockInfo(tile.data.info);
             // dG（拆门技能）：能通过的门拆除，变为 road（旧版 delgate 逻辑）
-            if (this.gotRewards.has("dG") && tile.type !== TileBlockType.Ordinal) {
+            if (this.gotRewards.has("dG") && tile.type !== TileBlockType.Ordinal && !automaticExit) {
                 this.destructGate(name || hash, tile);
             }
             return true;

@@ -22,6 +22,7 @@ export class SurvivalAccess {
                 this.require("msbt", "mifft");
             if (ast.name === "mcpt")
                 this.require("mcpt", "mcpt");
+            this.checkNumberName(ast.name);
             return;
         }
         if (ast.type !== NodeType.NODE_DNAME)
@@ -45,6 +46,35 @@ export class SurvivalAccess {
                 this.require("composition", "mcmt");
             for (const child of ast.nodes)
                 this.checkRuleName(child, system);
+        }
+    }
+    checkNumberName(name) {
+        // Classify names before getD, including rules cached by an earlier save
+        // or preloaded in creative mode. Keep this boundary independent of the
+        // optional number module so the base game can load it as well.
+        if (/^d[1-9][0-9]*$/.test(name)) {
+            if (/^d(?:[1-9]|10)$/.test(name))
+                this.require("natural literals", "peano", "natop");
+            else
+                this.require("natural literals", "natop");
+        }
+        else if (/^dZ[+-]?(?:0|[1-9][0-9]*)$/.test(name)) {
+            this.require("integer literals", "dZn");
+        }
+        else if (/^\.(?:0|[1-9][0-9]*)@N$/.test(name)
+            || /^\.(?:0|[1-9][0-9]*)[+*](?:0|[1-9][0-9]*)$/.test(name)) {
+            this.require("natural arithmetic", "natop");
+        }
+        else if (/^\.[+-]?(?:0|[1-9][0-9]*)@Z$/.test(name)
+            || /^\.[+-]?(?:0|[1-9][0-9]*)[+*-][+-]?(?:0|[1-9][0-9]*)$/.test(name)) {
+            this.require("integer arithmetic", "dZop");
+        }
+        else if (/^d(?:Q[+-]?(?:0|[1-9][0-9]*)q?|[+-]?(?:0|[1-9][0-9]*)q|Q?[+-]?(?:0|[1-9][0-9]*)\.[0-9]*q?)$/.test(name)) {
+            // The current map has no rational/real literal rewards.
+            this.require("rational literals");
+        }
+        else if (/^d(?:R[+-]?(?:0|[1-9][0-9]*)r?|[+-]?(?:0|[1-9][0-9]*)r|R?[+-]?(?:0|[1-9][0-9]*)\.[0-9]*r?)$/.test(name)) {
+            this.require("real literals");
         }
     }
     checkAxiom(rule) {

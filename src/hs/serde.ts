@@ -25,11 +25,11 @@ export class Serde {
         };
     }
     deserialize(data: any) {
+        this.hs.renamedSysRule = new Map(data.rsr ?? []);
         this.deserializeRulelist(data.r);
         this.deserializeSheets(data.s);
         this.rv.idCounter = data.ri || 1;
         if (data.re) this.rv.expandedFolders = new Set(data.re);
-        if (data.rsr) this.hs.renamedSysRule = new Map(data.rsr);
         this.hsLayer.refresh();
     }
 

@@ -10,6 +10,9 @@ const { blockMap, nameMap, TileBlockType: Type } = await import('../js/hy/maploa
 const { LangMgr } = await import('../js/lang.js');
 const { HSParser } = await import('../js/hs/core/parser.js');
 const { initialCreativeRules, initialSurvivalRules } = await import('../js/hs/core/initial.js');
+const { calcMaxReachOrd, cmp, printOrd } = await import('../js/hy/ordinal.js');
+const { Serde: HySerde } = await import('../js/hy/serde.js');
+const { Rotor } = await import('../js/hy/algebra.js');
 
 const quiet = fn => {
     const log = console.log;
@@ -31,6 +34,11 @@ class HSBoundary {
     applied = [];
     configurations = [];
     rules = new Map();
+    gateCalls = [];
+    gateResult = false;
+    rememberGate(ast) { this.gateCalls.push(['remember', ast]); }
+    checkPropGate(ast) { this.gateCalls.push(['prop', ast]); return this.gateResult; }
+    checkRuleGate(ast) { this.gateCalls.push(['rule', ast]); return this.gateResult; }
     addRules() {}
     unlockBasicPropCmd() {}
     unlockBasicRuleCmd() { this.creative = true; }
@@ -40,7 +48,7 @@ class HSBoundary {
         for (const name of rewards) this.applyReward(name);
     }
     applyReward(name) { this.applied.push(name); }
-    serialize() { return { rules: [...this.rules] }; }
+    serialize() { return { rules: [...this.rules], r: [...this.rules.keys()].map(name => `(1)${name}:ax:.`).join('\n') }; }
     deserialize(data) { this.rules = new Map(data.rules || []); }
 }
 class TTBoundary { serialize() { return {}; } deserialize() {} }
@@ -49,10 +57,17 @@ class HyBoundary {
         blockMap.clear(); nameMap.clear();
         this.world = Object.create(HWorld.prototype);
         this.world.atlasTile = new Polygon(6, 4);
+        this.world.currentTile = [];
+        this.world.currentOrd = [];
+        this.world.navigateDraw = false;
+        this.world.highLightGetD = false;
+        this.world.localCamMat = new Rotor();
+        this.world.onLoop = () => {};
+        this.serde = new HySerde(this.world);
         quiet(() => this.world.reload());
     }
-    serialize() { return {}; }
-    deserialize() {}
+    serialize() { return this.serde.serialize(); }
+    deserialize(data) { this.serde.deserialize(data); }
 }
 class ProgressBoundary { refreshAchievements() {} refreshSymbols() {} refreshKnowledge() {} }
 const documentBoundary = {
@@ -65,11 +80,11 @@ function makeGame(data, mode = 'survival') {
     saved = data; confirmations = 0; confirmResult = true;
     const Game = new Function('window', 'document', 'confirm', 'initialCreativeRules', 'initialSurvivalRules',
         'HSLayer', 'TTLayer', 'HyLayer', 'blockMap', 'nameMap', 'TileBlockType', 'LangMgr',
-        'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', gameSource)(
+        'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd', gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
-        ProgressBoundary, id => id, SaveBoundary, HSParser);
+        ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;
@@ -238,4 +253,215 @@ test('highlightd controls cash highlighting immediately after rewards and save c
     assert.equal(color(true), 'rgb(200,255,20)', 'loading a fresh save removes highlighting');
     quiet(() => game.saveload.deserialize(saveData(['highlightd'])));
     assert.equal(color(true), 'rgb(255,255,0)', 'loading the earned reward restores highlighting');
+});
+
+test('preord requires 256 actual step callbacks and I1I2I3 requires all three reward callbacks', () => {
+    let game = makeGame();
+    for (let i = 0; i < 255; i++) game.hyLayer.world.onStepToAnotherTile('');
+    assert.equal(hit(game, 'preord'), false);
+    game.hyLayer.world.onStepToAnotherTile('');
+    assert.equal(game.tilesParcour, 256);
+    assert.equal(hit(game, 'preord'), true);
+    assert.equal(hit(game, 'I1I2I3'), false);
+    for (const key of ['I1', 'I2']) hit(game, key);
+    assert.equal(hit(game, 'I1I2I3'), false);
+    hit(game, 'I3');
+    assert.equal(hit(game, 'I1I2I3'), true);
+    game = makeGame(game.saveload.serialize());
+    assert.equal(hit(game, 'preord'), true);
+    assert.equal(hit(game, 'I1I2I3'), true);
+    game.gotRewards.add('dG');
+    assert.equal(hit(game, 'I1I2I3'), true);
+    assert(game.destructedGates.has('I1I2I3'));
+});
+
+test('cmpss and highlightd control the actual world drawing flags and reset across saves', () => {
+    const game = makeGame();
+    assert.equal(game.hyLayer.world.navigateDraw, false);
+    assert.equal(game.hyLayer.world.highLightGetD, false);
+    hit(game, 'cmpss'); hit(game, 'highlightd');
+    assert.equal(game.hyLayer.world.navigateDraw, true);
+    assert.equal(game.hyLayer.world.highLightGetD, true);
+    quiet(() => game.saveload.deserialize(saveData()));
+    assert.equal(game.hyLayer.world.navigateDraw, false);
+    assert.equal(game.hyLayer.world.highLightGetD, false);
+    quiet(() => game.saveload.deserialize(saveData(['cmpss', 'highlightd'])));
+    assert.equal(game.hyLayer.world.navigateDraw, true);
+    assert.equal(game.hyLayer.world.highLightGetD, true);
+});
+
+test('p/d callbacks remember each parsed AST before either passing or failing the gate', () => {
+    const game = makeGame();
+    const world = game.hyLayer.world;
+    for (const [flag, text, check] of [['p', 'A→A', 'prop'], ['d', '⊢A→A', 'rule']]) {
+        for (const result of [false, true]) {
+            const tile = { type: Type.Gate, text, data: { [flag]: true } };
+            game.hsLayer.gateCalls.length = 0;
+            game.hsLayer.gateResult = result;
+            assert.equal(world.onPassGate('test', tile, '99'), result);
+            assert.deepEqual(game.hsLayer.gateCalls.map(([kind]) => kind), ['remember', check]);
+            assert.equal(game.hsLayer.gateCalls[0][1], game.hsLayer.gateCalls[1][1]);
+        }
+    }
+    game.hsLayer.gateCalls.length = 0;
+    assert.equal(world.onPassGate('invalid', { type: Type.Gate, text: '(', data: { p: true } }, '99'), false);
+    assert.deepEqual(game.hsLayer.gateCalls, [], 'invalid syntax does not replace the previous gate');
+});
+
+test('existing automatic exits check erroneous axiom names and remain immune to dG', () => {
+    const game = makeGame();
+    game.gotRewards.add('dG');
+    const exits = [...blockMap.entries()].filter(([, tile]) => Object.values(
+        typeof tile.text === 'string' ? { text: tile.text } : tile.text
+    ).some(text => text.endsWith('#imm')));
+    assert.equal(exits.length, 2);
+    for (const [hash, tile] of exits) {
+        for (const bad of ['apn5x', 'asepx']) {
+            game.hsLayer.rules.set(bad, 'bad axiom');
+            assert.equal(hit(game, hash), false);
+            game.hsLayer.rules.delete(bad);
+        }
+        game.hsLayer.rules.set('playerx', 'macro');
+        assert.equal(hit(game, hash), true);
+        assert.equal(tile.type, Type.Gate);
+        assert(!game.destructedGates.has(tile.name || hash));
+    }
+});
+
+test('ordinal gates use existing reachability, expand real tiles, and preserve ordinal gates with dG', () => {
+    const game = makeGame();
+    game.gotRewards.add('dG');
+    assert.deepEqual(game.maxOrd, []);
+    assert.deepEqual(game.nextOrd, [1]);
+    assert.equal(hit(game, 'O1,1'), false, 'cannot skip a successor');
+    assert.equal(hit(game, 'O1'), true);
+    assert.deepEqual(game.maxOrd, [1]);
+    assert.deepEqual(game.nextOrd, [1, 1]);
+    assert.deepEqual(game.hyLayer.world.currentOrd, [1]);
+    assert.equal(hit(game, 'O1,1'), true);
+    assert.equal(hit(game, 'O1'), true, 'revisiting a smaller ordinal is permitted');
+    assert.deepEqual(game.maxOrd, [1, 1]);
+    assert.equal(block('O1').type, Type.Ordinal);
+    assert(!game.destructedGates.has('O1'));
+    assert.equal(game.hyLayer.world.onPassGate('', { type: Type.Ordinal, text: '', data: {} }, '99'), true);
+    // An ordinary branch beyond the initial depth must be generated by onPassOrd.
+    for (let length = 3; length <= 9; length++) {
+        assert.equal(hit(game, 'O' + Array(length).fill(1).join(',')), true);
+    }
+    const ord = Array(9).fill(1);
+    const hash = nameMap.get('O' + ord.join(','));
+    game.hyLayer.world.currentTile = hash.split(',').map(Number);
+    const data = game.saveload.serialize();
+    const loaded = makeGame(data);
+    assert.deepEqual(loaded.maxOrd, ord);
+    assert.deepEqual(loaded.nextOrd, calcMaxReachOrd(ord, 15, false));
+    assert.equal(blockMap.get(hash)?.name, 'O' + ord.join(','), 'loaded position has a real ordinal tile');
+    assert.equal(hit(loaded, 'O' + Array(10).fill(1).join(',')), true);
+    quiet(() => loaded.saveload.deserialize(saveData()));
+    assert.deepEqual(loaded.maxOrd, []);
+    assert.deepEqual(loaded.nextOrd, [1]);
+    assert.equal(nameMap.has('O' + Array(10).fill(1).join(',')), false, 'fresh slot clears the other slot expansion');
+    delete data.mo; delete data.ob;
+    const legacy = makeGame(data);
+    assert.deepEqual(legacy.maxOrd, ord, 'pre-wiring saves recover progress from the saved current ordinal');
+    assert.equal(legacy.ordBase, 15);
+    assert.equal(blockMap.get(hash)?.name, 'O' + ord.join(','));
+});
+
+test('ordinal rewards recalculate existing base/stepw logic once and survive old/new saves', () => {
+    let game = makeGame();
+    assert.equal(game.ordBase, 15);
+    for (let i = 1; i <= 10; i++) hit(game, `base-${i}`);
+    assert.equal(game.ordBase, 5);
+    game.applyGotRewards();
+    assert.equal(game.ordBase, 5, 'replaying rewards cannot reduce the base again');
+    for (const [reward, base] of [['base5', 4], ['base4', 3], ['base3', 2], ['base2', 1]]) {
+        hit(game, reward); assert.equal(game.ordBase, base);
+    }
+    for (const [reward, ord] of [['w^2', [1, 2, 2]], ['w^3', [1, 2, 2, 2]], ['ww2', [1, 2, 3, 2, 3]]]) {
+        hit(game, reward);
+        assert.deepEqual(game.maxOrd, ord);
+        assert.deepEqual(game.nextOrd, calcMaxReachOrd(ord, 1, false));
+    }
+    hit(game, 'stepw');
+    assert.deepEqual(game.nextOrd, calcMaxReachOrd(game.maxOrd, 1, true));
+    game = makeGame(game.saveload.serialize());
+    assert.equal(game.ordBase, 1);
+    assert.deepEqual(game.maxOrd, [1, 2, 3, 2, 3]);
+    assert.deepEqual(game.nextOrd, calcMaxReachOrd(game.maxOrd, 1, true));
+    quiet(() => game.saveload.deserialize(saveData(['base-1', 'w^2'])));
+    assert.equal(game.ordBase, 14, 'old saves derive progress from earned rewards');
+    assert.deepEqual(game.maxOrd, [1, 2, 2]);
+    quiet(() => game.saveload.deserialize(saveData()));
+    assert.equal(game.ordBase, 15);
+    assert.deepEqual(game.maxOrd, []);
+});
+
+test('ordinal progression awards the existing w2/w4 identifiers at their thresholds', () => {
+    const game = makeGame();
+    for (const [ord, achievement] of [[[1, 2, 3], 'w2'], [[1, 2, 3, 4, 5], 'w4']]) {
+        game.nextOrd = ord;
+        assert.equal(hit(game, 'O' + ord.join(',')), true);
+        assert(game.gotAchievements.has(achievement));
+    }
+});
+
+test('rejected ordinal gates only expand the map, without moving or advancing saved progress', () => {
+    const game = makeGame();
+    const before = game.saveload.serialize();
+    const tiles = blockMap.size;
+    assert.equal(hit(game, 'O1,1'), false);
+    assert(blockMap.size > tiles, 'existing onPassOrd still reveals the surrounding branch');
+    assert.deepEqual(game.saveload.serialize(), before, 'a rejected gate changes no saved state');
+    assert.deepEqual(game.hyLayer.world.currentOrd, []);
+    assert.equal(hit(game, 'O1,1'), false);
+    assert.deepEqual(game.saveload.serialize(), before);
+});
+
+test('previously explored ordinal branches regenerate at the same hashes after saving on another branch', () => {
+    let game = makeGame(saveData(['w^2']));
+    const branches = [Array(10).fill(1), [1, 2, ...Array(8).fill(1)]];
+    const walk = ord => {
+        for (let i = 1; i <= ord.length; i++) assert.equal(hit(game, 'O' + ord.slice(0, i).join(',')), true);
+        const hash = nameMap.get('O' + ord.join(','));
+        game.hyLayer.world.currentTile = hash.split(',').map(Number);
+        return hash;
+    };
+    const hashes = branches.map(walk);
+    walk([1]);
+    const savedProgress = game.saveload.serialize();
+    game = makeGame(savedProgress);
+    assert.deepEqual(game.maxOrd, [1, 2, 2], 'max progress is independent of the current branch');
+    assert.equal(block('w^2').type, Type.Road, 'earned static rewards retain their references');
+    for (let i = 0; i < branches.length; i++) {
+        assert.equal(nameMap.has('O' + branches[i].join(',')), false, 'distant explored branches are not stored');
+        assert.equal(walk(branches[i]), hashes[i], 'the existing generator recreates the original named tile');
+    }
+    assert.deepEqual(game.maxOrd, [1, 2, 2]);
+    assert.deepEqual(game.nextOrd, calcMaxReachOrd([1, 2, 2], 15, false));
+});
+
+test('base2 and stepw rewards affect real ordinal limit and successor gate callbacks', () => {
+    const game = makeGame(saveData(['base2']));
+    assert.equal(hit(game, 'O1'), true);
+    assert.equal(hit(game, 'O1,2'), false);
+    assert.equal(hit(game, 'O1,1'), true);
+    assert.deepEqual(game.nextOrd, [1, 2], 'base two carries the finite successor to omega');
+    assert.equal(hit(game, 'O1,2'), true);
+    assert.equal(hit(game, 'O1,2,2'), false);
+    hit(game, 'stepw');
+    assert.deepEqual(game.nextOrd, [1, 2, 2], 'stepw immediately raises the next reachable limit');
+    assert.equal(hit(game, 'O1,2,2'), true);
+});
+
+test('w4234 grants the official ordinal through reward and repeated save restoration', () => {
+    let game = makeGame();
+    assert.equal(hit(game, 'w4234'), true);
+    assert.equal(printOrd(game.maxOrd), 'ω^4*4+ω^3*4+ω^2*4');
+    const data = game.saveload.serialize();
+    game.applyGotRewards();
+    assert.deepEqual(game.saveload.serialize(), data);
+    game = makeGame(data);
+    assert.equal(printOrd(game.maxOrd), 'ω^4*4+ω^3*4+ω^2*4');
+    assert.deepEqual(game.nextOrd, calcMaxReachOrd(game.maxOrd, 15, false));
 });

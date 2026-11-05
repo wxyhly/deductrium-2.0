@@ -40,6 +40,7 @@ export class LangMgr {
         ruleList: { zh: '规则表', en: "Rule Table" },
         propList: { zh: '推理表', en: "Deduction Steps" },
         cmdBar: { zh: '命令栏', en: "Command" },
+        lastGate: { zh: '最近接触的门：', en: "Last gate: " },
         addFolder: { zh: '+ 文件夹', en: "+ Folder" },
         // 菜单
         rename: { zh: '重命名', en: "Rename" },
@@ -73,6 +74,9 @@ export class LangMgr {
         statDeductrium: { zh: '拥有推理素', en: "Deductrium Owned" },
         statConsumed: { zh: '累计消耗推理素', en: "Total Deductrium Consumed" },
         statParcours: { zh: '总方块步数', en: "Total Block Steps" },
+        statMaxOrd: { zh: '最大序数', en: "Maximum Ordinal" },
+        statNextOrd: { zh: '下一可达序数', en: "Next Reachable Ordinal" },
+        statOrdBase: { zh: '序数进位基底', en: "Ordinal Carry Base" },
         saveMgmt: { zh: '存档管理', en: "Save Management" },
         currentProgress: { zh: '当前进度', en: "Current Progress" },
         gameMode: { zh: '游戏模式', en: "Game Mode" },
