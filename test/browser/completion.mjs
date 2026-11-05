@@ -226,6 +226,58 @@ try {
         await input.fill('a');
         const rect=await list.boundingBox();
         check(rect.x>=0&&rect.x+rect.width<=viewport.width+1&&rect.y>=0,'candidate popup fits viewport');
+        await reset();
+        const expectedPreviews=await page.evaluate(async()=>{
+            const layer=window.game.hsLayer,system=layer.hilbertSystem,{HSParser}=await import('/js/hs/core/parser.js');
+            const parser=new HSParser(),run=text=>system.fromCmd(text.split(';').map(cmd=>parser.parse(cmd,'cmd')));
+            for(const name of ['sni','sne','r','s']) system.rules.delete(name);
+            run('d .ni $');system.m('sni');
+            run('hyp $1→$2;d .a30 $1 $2;d mp 2 1');system.m('sne');
+            run('hyp $1→$2;hyp $1;d mp 1 2');system.m('r');
+            run('d .i $');system.m('s');
+            system.renameD('.<>','s<>');system.renameD('.<>s','s<>s');
+            const names=['<sni','vsni','csni','esni','vc<sni','<sne(mp)','r(s,#)','c(mp(s,#))','s<>(>s<>s,>s<>s)'];
+            const expected=Object.fromEntries(names.map(name=>[name,system.getD(parser.parse(name,'dname')).toString()]));
+            system.hyp(parser.parse('A','wff'));system.c(parser.parse('B','wff'));
+            layer.propListView.refresh();layer.ruleListView.refresh();
+            window.__completionProofState={props:system.props,activeProp:system.activeProp,flatProps:system.flatProps,
+                replvars:system.replvars,replvarVars:system.replvarVars,rules:system.rules,
+                commands:JSON.stringify(system.genCmd()),ruleEntries:[...system.rules]};
+            return expected;
+        });
+        const proofUnchanged=()=>page.evaluate(()=>{
+            const system=window.game.hsLayer.hilbertSystem,saved=window.__completionProofState;
+            return ['props','activeProp','flatProps','replvars','replvarVars','rules'].every(key=>system[key]===saved[key])
+                &&JSON.stringify(system.genCmd())===saved.commands&&system.rules.size===saved.ruleEntries.length
+                &&saved.ruleEntries.every(([name,rule])=>system.rules.get(name)===rule);
+        });
+        for(const [name,expected] of Object.entries(expectedPreviews)) {
+            for(const prefix of ['', 'd ']) {
+                await input.fill(prefix+name);
+                const candidate=list.locator('li').filter({hasText:'[D] '+name}).first();
+                check(await list.isVisible()&&await candidate.count()===1,prefix+name+' displays a whole-rule candidate: '+JSON.stringify(await completionState()));
+                check(await candidate.locator('.completion-hint').innerText()===expected,prefix+name+' displays the real full formula');
+                check(await candidate.locator('.completion-hint span').count()>0,prefix+name+' formula is syntax highlighted');
+                await input.press('Tab');
+                check(await input.inputValue()===prefix+name&&!(await state()).executing,prefix+name+' Tab keeps the complete expression without executing');
+                check(await proofUnchanged(),prefix+name+' preview preserves proof, active folder, schemas and caches');
+            }
+        }
+        for(const name of ['<sne(mp)','r(s,#)']) {
+            await input.fill('d');await input.press('Enter');await input.fill(name);
+            check(await list.isVisible()&&await list.locator('.completion-name').innerText()==='[D] '+name,'pending d previews the complete application '+name);
+            check(await list.locator('.completion-hint').innerText()===expectedPreviews[name],'pending d renders the whole combination formula '+name);
+            await input.press('Escape');await input.press('Escape');
+        }
+        for(const invalid of ['d mp(s))','d s(s)','d <sne(mp))']) {
+            await input.fill(invalid);
+            check(!(await list.isVisible()),invalid+' has no false complete preview');
+        }
+        await input.fill('<sne(mp)');
+        await list.locator('li').click();
+        check((await state()).executing&&(await completionState()).pending.argumentCount===1,'clicking full combination preview selects the real rule and enters its condition prompt');
+        check(await proofUnchanged(),'selecting a whole combination keeps the existing proof intact');
+        await input.press('Escape');await input.press('Escape');
         await input.fill('a');await page.locator('button[data-layer="P-layer"]').click();
         check(!(await list.isVisible()),'blur hides suggestions');
         assert.deepEqual(errors,[]);

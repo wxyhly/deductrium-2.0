@@ -3,6 +3,7 @@ import { highlightHTML, SyntaxEditor, SyntaxViewer } from "../astrender.js";
 import { TreeListViewer, makeResizable } from "../listmgr.js";
 import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, getCommandNames } from "./gui/cmdmgr.js";
 import { CommandCompletion } from "./gui/completion.js";
+import { createRulePreview } from "./gui/rule-preview.js";
 import { AST } from "./core/ast.js";
 import { Deduction } from "./core/deduction.js";
 import { HilbertSystem } from "./core/core.js";
@@ -516,7 +517,7 @@ export class HSLayer {
                     }
             };
             visit(this.ruleList);
-            return { commands: getCommandNames(), rules, targets, folders,
+            return { commands: getCommandNames(), rules, targets, folders, previewRule: createRulePreview(this.hilbertSystem),
                 pending: this.cmdEngine.getCompletionContext(), inspecting: this.navigator.active };
         });
         // 推理表sheet：SheetGui内部处理全部sheet操作，HSLayer只注入刷新/变更/守卫/展开状态回调

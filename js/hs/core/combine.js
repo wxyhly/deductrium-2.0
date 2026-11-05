@@ -14,12 +14,40 @@ import { HSError } from "./error.js";
 //     找到后，把其它条中所有的该变量用这条公式替换，把这条约束放入最终的replaceTable
 //     若所有约束都放入了最终的replaceTable，结束，否则继续:生成替换顺序表
 export class RuleCombiner {
+    consume;
+    constructor(consume) {
+        this.consume = consume;
+    }
+    cloneAST(ast) {
+        if (!this.consume)
+            return ast.clone();
+        this.consume(1 + ast.name.length);
+        return new AST(ast.type, ast.name, ...ast.nodes.map(node => this.cloneAST(node)));
+    }
+    same(a, b) {
+        if (!this.consume)
+            return a.equal(b);
+        this.consume(1);
+        return a.type === b.type && a.name === b.name && a.nodes.length === b.nodes.length
+            && a.nodes.every((node, i) => this.same(node, b.nodes[i]));
+    }
+    // Charge before allocating each replacement node: cyclic substitutions can
+    // double the tree on each pass, well before the fixed-point guard expires.
+    substitute(ast, mt) {
+        if (!this.consume)
+            return ast.mut_replaceByMatchTable(mt);
+        if (ast.isAtom() && mt[ast.name])
+            return this.cloneAST(mt[ast.name]);
+        this.consume(1 + ast.name.length);
+        return new AST(ast.type, ast.name, ...ast.nodes.map(node => this.substitute(node, mt)));
+    }
     matchEq(a, b, matchTable, constrains) {
+        this.consume?.(1);
         if (a.isReplvar()) {
             if (!matchTable[a.name]) {
                 matchTable[a.name] = b;
             }
-            else if (!matchTable[a.name].equal(b)) {
+            else if (!this.same(matchTable[a.name], b)) {
                 constrains.push([matchTable[a.name], b]);
             }
             return true;
@@ -28,7 +56,7 @@ export class RuleCombiner {
             if (!matchTable[b.name]) {
                 matchTable[b.name] = a;
             }
-            else if (!matchTable[b.name].equal(a)) {
+            else if (!this.same(matchTable[b.name], a)) {
                 constrains.push([matchTable[b.name], a]);
             }
             return true;
@@ -53,7 +81,7 @@ export class RuleCombiner {
             if (depth++ > 64)
                 throw HSError.combineCyclic;
             const [left, right] = constrains.shift();
-            if (left.equal(right)) {
+            if (this.same(left, right)) {
                 // 丢弃
                 continue;
             }
@@ -68,7 +96,7 @@ export class RuleCombiner {
     }
     // 反复应用matchTable直到稳定（matchTable的值中可能仍含其它键，链式替换需要多轮），返回替换后的克隆
     applyMatchTable(ast, mt) {
-        ast = ast.clone();
+        ast = this.cloneAST(ast);
         // 预处理：mt 中"变量→另一个replvar"的别名逐条就地替换（替换到 ast 与 mt 的其余值中）
         // 后丢弃该条。这样链式/循环别名（如 $1→$2→$3→$1）被逐步消解为同一变量，
         // 否则固定点迭代可能不收敛报 combineCyclic（如 .<>(.ne,.ni)）。
@@ -87,17 +115,17 @@ export class RuleCombiner {
             }
             if (aliasKey === null)
                 break;
-            ast.mut_replaceByMatchTable({ [aliasKey]: aliasVal });
+            ast = this.substitute(ast, { [aliasKey]: aliasVal });
             for (const key of Object.keys(mt)) {
                 if (mt[key])
-                    mt[key] = mt[key].clone().mut_replaceByMatchTable({ [aliasKey]: aliasVal });
+                    mt[key] = this.substitute(this.cloneAST(mt[key]), { [aliasKey]: aliasVal });
             }
             delete mt[aliasKey];
         }
         let guard2 = 0;
         while (guard2++ < 64) {
             const snapshot = ast.toString();
-            ast.mut_replaceByMatchTable(mt);
+            ast = this.substitute(ast, mt);
             if (ast.toString() === snapshot)
                 break;
         }
@@ -284,19 +312,25 @@ export function genUnivStep(host, a, d, v) {
         return undefined;
     }
 }
-export function combineRules(host, dname) {
-    const combiner = new RuleCombiner();
+export function combineRules(host, dname, withProof = true, previewWork) {
+    let remaining = 32768;
+    const consume = withProof ? undefined : (work) => {
+        if ((remaining -= work) < 0)
+            throw HSError.combineCyclic;
+        previewWork?.(work);
+    };
+    const combiner = new RuleCombiner(consume);
     try {
         if (!dname.nodes.length)
             throw HSError.combineNoFn;
-        const fn = host.getD(dname.nodes[0]);
+        const fn = host.getD(dname.nodes[0], withProof, previewWork);
         // 参数不足用#补足（与旧版"参数少于条件时补#"一致）
         const args = dname.nodes.slice(1);
         while (fn.conditions.length > args.length)
             args.push(new AST(NodeType.ATOM_DNAME, "#"));
         if (args.length > fn.conditions.length)
             throw HSError.combineArgCount;
-        const argDs = args.map(a => (a.type === NodeType.ATOM_DNAME && a.name === "#") ? null : host.getD(a));
+        const argDs = args.map(a => (a.type === NodeType.ATOM_DNAME && a.name === "#") ? null : host.getD(a, withProof, previewWork));
         // ---- 1. 元变量重命名：每个子规则独立分配新名字，避免相互冲突 ----
         // 注意：只跟踪“已分配的新名”，不要把原始名（$1/$2等）也放进去占槽位——
         // 原始名在各自规则重命名后即消失，若占用会让后续编号跳跃（如 a1 的 $1/$2
@@ -310,7 +344,7 @@ export function combineRules(host, dname) {
         // tables[k][原名] = 新名节点；k=0为函数规则，k=1..n为参数规则
         const tables = [fn, ...argDs].map(() => ({}));
         const renameAst = (ast, k) => {
-            const res = ast.clone();
+            const res = combiner.cloneAST(ast);
             const walk = (n) => {
                 const rv = n.isReplvar();
                 if (rv) {
@@ -378,6 +412,8 @@ export function combineRules(host, dname) {
                         tables[k][n] = new AST(NodeType.ATOM_UKNOWN, makeFresh(false));
                     renameMT[n] = applyMT(tables[k][n].clone());
                 }
+                if (!withProof)
+                    combiner.substitute(assertToAST(a), renameMT);
                 ass.mut_replaceByMatchTable(renameMT);
                 const res = ass.reduce();
                 if (res.asts.length)
@@ -395,53 +431,57 @@ export function combineRules(host, dname) {
         // 注意：saveContext保存的是props数组引用，clear()会原地清空该数组，
         // 因此模拟时先切换到全新的空context，结束再恢复，避免破坏调用方状态
         const saved = host.saveContext();
-        host.loadContext(host.createEmptyContext());
+        if (withProof)
+            host.loadContext(host.createEmptyContext());
         try {
-            host.clear();
-            // 添加断言（重命名后），冗余断言跳过
-            for (const a of assertions) {
-                try {
-                    host.hyp(assertToAST(a));
+            let steps = [];
+            if (withProof) {
+                host.clear();
+                // 添加断言（重命名后），冗余断言跳过
+                for (const a of assertions) {
+                    try {
+                        host.hyp(assertToAST(a));
+                    }
+                    catch (e) {
+                        if (e?.type === "assertNeverFail")
+                            continue;
+                        throw e;
+                    }
                 }
-                catch (e) {
-                    if (e?.type === "assertNeverFail")
+                // 添加条件hyp
+                const hyps = [];
+                for (let i = 0; i < args.length; i++) {
+                    if (argDs[i])
+                        hyps.push(argConds2[i].map(c => host.hyp(c.clone())));
+                    else
+                        hyps.push([host.hyp(fnConds2[i].clone())]);
+                }
+                // 应用各参数规则得到结论
+                const pcs = [];
+                for (let i = 0; i < args.length; i++) {
+                    if (!argDs[i]) {
+                        pcs.push(hyps[i][0]);
                         continue;
-                    throw e;
+                    }
+                    const rv = {};
+                    for (const [name] of argDs[i].replaceNames) {
+                        const fresh = tables[i + 1][name];
+                        rv[name] = fresh ? applyMT(fresh.clone()) : new AST(NodeType.ATOM_WFF, name);
+                    }
+                    pcs.push(host.d(argDs[i], hyps[i], rv));
                 }
-            }
-            // 添加条件hyp
-            const hyps = [];
-            for (let i = 0; i < args.length; i++) {
-                if (argDs[i])
-                    hyps.push(argConds2[i].map(c => host.hyp(c.clone())));
-                else
-                    hyps.push([host.hyp(fnConds2[i].clone())]);
-            }
-            // 应用各参数规则得到结论
-            const pcs = [];
-            for (let i = 0; i < args.length; i++) {
-                if (!argDs[i]) {
-                    pcs.push(hyps[i][0]);
-                    continue;
+                // 应用函数规则
+                const rvFn = {};
+                for (const [name] of fn.replaceNames) {
+                    const fresh = tables[0][name];
+                    rvFn[name] = fresh ? applyMT(fresh.clone()) : new AST(NodeType.ATOM_WFF, name);
                 }
-                const rv = {};
-                for (const [name] of argDs[i].replaceNames) {
-                    const fresh = tables[i + 1][name];
-                    rv[name] = fresh ? applyMT(fresh.clone()) : new AST(NodeType.ATOM_WFF, name);
-                }
-                pcs.push(host.d(argDs[i], hyps[i], rv));
+                const finalP = host.d(fn, pcs, rvFn);
+                if (!finalP.ast.equal(conclusion))
+                    throw HSError.combineConclusionMismatch;
+                steps = host.props.slice(0);
+                host.loadContext(saved);
             }
-            // 应用函数规则
-            const rvFn = {};
-            for (const [name] of fn.replaceNames) {
-                const fresh = tables[0][name];
-                rvFn[name] = fresh ? applyMT(fresh.clone()) : new AST(NodeType.ATOM_WFF, name);
-            }
-            const finalP = host.d(fn, pcs, rvFn);
-            if (!finalP.ast.equal(conclusion))
-                throw HSError.combineConclusionMismatch;
-            const steps = host.props.slice(0);
-            host.loadContext(saved);
             // nameMap：fn规则replaceNames原名 -> 组合后最终表达式，供外部把原rv键映射到组合后变量名
             const nameMap = {};
             for (const [name] of fn.replaceNames) {
@@ -544,10 +584,11 @@ export function combineRules(host, dname) {
             }
             for (const [k, v] of Object.entries(nameMap))
                 nameMap[k] = v.mut_replaceByMatchTable(renumMT);
-            return new Deduction(dependence, dname, assertions, conditions, conclusion, steps, nameMap);
+            return new Deduction(dependence, dname, assertions, conditions, conclusion, withProof ? steps : undefined, nameMap);
         }
         catch (e) {
-            host.loadContext(saved);
+            if (withProof)
+                host.loadContext(saved);
             throw e;
         }
     }

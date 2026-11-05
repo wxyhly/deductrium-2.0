@@ -16,6 +16,32 @@ const complete = (text, extra = {}, cursor = text.length) => completeCommand(tex
 const labels = xs => xs.map(x=>x.label);
 const apply = (text,item) => text.slice(0,item.start)+item.text+text.slice(item.end);
 
+test('derived previews use the completed whole rule name after matching and limiting candidates', () => {
+    const calls=[];
+    const previewRule=name=>{calls.push(name);return 'preview:'+name;};
+    for(const [text,cursor,expected] of [
+        ['d ca',4,'ca1'], ['vc<a',4,'vc<a1'], ['d c(a',5,'c(a1)'],
+        ['d mp(#,a',8,'mp(#,a1)'], ['d c(a2) $p',5,'c(a1)'],
+        ['hyp $p; d ca $q',12,'ca1'],
+    ]) {
+        calls.length=0;
+        const result=complete(text,{previewRule},cursor);
+        assert.equal(result[0].hint,'preview:'+expected,text);
+        assert.equal(result[0].hintType,'rule');
+        assert.equal(calls[0],expected);
+    }
+    const prompted=complete('ca',{previewRule,pending:{command:'d',argumentCount:0}});
+    assert.equal(prompted[0].hint,'preview:ca1');
+    calls.length=0;
+    complete('a',{previewRule});
+    complete('del zM',{previewRule});
+    complete('ca',{previewRule,pending:{command:'d',argumentCount:1}});
+    assert.deepEqual(calls,[],'ordinary rules, editing, and formula prompts need no generation');
+    const rules=Array.from({length:150},(_,i)=>({name:`z${i}`}));
+    complete('cz',{rules,previewRule});
+    assert.equal(calls.length,100,'only the displayed candidate limit is previewed');
+});
+
 test('idle rules and commands, stable order, case insensitive names',()=>{
     assert.deepEqual(labels(complete('a')),['a1','a2']);
     assert.deepEqual(labels(complete('ZMA')),['zMacro']);

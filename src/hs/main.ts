@@ -3,6 +3,7 @@ import { highlightHTML, SyntaxEditor, SyntaxViewer } from "../astrender.js";
 import { TreeListViewer, ListNode, makeResizable } from "../listmgr.js";
 import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, getCommandNames, ParamRequest } from "./gui/cmdmgr.js";
 import { CommandCompletion, CompletionEntry } from "./gui/completion.js";
+import { createRulePreview } from "./gui/rule-preview.js";
 import { AST, MatchTable } from "./core/ast.js";
 import { Deduction, Proposition } from "./core/deduction.js";
 import { HilbertSystem } from "./core/core.js";
@@ -419,7 +420,7 @@ export class HSLayer {
                 }
             };
             visit(this.ruleList);
-            return { commands: getCommandNames(), rules, targets, folders,
+            return { commands: getCommandNames(), rules, targets, folders, previewRule: createRulePreview(this.hilbertSystem),
                 pending: this.cmdEngine.getCompletionContext(), inspecting: this.navigator.active };
         });
 
