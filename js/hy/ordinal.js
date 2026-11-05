@@ -1,4 +1,3 @@
-import { TRC } from "../lang.js";
 // genOrd([1, 2, 3, 4, 3, 2, 2, 1, 2,3,4,2,3,4]);
 // printOrd([1, 2, 3, 3, 2, 2, 1, 2, 3, 2, 2,3]);
 // console.log(printOrd([1, 2, 3, 2, 3]));
@@ -241,6 +240,31 @@ export function printOrd(a) {
     return stringify(ast).replaceAll(/\+1\*/g, "+").replaceAll(/^1\*/g, "");
 }
 const branchTables = [null, [5], [5, 4], [5, 4, 3], [5, 4, 3, 2], [5, 4, 3, 2, 1]];
+const ordinalMessages = {
+    139: { zh: "我是程序化生成的\n你玩得过我？", en: "I'm procedurally generated.\nThink you can beat me?" },
+    149: { zh: "好了，我也不怕\n跟你撕破脸", en: "All right, I'm not afraid\nto take the gloves off." },
+    157: { zh: "走到天荒地老\n谁怕谁", en: "I can keep walking forever.\nBring it on." },
+    163: { zh: "xxx@163.com", en: "xxx@163.com" },
+    173: { zh: "我懒得理你了", en: "I can't be bothered\nwith you anymore." },
+    199: { zh: "都要破两百了\n有何感想？", en: "Almost two hundred.\nHow does it feel?" },
+    211: { zh: "985不是质数", en: "985 is not prime." },
+    223: { zh: "但233是质数", en: "But 233 is prime." },
+    233: { zh: "唉，算了\n看你这么无聊\n解锁个类型层\n的序数给你玩玩？", en: "Oh, all right.\nYou seem bored.\nHow about some ordinals\nin the type layer?" },
+    251: { zh: "想得美！\n继续走吧你", en: "In your dreams!\nKeep walking." },
+    277: { zh: "前进！不择手段地前进！", en: "Advance!\nBy any means necessary!" },
+    283: { zh: "走走走！", en: "Go, go, go!" },
+    313: { zh: "走走走！！", en: "Go, go, go!!" },
+    347: { zh: "请前往序数ω²3+ω4+7\n解锁序数类型", en: "Go to ordinal ω²3+ω4+7\nto unlock the ordinal type." },
+    349: { zh: "去那个那么小的序数\n你应该不在话下", en: "Such a tiny ordinal\nshould be easy for you." },
+    401: { zh: "恭喜你，步数破400！", en: "Congratulations!\nYou've passed 400 steps!" },
+    443: { zh: "过截角正五胞体，\n前进四！", en: "Pass the truncated 5-cell,\nthen move four tiles ahead!" },
+    577: { zh: "我一直在督促你回家", en: "I keep telling you\nto go home." },
+    911: { zh: "空袭预警！\n空袭预警！", en: "Air raid alert!\nAir raid alert!" },
+    1009: { zh: "恭喜你，步数破千！", en: "Congratulations!\nYou've passed a thousand steps!" },
+    1949: { zh: "中华人民共和国\n成立啦！", en: "The People's Republic\nof China is founded!" },
+    2027: { zh: "欢迎回到2027年！", en: "Welcome back to 2027!" },
+    8191: { zh: "恭喜你，到达了\n第五个梅森素数", en: "Congratulations!\nYou've reached the fifth\nMersenne prime." },
+};
 export function genOrdTiles(blockMap, nameMap, p, tile, ord, depth = 5) {
     depth += ord.length;
     let step = function (t, ord) {
@@ -262,31 +286,7 @@ export function genOrdTiles(blockMap, nameMap, p, tile, ord, depth = 5) {
                 if (prime) {
                     const nt = p.getNeighborAndDir(t, (n % 4 === 1) ? 0 : 3, true)[0];
                     blockMap.set(nt.join(","), {
-                        type: 0, text: TRC({
-                            "139": "我是程序化生成的\n你玩得过我？",
-                            "149": "好了，我也不怕\n跟你撕破脸",
-                            "157": "走到天荒地老\n谁怕谁",
-                            "163": "xxx@163.com",
-                            "173": "我懒得理你了",
-                            "199": "都要破两百了\n有何感想？",
-                            "211": "985不是质数",
-                            "223": "但233是质数",
-                            "233": "唉，算了\n看你这么无聊\n解锁个类型层\n的序数给你玩玩？",
-                            "251": "想得美！\n继续走吧你",
-                            "277": "前进！不择手段地前进！",
-                            "283": "走走走！",
-                            "313": "走走走！！",
-                            "347": "请前往序数ω²3+ω4+7\n解锁序数类型",
-                            "349": "去那个那么小的序数\n你应该不在话下",
-                            "401": "恭喜你，步数破400！",
-                            "443": "过截角正五胞体，\n前进四！",
-                            "577": "我一直在督促你回家",
-                            "911": "空袭预警！\n空袭预警！",
-                            "1009": "恭喜你，步数破千！",
-                            "1949": "中华人民共和国\n成立啦！",
-                            "2027": "欢迎回到2027年！",
-                            "8191": "恭喜你，到达了\n第五个梅森素数",
-                        }[n] ?? ""), name: undefined
+                        type: 0, text: ordinalMessages[n] ?? "", name: undefined
                     });
                 }
             }

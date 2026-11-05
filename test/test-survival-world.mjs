@@ -10,7 +10,7 @@ const { blockMap, nameMap, TileBlockType: Type } = await import('../js/hy/maploa
 const { LangMgr } = await import('../js/lang.js');
 const { HSParser } = await import('../js/hs/core/parser.js');
 const { initialCreativeRules, initialSurvivalRules } = await import('../js/hs/core/initial.js');
-const { calcMaxReachOrd, cmp, printOrd } = await import('../js/hy/ordinal.js');
+const { calcMaxReachOrd, cmp, printOrd, genOrdTiles } = await import('../js/hy/ordinal.js');
 const { Serde: HySerde } = await import('../js/hy/serde.js');
 const { Rotor } = await import('../js/hy/algebra.js');
 
@@ -464,4 +464,38 @@ test('w4234 grants the official ordinal through reward and repeated save restora
     game = makeGame(data);
     assert.equal(printOrd(game.maxOrd), 'ω^4*4+ω^3*4+ω^2*4');
     assert.deepEqual(game.nextOrd, calcMaxReachOrd(game.maxOrd, 15, false));
+});
+
+test('generated ordinal messages stay bilingual when switching language after generation', () => {
+    const game = makeGame();
+    const world = game.hyLayer.world;
+    const language = LangMgr.lang;
+    try {
+        for (const n of [139, 149, 157, 163, 173, 199, 211, 223, 233, 251, 277, 283, 313,
+            347, 349, 401, 443, 577, 911, 1009, 1949, 2027, 8191]) {
+            const blocks = new Map(), names = new Map();
+            genOrdTiles(blocks, names, world.atlasTile, [], Array(n).fill(1), -1);
+            const ordinal = blocks.get('');
+            assert.equal(ordinal.text, String(n));
+            assert.equal(ordinal.name, 'O' + Array(n).fill(1).join(','));
+            const message = [...blocks.values()].find(block => block !== ordinal);
+            assert.deepEqual(Object.keys(message.text).sort(), ['en', 'zh']);
+            assert(message.text.zh && message.text.en);
+            assert.doesNotMatch(message.text.en, /[\u4e00-\u9fff]/);
+            for (const lang of ['en', 'zh', 'en']) {
+                LangMgr.lang = lang;
+                assert.equal(world.onTileText(message), message.text[lang], `ordinal ${n}, ${lang}`);
+                assert.equal(world.onTileText(ordinal), String(n));
+            }
+            if (n === 347) {
+                assert.match(message.text.zh, /ω²3\+ω4\+7/);
+                assert.match(message.text.en, /ω²3\+ω4\+7/);
+            }
+        }
+        const blocks = new Map();
+        genOrdTiles(blocks, new Map(), world.atlasTile, [], Array(131).fill(1), -1);
+        assert.equal([...blocks.values()].find(block => block.text === '').type, Type.Road);
+    } finally {
+        LangMgr.lang = language;
+    }
 });
