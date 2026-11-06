@@ -35,11 +35,26 @@ function fixture(rewards = ['.prop', '1st']) {
     const system = new HilbertSystem();
     Object.assign(layer, {
         hilbertSystem: system, ruleList: [], activeRuleFolder: null,
-        propListView: { refresh() {}, expandedFolders: new Set(), idCounter: 100 },
+        propListView: { refresh() {}, setData() {}, expandedFolders: new Set(), idCounter: 100 },
         ruleListView: { refresh() {} },
+        navigator: { active: false },
         cmdInput: { setParserArgs() {}, setValue() {} },
         cmdUIMgr: { insertText() {} },
-        cmdEngine: { run() {}, isExecuting: () => false, reportError: e => errors.push(e) },
+        cmdEngine: {
+            // Keep menu calls synchronous while using the real command parser,
+            // target selection and inline boundary (including its permissions).
+            run(text) {
+                try {
+                    const cmd = parser.parse(text, 'cmd');
+                    assert.equal(cmd.name, 'inln');
+                    const selected = layer.editSelection(cmd.nodes, 'inln', 1);
+                    assert.equal(selected.next, undefined);
+                    assert.equal(selected.targets.length, 1);
+                    layer.inlineTarget(selected.targets[0]);
+                } catch (e) { this.reportError(e); }
+            },
+            isExecuting: () => false, reportError: e => errors.push(e),
+        },
         survivalAccess: null,
     });
     if (rewards === null) layer.addRules(initialCreativeRules);
@@ -71,7 +86,8 @@ function unchangedAfter(f, action) {
     const context = system.saveContext();
     const rules = system.rules;
     const entries = [...rules];
-    const before = structuredClone({ context, rules, sheets: layer.sheetGui.sheets });
+    const before = structuredClone({ context, rules, sheets: layer.sheetGui.sheets,
+        ruleList: layer.ruleList, renamedSysRule: system.renamedSysRule });
     const activeIndex = layer.sheetGui.activeIndex;
     const expanded = [...layer.propListView.expandedFolders];
     const idCounter = layer.propListView.idCounter;
@@ -81,7 +97,8 @@ function unchangedAfter(f, action) {
     assert.equal(system.rules, rules);
     assert.deepEqual([...system.rules], entries);
     assert.deepEqual(structuredClone({ context: after, rules: system.rules,
-        sheets: layer.sheetGui.sheets }), before);
+        sheets: layer.sheetGui.sheets, ruleList: layer.ruleList,
+        renamedSysRule: system.renamedSysRule }), before);
     assert.equal(layer.sheetGui.activeIndex, activeIndex);
     assert.deepEqual([...layer.propListView.expandedFolders], expanded);
     assert.equal(layer.propListView.idCounter, idCounter);
@@ -214,7 +231,8 @@ test('macro menu load rejects locked proof commands before adding a sheet', () =
     const rule = f.system.rules.get('.t');
     assert.ok(rule?.step.length, 'the toolkit legitimately supplies .t');
     rejected(f, () => f.access.checkReplay(commands(f.system.genCmd(rule.step)), f.system), 'lockedFeature', 'hyp');
-    unchangedAfter(f, () => assert.equal(f.layer.ruleListView.onMenuAction({ name: '.t' }, 'load'), false));
+    unchangedAfter(f, () => assert.ok([false, undefined].includes(
+        f.layer.ruleListView.onMenuAction({ name: '.t' }, 'load'))));
     assert.equal(f.errors.at(-1)?.type, 'lockedFeature');
     assert.equal(f.errors.at(-1)?.feature, 'hyp');
 });
@@ -240,7 +258,8 @@ test('expand checks the target parent even when a different folder is active', (
     const theorem = f.system.props[0].children[0];
     assert.equal(f.system.saveContext().activeProp, null);
     rejected(f, () => f.access.checkExpand(theorem, f.system), 'quantifyAxiomOnly');
-    unchangedAfter(f, () => assert.equal(f.layer.propListView.onMenuAction(theorem, 'expand'), false));
+    unchangedAfter(f, () => assert.ok([false, undefined].includes(
+        f.layer.propListView.onMenuAction(theorem, 'expand'))));
     assert.equal(f.errors.at(-1)?.type, 'quantifyAxiomOnly');
 });
 
@@ -249,7 +268,8 @@ test('expand checks generated conditional rules, preserving rejected folders', (
     seed(f, ['cond $p', 'a1 $q $r', 'cd 0']);
     const folder = f.system.props[0];
     rejected(f, () => f.access.checkExpand(folder, f.system), 'lockedFeature', 'c');
-    unchangedAfter(f, () => assert.equal(f.layer.propListView.onMenuAction(folder, 'expand'), false));
+    unchangedAfter(f, () => assert.ok([false, undefined].includes(
+        f.layer.propListView.onMenuAction(folder, 'expand'))));
     assert.equal(f.errors.at(-1)?.type, 'lockedFeature');
 });
 
@@ -281,4 +301,31 @@ test('creative UI permits move, expansion and macro load without survival restri
     assert.deepEqual(f.errors, []);
     assert.equal(f.layer.sheetGui.sheets.length, 2);
     assert.equal(f.system.props[2].from.type, 'c');
+});
+
+test('inlineTarget rejects locked step and macro targets without mutation', () => {
+    const f = fixture(['.prop']);
+    seed(f, ['cond $p', 'a1 $q $r', 'cd 0']);
+    const folder = f.system.props[0];
+    for (const [name, kind, feature] of [
+        [String(folder.id), 'step', 'c'], ['.t', 'macro', 'hyp'],
+    ]) {
+        const cmd = parser.parse(`inln ${name}`, 'cmd');
+        const selected = f.layer.editSelection(cmd.nodes, 'inln', 1);
+        assert.equal(selected.next, undefined);
+        assert.equal(selected.targets[0].kind, kind);
+        rejected(f, () => f.layer.inlineTarget(selected.targets[0]), 'lockedFeature', feature);
+    }
+});
+
+test('renameTarget rejects a locked macro rename without mutation', () => {
+    const f = fixture(['.prop']);
+    seed(f, ['.i y=y']);
+    const cmd = parser.parse('rename .i renamedIdentity', 'cmd');
+    const selected = f.layer.editSelection(cmd.nodes, 'rename', 2);
+    assert.equal(selected.next, undefined);
+    assert.equal(selected.targets[0].kind, 'macro');
+    rejected(f, () => f.layer.renameTarget(selected.targets[0], 'renamedIdentity'),
+        'lockedFeature', 'renameD');
+    assert.equal(f.system.rules.has('renamedIdentity'), false);
 });

@@ -30,6 +30,8 @@ export class SheetGui {
     restoreExpanded = () => { };
     // 操作守卫：命令执行中禁止切换/新建/删除；返回false则中断（守卫内部已上报错误）
     guard = () => true;
+    // Proof inspection displays a temporary context; saves must retain the original sheet.
+    contextForSave;
     constructor(hs) {
         this.hs = hs;
         this.container = document.getElementById('propSheetTabs');
@@ -123,6 +125,11 @@ export class SheetGui {
         const s = this.sheets[this.activeIndex];
         if (!s)
             return;
+        const original = this.contextForSave?.();
+        if (original) {
+            s.ctx = original;
+            return;
+        }
         s.ctx = this.hs.saveContext();
         s.pe = this.captureExpanded();
     }
@@ -140,8 +147,8 @@ export class SheetGui {
         this.restoreExpanded(target.pe);
         this.afterChange();
     }
-    addSheet() {
-        if (!this.guard())
+    addSheet(checkGuard = true) {
+        if (checkGuard && !this.guard())
             return;
         this.saveCurrentSheet();
         const sheet = this.newSheet();
@@ -184,6 +191,8 @@ export class SheetGui {
         this.afterChange();
     }
     renameSheet(index, name) {
+        if (!this.guard())
+            return;
         const s = this.sheets[index];
         if (!s)
             return;
@@ -548,6 +557,8 @@ export class SheetGui {
     }
     preventScroll = (e) => { e.preventDefault(); };
     startRename(index, tab) {
+        if (!this.guard())
+            return;
         const nameEl = tab.querySelector('.sheet-tab-name');
         if (!nameEl)
             return;

@@ -52,7 +52,8 @@ export class HilbertSystem {
         this.replvars = ctx.replvars;
     }
 
-    getD(dname: AST): Deduction {
+    // Formula previews use the same rule transformations without constructing proofs.
+    getD(dname: AST, withProof = true, previewWork?: (work: number) => void): Deduction {
         if (dname.type === NodeType.ATOM_DNAME) {
             let d = this.rules.get(dname.name);
             if (!d) {
@@ -73,7 +74,7 @@ export class HilbertSystem {
         if (dname.type === NodeType.NODE_DNAME) {
             try {
                 if (dname.name) {
-                    const d = this.getD(dname.nodes[0]);
+                    const d = this.getD(dname.nodes[0], withProof, previewWork);
                     if (!d) throw HSError.dname404(dname.nodes[0].toString());
                     if (dname.name === "c") {
                         const c = d.getNewReplName("wff");
@@ -84,7 +85,7 @@ export class HilbertSystem {
                         const conds = d.conditions.map(mapFn);
                         const conclusion = mapFn(d.conclusion);
                         // 生成 step（c:mp 写死、公理两步、有假设通用），失败则无 step
-                        const step = genConditionStep(this, d, c);
+                        const step = withProof ? genConditionStep(this, d, c) : undefined;
                         return new Deduction(d.dependence, dname, d.assertions, conds, conclusion, step);
                     }
                     if (dname.name === "v") {
@@ -96,7 +97,7 @@ export class HilbertSystem {
                         const conds = d.conditions.map(mapFn);
                         const conclusion = mapFn(d.conclusion);
                         // 生成 step（v:mp 写死、公理无 step、有假设通用），失败则无 step
-                        const step = genQuantStep(this, d, c);
+                        const step = withProof ? genQuantStep(this, d, c) : undefined;
                         return new Deduction(d.dependence, dname, d.assertions, conds, conclusion, step);
                     }
                     if (dname.name === "u") {
@@ -127,7 +128,7 @@ export class HilbertSystem {
                         const conds = d.conditions.map(cc => cc.clone());
                         const conclusion = mapFn(d.conclusion);
                         // 生成 step（<a6 加量词 + v:d），失败则无 step
-                        const step = genUnivStep(this, assertions, d, c);
+                        const step = withProof ? genUnivStep(this, assertions, d, c) : undefined;
                         return new Deduction(d.dependence, dname, assertions, conds, conclusion, step);
                     }
                     if (dname.name === "<") {
@@ -136,6 +137,7 @@ export class HilbertSystem {
                         // 保持原 replNames 不变（不做 fresh 重命名）：<d: 条件+原A，结论=原B
                         const conds = d.conditions.map(c => c.clone());
                         conds.push(A.clone());
+                        if (!withProof) return new Deduction(d.dependence, dname, d.assertions, conds, B.clone());
                         // step：hyp 各条件 → hyp A → d <d>（rv 默认自身）→ mp
                         const saved = this.saveContext();
                         this.loadContext(this.createEmptyContext());
@@ -172,7 +174,7 @@ export class HilbertSystem {
                         const c = conds.pop()!;
                         const conc = new AST(NodeType.LOGIC, ">", c, d.conclusion.clone());
                         // 生成step（演绎元定理）：最后条件变cond，其余步骤放进cond层级，失败则无step
-                        const step = this.genDeductStep(d, c);
+                        const step = withProof ? this.genDeductStep(d, c) : undefined;
                         return new Deduction(d.dependence, dname, d.assertions, conds, conc, step);
                     }
                     if (dname.name === "e") {
@@ -190,7 +192,7 @@ export class HilbertSystem {
                     // 如args是[r1,r2,#,r3]表示组合规则r1(r2,#,r3)：把r2和r3的结论去匹配r1的第一个、第三个条件，
                     // 这样把r2的所有条件、r1的第二个条件（#）、r3的所有条件放一起，就能复合，推出r1的结论。
                     // 具体求解逻辑在 combine.ts 的 combineRules。
-                    return combineRules(this, dname);
+                    return combineRules(this, dname, withProof, previewWork);
                 }
             } catch (e) {
                 // 具体规则生成函数只抛局部异常（如 genStepFail 不带规则名前缀）；
