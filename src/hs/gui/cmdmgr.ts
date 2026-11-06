@@ -43,6 +43,10 @@ export function getCommand(name: string): CommandDefinition | undefined {
     return registry.get(name);
 }
 
+export function clearCommands() {
+    registry.clear();
+}
+
 export interface CommandFragment {
     text: string;   // 原始文本（用于回退显示）
     ast: AST;       // 解析后的 CMD 节点（name 不为空）
