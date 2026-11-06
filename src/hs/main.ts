@@ -1,7 +1,9 @@
 import { HSParser } from "./core/parser.js";
 import { highlightHTML, SyntaxEditor, SyntaxViewer } from "../astrender.js";
 import { TreeListViewer, ListNode, makeResizable } from "../listmgr.js";
-import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, clearCommands, ParamRequest } from "./gui/cmdmgr.js";
+import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, clearCommands, getCommandNames, ParamRequest } from "./gui/cmdmgr.js";
+import { CommandCompletion, CompletionEntry } from "./gui/completion.js";
+import { createRulePreview } from "./gui/rule-preview.js";
 import { AST, MatchTable } from "./core/ast.js";
 import { Deduction, Proposition } from "./core/deduction.js";
 import { HilbertSystem } from "./core/core.js";
@@ -15,6 +17,9 @@ import { SheetGui } from "./gui/sheet.js";
 import { initialCreativeRules, initialSurvivalRules } from "./core/initial.js";
 import { SurvivalAccess } from "./access.js";
 import { getSurvivalRules } from "./rewards.js";
+import { checkDeletion, deleteSelection, planDeletion, DeletionPlan } from "./editing.js";
+import { EditingTarget, findTargets, targetAtom, targetList } from "./targets.js";
+import { ProofNavigator } from "./proof-navigation.js";
 
 // a/d 开头的公理规则在存档中只存名称占位（name:ax:.），内容以初始定义为准：
 // 这样存档体积小、作者更新 init 规则后玩家无需重置存档。
@@ -43,6 +48,9 @@ export class HSLayer {
     private cmdUIMgr: CommandUIManager;
     private serde = new Serde(this, this.hilbertSystem, this.ruleList, this.propListView, this.ruleListView);
     private sheetGui = new SheetGui(this.hilbertSystem);
+    private navigator = new ProofNavigator(this.hilbertSystem, () => this.refreshInspection());
+    private inspectionExpanded: Set<number> | null = null;
+    private inspectionRuleExpanded: Set<number> | null = null;
     onchange?: () => void;
     private survivalAccess: SurvivalAccess | null = null;
     private lastGateAST: AST | null = null;
@@ -124,6 +132,7 @@ export class HSLayer {
         return false;
     }
     constructor() {
+        this.ruleListView.allowDrop = () => !this.cmdEngine.isExecuting() && !this.navigator.active;
 
         // 规则表
         this.ruleListView.renderExtra = it => {
@@ -140,13 +149,14 @@ export class HSLayer {
         };
         this.ruleListView.renderName = it => it.children ? "" : it.name;
         this.ruleListView.onRename = (r, name) => {
+            if (this.navigator.active) return false;
             if (r.children) return true;
             if (this.survivalAccess && !this.survivalAccess.rewards.has("renameD")) {
                 this.cmdEngine.reportError(HSError.lockedFeature("renameD"));
                 return false;
             }
             if (!name?.trim()) return false;
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
+            if (this.cmdEngine.isExecuting() || this.navigator.active) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
             try { this.hilbertSystem.renameD(r.name, name) } catch (e) { this.cmdEngine.reportError(e as any); return false; };
             // 推理表各sheet里引用该规则的步骤也要同步改名（renameD只改了规则表的step）
             this.sheetGui.saveCurrentSheet(); // 保证当前sheet ctx最新
@@ -176,13 +186,14 @@ export class HSLayer {
                 arr.push({ label: LangMgr.text.delete, action: "delete", icon: '🗑️', danger: true });
             } else if (rule?.step) {
                 arr.push({ label: LangMgr.text.loadMacro, action: "load", icon: '📥' },);
+                arr.push({ label: LangMgr.text.inspectProof, action: "inspect", icon: '🔎' });
                 arr.push({ label: LangMgr.text.copyCode, action: "copy", icon: '📋' },);
                 arr.push({ label: LangMgr.text.delete, action: "delete", icon: '🗑️', danger: true });
             }
             return arr;
         };
         this.ruleListView.onMenuAction = (r, action) => {
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return; }
+            if (this.cmdEngine.isExecuting() || this.navigator.active) { this.cmdEngine.reportError(HSError.cmdIsRunning); return; }
             if (action === "setActiveFolder" || action === "clearActiveFolder") {
                 // 清除所有文件夹的 active 标记，再设置/取消目标
                 const clearAll = (list: ListNode[]) => {
@@ -208,33 +219,23 @@ export class HSLayer {
                 this.cmdEngine.reportError(HSError.expandFail(HSError.errRuleUsed(r.name, rule.error.cause)));
                 this.cmdInput.setValue(rule.error.cmds || "");
             } else if (action === "delete") {
-                if (this.ruleListView.deleteNode(r.uuid)) {
-                    if (r === this.activeRuleFolder) this.activeRuleFolder = null;
-                    this.hilbertSystem.rules.delete(r.name);
-                    this.ruleListView.refresh();
-                }
+                if (r.children) {
+                    const names: string[] = [];
+                    const collect = (nodes: ListNode[]) => { for (const n of nodes) { if (n.children) collect(n.children); else names.push(n.name); } };
+                    collect(r.children);
+                    if (names.length) this.cmdEngine.run("del " + names.join(","));
+                    else { this.ruleListView.deleteNode(r.uuid); if (r === this.activeRuleFolder) this.activeRuleFolder = null; this.ruleListView.refresh(); }
+                } else this.cmdEngine.run("del " + r.name);
             } else if (action === "load") {
-                const step = this.hilbertSystem.rules.get(r.name)!.step!;
-                const cmds = this.hilbertSystem.genCmd(step).map(e => new HSParser().parse(e, "cmd"));
-                try { this.survivalAccess?.checkReplay(cmds, this.hilbertSystem); }
-                catch (e) { this.cmdEngine.reportError(e as HSErrorInfo); return false; }
-                if (this.hilbertSystem.props.length) {
-                    this.sheetGui.addSheet();
-                    // 把名称设为当前规则名，方便用户识别
-                    this.sheetGui.sheets[this.sheetGui.activeIndex].name = r.name;
-                    this.sheetGui.render();
-                }
-                // 重放规则step的cmd生成全新props：不直接共享step的Proposition引用
-                // （后续在推理表中expand会修改命题对象，若与规则step共享会导致规则自身被污染）；
-                // fromCmd会重新走addP/d()创建对象，跨c/v层级的依赖也由cd命令正确重建
-                this.hilbertSystem.fromCmd(cmds);
-                this.hilbertSystem.updatePropIdx();
-                this.propListView.refresh();
+                this.cmdEngine.run("inln " + r.name);
+            } else if (action === "inspect") {
+                this.cmdEngine.run("entr " + r.name);
             } else if (action === "copy") {
                 this.cmdInput.setValue(this.hilbertSystem.genCmd(this.hilbertSystem.rules.get(r.name)!.step!).join(";"));
             }
         }
         document.getElementById("ruleAddFolder")!.addEventListener("click", () => {
+            if (this.navigator.active) { this.cmdEngine.reportError(HSError.cmdIsRunning); return; }
             if (this.survivalAccess && !this.survivalAccess.rewards.has("mkdir")) {
                 this.cmdEngine.reportError(HSError.lockedFeature("mkdir"));
                 return;
@@ -257,7 +258,7 @@ export class HSLayer {
         this.propListView.renderName = it => it.name || String(it.id);
         this.propListView.wideToggleFolderRange = it => it.from.type === "f";
         this.propListView.allowDrop = (src, dst, pos) => {
-            if (this.cmdEngine.isExecuting()) return false;
+            if (this.cmdEngine.isExecuting() || this.navigator.active) return false;
             const scope = !dst ? src.parent : pos === "inside" ? dst : dst.parent;
             try { this.survivalAccess?.checkMove(src, scope, this.hilbertSystem); }
             catch { return false; }
@@ -339,9 +340,10 @@ export class HSLayer {
             return span;
         };
         this.propListView.onRename = (p, name) => {
+            if (this.navigator.active) return false;
             if (name === "") return true;
             if (!name?.trim()) return false;
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
+            if (this.cmdEngine.isExecuting() || this.navigator.active) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
             try { this.hilbertSystem.checkPname(name); } catch (e) { this.cmdEngine.reportError(e as HSErrorInfo); return false; }
             return true;
         };
@@ -359,6 +361,7 @@ export class HSLayer {
                     const isMcnt = dname.type === NodeType.ATOM_DNAME && dname.name === "mcnt";
                     if (isMcpt || isMsbt || isMcnt || this.hilbertSystem.getD(dname).step?.length) {
                         arr.push({ label: LangMgr.text.expand, action: "expand", icon: '🔧' });
+                        arr.push({ label: LangMgr.text.inspectProof, action: "inspect", icon: '🔎' });
                     }
                 } catch { }
             } else if (p.from.type === "f" || p.from.type === "c" || p.from.type === "v") {
@@ -376,29 +379,13 @@ export class HSLayer {
             return arr;
         };
         this.propListView.onMenuAction = (p, action) => {
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return; }
+            if (this.cmdEngine.isExecuting() || this.navigator.active) { this.cmdEngine.reportError(HSError.cmdIsRunning); return; }
             if (action === "delete") {
-                try {
-                    this.hilbertSystem.delP(p);
-                    this.propListView.refresh();
-                } catch (e) {
-                    this.cmdEngine.reportError(e as HSErrorInfo);
-                    return false;
-                }
+                this.cmdEngine.run("del " + p.id);
             } else if (action === "expand") {
-                try {
-                    this.survivalAccess?.checkExpand(p, this.hilbertSystem);
-                    const newFolders = this.hilbertSystem.expand(p) || [];
-                    // 肢解新建的文件夹默认展开，避免全部收起
-                    for (const f of newFolders) {
-                        if (!f.uuid) f.uuid = this.propListView.idCounter++;
-                        this.propListView.expandedFolders.add(f.uuid);
-                    }
-                    this.propListView.refresh();
-                } catch (e) {
-                    this.cmdEngine.reportError(e as HSErrorInfo);
-                    return false;
-                }
+                this.cmdEngine.run("inln " + p.id);
+            } else if (action === "inspect") {
+                this.cmdEngine.run("entr " + p.id);
             } else if (action === "setActiveFolder") {
                 try {
                     this.hilbertSystem.cd(p);
@@ -419,15 +406,21 @@ export class HSLayer {
         }
         // 规则表文件夹收起时若取消活动文件夹，同步清 activeRuleFolder（否则菜单状态不更新）
         this.ruleListView.onFolderActiveCancel = () => {
+            if (this.navigator.active) {
+                if (this.activeRuleFolder) this.activeRuleFolder.active = true;
+                if (this.inspectionRuleExpanded) this.ruleListView.expandedFolders = new Set(this.inspectionRuleExpanded);
+                return;
+            }
             this.activeRuleFolder = null;
         }
 
         // 命令栏
         makeResizable(document.getElementById("cmdFooter")!, document.getElementById("cmdResizeHandle")!, true);
         const executeBtn = document.getElementById('cmd-ok-btn')!;
-        executeBtn.addEventListener('click', () => this.cmdEngine.run(this.cmdInput.getValue()));
+        let completion: CommandCompletion;
+        executeBtn.addEventListener('click', () => { completion.hide(); this.cmdEngine.run(this.cmdInput.getValue()); });
         const escBtn = document.getElementById('cmd-esc-btn')!;
-        escBtn.addEventListener('click', () => this.cmdEngine.handleEsc());
+        escBtn.addEventListener('click', () => { completion.hide(); this.cmdEngine.handleEsc(); });
         this.cmdUIMgr = new CommandUIManager(
             this.cmdEngine, this.cmdInput,
             document.getElementById('cmd-error')! as HTMLDivElement,
@@ -435,15 +428,63 @@ export class HSLayer {
             // 命令结束/取消时清除列表行的点击回调（d命令选择模式专用）
             // 空闲时（命令状态为空）点规则表行 = 直接执行 d 规则名，等待用户输入参数
             () => {
+                completion?.hide();
                 this.propListView.onRowClick = () => { };
-                this.ruleListView.onRowClick = r => { if (!(r as any).children) this.cmdEngine.run(r.name); };
+                this.ruleListView.onRowClick = r => { if (!r.children) this.cmdEngine.run((this.navigator.active ? "entr " : "") + r.name); };
+                if (this.navigator.active) {
+                    this.propListView.onRowClick = p => this.cmdEngine.run("entr " + p.id);
+                    this.cmdEngine.ui.showPrompt(LangMgr.text.editInspect, "entr ");
+                }
             }
         );
+        completion = new CommandCompletion(this.cmdInput, document.getElementById('hs-cmd-input')!, () => {
+            const targets: CompletionEntry[] = [];
+            const folders: CompletionEntry[] = [];
+            const steps = (props: Proposition[]) => {
+                for (const prop of props) {
+                    const entry: Omit<CompletionEntry, "name"> = { hint: prop.ast.toString(),
+                        hintType: prop.ast.type === NodeType.ASSERT ? "assert" : prop.from.type === "v" ? "item" : prop.from.type === "f" ? "name" : "wff",
+                        expandable: prop.from.type === "d", inlinable: ["d", "f", "c", "v"].includes(prop.from.type) };
+                    targets.push({ name: String(prop.id), ...entry });
+                    if (prop.name) targets.push({ name: prop.name, ...entry });
+                    if (prop.children) steps(prop.children);
+                }
+            };
+            steps(this.hilbertSystem.props);
+            const rules = [...this.hilbertSystem.rules].map(([name, rule]) => {
+                const entry: CompletionEntry = { name, kind: "D", hint: rule.toString(), hintType: "rule", expandable: !!rule.step?.length && !rule.error,
+                    derived: rule.error ? undefined : { conditions: rule.conditions.length, implication: rule.conclusion.type === NodeType.LOGIC && rule.conclusion.name === ">" } };
+                if (rule.step || rule.error) targets.push(entry);
+                return entry;
+            });
+            const visit = (nodes: ListNode[]) => {
+                for (const node of nodes) if (node.children) {
+                    folders.push({ name: node.name });
+                    visit(node.children);
+                }
+            };
+            visit(this.ruleList);
+            return { commands: getCommandNames(), rules, targets, folders, previewRule: createRulePreview(this.hilbertSystem),
+                pending: this.cmdEngine.getCompletionContext(), inspecting: this.navigator.active };
+        });
 
         // 推理表sheet：SheetGui内部处理全部sheet操作，HSLayer只注入刷新/变更/守卫/展开状态回调
         this.sheetGui.guard = () => {
-            if (this.cmdEngine.isExecuting()) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
+            if (this.cmdEngine.isExecuting() || this.navigator.active) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
             return true;
+        };
+        this.sheetGui.contextForSave = () => this.navigator.rootContext;
+        this.cmdEngine.onIdleEscape = () => {
+            if (!this.navigator.active) return false;
+            this.navigator.back();
+            if (!this.navigator.active) this.cmdEngine.ui.setClearState();
+            else this.cmdEngine.ui.showPrompt(LangMgr.text.editInspect, "entr ");
+            this.cmdInput.setValue(this.navigator.active ? "entr " : "");
+            return true;
+        };
+        this.cmdEngine.transformInput = input => this.navigator.active && !/\s|;/.test(input.trim()) && input.trim() !== "entr" ? "entr " + input.trim() : input;
+        this.cmdEngine.beforeCommand = name => {
+            if (this.navigator.active && name !== "entr") throw HSError.cmdIsRunning;
         };
         this.sheetGui.onRefresh = () => this.propListView.setData(this.hilbertSystem.props);
         this.sheetGui.onChange = () => this.onchange?.();
@@ -512,7 +553,160 @@ export class HSLayer {
         if (rules) this.addRules(rules);
         this.refreshRewardUI();
     }
+    private refreshInspection() {
+        if (this.navigator.active && !this.inspectionExpanded) {
+            this.inspectionExpanded = new Set(this.propListView.expandedFolders);
+            this.inspectionRuleExpanded = new Set(this.ruleListView.expandedFolders);
+        }
+        if (!this.navigator.active && this.inspectionExpanded) {
+            this.propListView.expandedFolders = this.inspectionExpanded;
+            this.inspectionExpanded = null;
+            this.ruleListView.expandedFolders = this.inspectionRuleExpanded!;
+            this.inspectionRuleExpanded = null;
+            this.ruleListView.refresh();
+        }
+        this.propListView.setData(this.hilbertSystem.props);
+        this.propListView.onRowClick = this.navigator.active ? p => this.cmdEngine.run("entr " + p.id) : () => { };
+        this.ruleListView.onRowClick = r => { if (!r.children) this.cmdEngine.run((this.navigator.active ? "entr " : "") + r.name); };
+    }
+    private editingChoices = new WeakMap<AST, EditingTarget>();
+    private editingConfirmations = new WeakMap<AST, { plan: DeletionPlan; contexts: import("./core/core.js").HSContext[] }>();
+    private editRequest(prompt: string, parse: (text: string) => AST = targetAtom): ParamRequest {
+        this.cmdInput.setParserArgs("name");
+        return { prompt, default: "", parse: text => {
+            try {
+                if (!text.trim()) throw HSError.emptyValue;
+                return { success: true, value: parse(text.trim()) };
+            } catch (e) { return { success: false, error: typeof e === "string" || e instanceof Error ? HSError.unknownCmd(String(e)) : e as HSErrorInfo }; }
+        } };
+    }
+    private editSelection(args: AST[], operation: "del" | "rename" | "inln" | "entr", choiceStart: number): { targets: EditingTarget[]; next?: ParamRequest; end: number } {
+        const names = operation === "del" ? targetList(args[0].name) : [args[0].name];
+        if (operation !== "del" && /,/.test(names[0]) && !/\(/.test(names[0])) throw LangMgr.text.editSingle;
+        const targets: EditingTarget[] = [];
+        let index = choiceStart;
+        for (const name of names) {
+            const candidates = findTargets(this.hilbertSystem, this.ruleList, name, operation);
+            if (!candidates.length) throw HSError.pname404(name);
+            if (candidates.length === 1) { targets.push(candidates[0]); continue; }
+            const selected = args[index++];
+            if (selected) {
+                const target = this.editingChoices.get(selected);
+                if (!target || !candidates.some(c => c.kind === target.kind && (c.kind !== "folder" || c.node === (target as { node: ListNode }).node) && (c.kind !== "step" || c.step === (target as { step: Proposition }).step))) throw LangMgr.text.editAnswer;
+                targets.push(target);
+            } else {
+                const labels = candidates.map((c, i) => `${i + 1}: ${LangMgr.text[c.kind === "step" ? "editStep" : c.kind === "macro" ? "editMacro" : "editFolder"]}${c.kind === "step" ? ` ${c.step.id}` : c.kind === "folder" ? ` #${c.node.uuid}` : ""}`).join("; ");
+                const displayName = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                return { targets, end: index, next: this.editRequest(`${displayName}: ${LangMgr.text.editChoice}${labels}`, text => {
+                    const number = Number(text);
+                    if (!Number.isInteger(number) || number < 1 || number > candidates.length) throw LangMgr.text.editAnswer;
+                    const atom = targetAtom(text); this.editingChoices.set(atom, candidates[number - 1]); return atom;
+                }) };
+            }
+        }
+        return { targets, end: index };
+    }
+    private editingContexts() {
+        this.sheetGui.saveCurrentSheet();
+        return this.sheetGui.sheets.map(s => s.ctx);
+    }
+    private finishDeletion(plan: DeletionPlan, contexts: import("./core/core.js").HSContext[]) {
+        deleteSelection(this.hilbertSystem, plan, contexts);
+        const prune = (nodes: ListNode[]) => {
+            for (let i = nodes.length - 1; i >= 0; i--) {
+                if (nodes[i].children) prune(nodes[i].children!);
+                else if (plan.macros.has(nodes[i].name)) nodes.splice(i, 1);
+            }
+        };
+        prune(this.ruleList);
+        this.propListView.setData(this.hilbertSystem.props);
+        this.ruleListView.refresh();
+    }
+    private inlineTarget(target: EditingTarget) {
+        if (target.kind === "step") {
+            this.survivalAccess?.checkExpand(target.step, this.hilbertSystem);
+            const folders = this.hilbertSystem.expand(target.step) || [];
+            for (const f of folders) { if (!f.uuid) f.uuid = this.propListView.idCounter++; this.propListView.expandedFolders.add(f.uuid); }
+        } else {
+            const rule = this.hilbertSystem.getD(new HSParser().parse(target.name, "dname"));
+            if (!rule.step || rule.error) throw HSError.atomicStep(rule.name);
+            const commands = this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd"));
+            this.survivalAccess?.checkReplay(commands, this.hilbertSystem);
+            // Validate in isolation before opening a new sheet or mutating the current proof.
+            const check = new HilbertSystem(); check.rules = new Map(this.hilbertSystem.rules);
+            check.fromCmd(commands);
+            if (this.hilbertSystem.props.length) {
+                this.sheetGui.addSheet(false);
+                this.sheetGui.sheets[this.sheetGui.activeIndex].name = target.name;
+                this.sheetGui.render();
+            }
+            this.hilbertSystem.loadContext(check.saveContext());
+        }
+        this.propListView.setData(this.hilbertSystem.props);
+    }
+    private renameTarget(target: EditingTarget, name: string) {
+        if (!name.trim() || /[;\n,]/.test(name)) throw HSError.invalidPropName;
+        if (target.kind === "step") {
+            if (target.step.name !== name) this.hilbertSystem.checkPname(name);
+            target.step.name = name;
+        } else if (target.kind === "folder") {
+            target.node.name = name;
+        } else {
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("renameD")) throw HSError.lockedFeature("renameD");
+            const old = target.name;
+            const contexts = this.editingContexts();
+            this.hilbertSystem.renameD(old, name);
+            for (const ctx of contexts) this.hilbertSystem.renameDnameInProps(ctx.props, old, name);
+            const rename = (nodes: ListNode[]) => { for (const node of nodes) { if (node.children) rename(node.children); else if (node.name === old) node.name = name; } };
+            rename(this.ruleList);
+        }
+        this.hilbertSystem.updatePropIdx();
+        this.propListView.refresh(); this.ruleListView.refresh();
+    }
+    private unlockEditingCommands() {
+        defineCommand("del", args => {
+            if (!args.length) return this.editRequest(LangMgr.text.editTargets);
+            const selected = this.editSelection(args, "del", 1);
+            if (selected.next) return selected.next;
+            if (args.length > selected.end + 1) throw LangMgr.text.editAnswer;
+            if (args.length === selected.end + 1) {
+                if (!this.editingConfirmations.has(args[selected.end])) throw LangMgr.text.editAnswer;
+                return null;
+            }
+            const contexts = this.editingContexts();
+            const plan = planDeletion(this.hilbertSystem, selected.targets.flatMap(t => t.kind === "step" ? [t.step] : []), selected.targets.flatMap(t => t.kind === "macro" ? [t.name] : []));
+            checkDeletion(this.hilbertSystem, plan, contexts);
+            const prompt = LangMgr.text.editConfirm.replace("{steps}", String(plan.steps.size)).replace("{macros}", String(plan.macros.size));
+            return this.editRequest(prompt, text => {
+                if (!/^[yn]$/i.test(text)) throw LangMgr.text.editAnswer;
+                const answer = targetAtom(text.toLowerCase()); this.editingConfirmations.set(answer, { plan, contexts }); return answer;
+            });
+        }, args => {
+            const answer = args[args.length - 1];
+            const confirmation = this.editingConfirmations.get(answer);
+            if (!confirmation) throw LangMgr.text.editAnswer;
+            if (answer.name === "y") this.finishDeletion(confirmation.plan, confirmation.contexts);
+        });
+        for (const operation of ["inln", "entr", "rename"] as const) defineCommand(operation, args => {
+            if (!args.length) return this.editRequest(LangMgr.text.editTarget);
+            if (operation === "rename" && args.length === 1) return this.editRequest(LangMgr.text.plsEnterNewProp);
+            const selected = this.editSelection(args, operation, operation === "rename" ? 2 : 1);
+            if (selected.next) return selected.next;
+            if (args.length !== selected.end) throw LangMgr.text.editSingle;
+            return null;
+        }, args => {
+            const target = this.editSelection(args, operation, operation === "rename" ? 2 : 1).targets[0];
+            if (operation === "inln") this.inlineTarget(target);
+            else if (operation === "rename") this.renameTarget(target, args[1].name);
+            else {
+                this.sheetGui.saveCurrentSheet();
+                if (target.kind === "step") this.navigator.enterStep(target.step);
+                else this.navigator.enterRule(new HSParser().parse(target.name, "dname"));
+            }
+        });
+    }
     unlockBasicPropCmd() {
+        this.unlockEditingCommands();
         defineCommand('b', () => null, async () => {
             this.hilbertSystem.b();
             this.propListView.refresh();
@@ -527,7 +721,7 @@ export class HSLayer {
                 SyntaxViewer.onClickAst = null;
                 // 点击规则表行 = 把规则名作为参数继续（相当于输入 d <规则名>，立即进入下一步）
                 this.propListView.onRowClick = () => { };
-                this.ruleListView.onRowClick = r => { if (!(r as any).children) this.cmdEngine.run(r.name); };
+                this.ruleListView.onRowClick = r => { if (!r.children) this.cmdEngine.run(r.name); };
 
                 return {
                     prompt: LangMgr.text.plsEnterRuleName, default: "", parse: e => {
@@ -625,30 +819,6 @@ export class HSLayer {
                 (e, idx) => [deduction.replaceNames[idx][0], e])
             );
             this.hilbertSystem.d(deduction, conds, replaceValues);
-            this.propListView.refresh();
-        });
-        defineCommand('del', (args: AST[]) => {
-            if (args.length === 0) {
-                this.cmdInput.setParserArgs("item");
-                return {
-                    prompt: LangMgr.text.plsEnterProp, default: "", parse: e => {
-                        let ast: AST;
-                        try {
-                            ast = new HSParser().parse(e, "wff");
-                            return { success: true, value: ast };
-                        } catch (e) {
-                            return { success: false, error: e as HSErrorInfo }
-                        }
-                    }
-                };
-            }
-            return null;
-        }, async (args) => {
-            if (!args[0]) throw HSError.emptyValue;
-            const n = args[0].name;
-            const p = this.hilbertSystem.getP(n);
-            if (!p) throw HSError.pname404(n);
-            this.hilbertSystem.delP(p);
             this.propListView.refresh();
         });
         defineCommand('name', (args: AST[]) => {
@@ -1105,5 +1275,5 @@ export class HSLayer {
         this.ruleListView.refresh();
     }
     serialize() { return this.serde.serialize() }
-    deserialize(data: any) { return this.serde.deserialize(data) }
+    deserialize(data: any) { this.navigator.close(); return this.serde.deserialize(data) }
 }
