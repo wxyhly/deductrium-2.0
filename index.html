@@ -4,6 +4,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0" />
     <meta charset="UTF-8">
     <title>Deductrium-2.0</title>
+    <script src="js/theme.js"></script>
     <link href="style/layer.css" rel="stylesheet" type="text/css">
     <link href="style/main.css" rel="stylesheet" type="text/css">
     <link href="style/token.css" rel="stylesheet" type="text/css">
@@ -13,6 +14,7 @@
     <link href="style/progress.css" rel="stylesheet" type="text/css">
     <link href="style/tt.css" rel="stylesheet" type="text/css">
     <link href="style/rl.css" rel="stylesheet" type="text/css">
+    <link href="style/theme.css" rel="stylesheet" type="text/css">
 </head>
 <script src="lib/lz-string.min.js"></script>
 <script src="js/rl/main.js" type="module"></script>
@@ -27,6 +29,14 @@
             <button data-layer="T-layer" class="hide" data-i18n="layerT">类型层</button>
             <button data-layer="P-layer" class="hide" data-i18n="layerP">进度层</button>
         </div>
+        <label class="theme-control">
+            <span data-i18n="theme">主题</span>
+            <select id="theme-select">
+                <option value="auto" data-i18n="themeAuto">跟随系统</option>
+                <option value="light" data-i18n="themeLight">白天</option>
+                <option value="dark" data-i18n="themeDark">黑夜</option>
+            </select>
+        </label>
     </div>
     <div id="loading">加载中…</div>
     <div id="pg-toast-container"></div>

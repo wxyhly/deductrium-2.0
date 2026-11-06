@@ -1,6 +1,7 @@
 import { TRC1 } from "../lang.js";
 import { Hvec, Quaternion, Rotor } from "./algebra.js";
 import { HoroRect, Polygon } from "./tiling.js";
+import { getMapPalette } from "./palette.js";
 
 export class LocalDraw {
     lineStep = 5;
@@ -124,6 +125,7 @@ export class LocalDraw {
     rotorL = Quaternion.rand();
     rotorR = Quaternion.rand();
     drawPlayer() {
+        const edges = getMapPalette().edges;
         this.ctxt.beginPath();
         this.ctxt.arc(this.canvas.width / 2, this.canvas.height / 2, 10 * window.devicePixelRatio, 0, Math.PI * 2);
         this.ctxt.fill();
@@ -145,7 +147,7 @@ export class LocalDraw {
         });
         this.ctxt.lineWidth = 1.5 * window.devicePixelRatio;
         if (change) {
-            this.ctxt.strokeStyle = "rgba(255,70,50,0.5)";
+            this.ctxt.strokeStyle = edges[0];
             this.ctxt.beginPath();
             for (const [a, b] of this.edges1) {
                 this.ctxt.moveTo(ps[a][0], ps[a][1]);
@@ -153,7 +155,7 @@ export class LocalDraw {
             }
             this.ctxt.stroke();
 
-            this.ctxt.strokeStyle = "rgba(0,0,255,1)";
+            this.ctxt.strokeStyle = edges[1];
             this.ctxt.beginPath();
             for (const [a, b] of this.edges2) {
                 this.ctxt.moveTo(ps[a][0], ps[a][1]);
@@ -161,7 +163,7 @@ export class LocalDraw {
             }
             this.ctxt.stroke();
 
-            this.ctxt.strokeStyle = "rgba(0,180,0,0.3)";
+            this.ctxt.strokeStyle = edges[2];
             this.ctxt.beginPath();
             for (const [a, b] of this.edges3) {
                 this.ctxt.moveTo(ps[a][0], ps[a][1]);
@@ -169,7 +171,7 @@ export class LocalDraw {
             }
             this.ctxt.stroke();
         } else {
-            this.ctxt.strokeStyle = "rgba(0,170,0,0.4)";
+            this.ctxt.strokeStyle = edges[3];
             this.ctxt.beginPath();
             for (const [a, b] of this.edgesA) {
                 this.ctxt.moveTo(ps[a][0], ps[a][1]);
@@ -177,7 +179,7 @@ export class LocalDraw {
             }
             this.ctxt.stroke();
 
-            this.ctxt.strokeStyle = "rgba(120,100,80,0.8)";
+            this.ctxt.strokeStyle = edges[4];
             this.ctxt.beginPath();
             for (const [a, b] of this.edgesB) {
                 this.ctxt.moveTo(ps[a][0], ps[a][1]);

@@ -20,6 +20,10 @@ export class LangMgr {
         });
     }
     private static _text: Record<string, Record<string, string>> = {
+        theme: { zh: "主题", en: "Theme" },
+        themeAuto: { zh: "跟随系统", en: "System" },
+        themeLight: { zh: "白天", en: "Light" },
+        themeDark: { zh: "黑夜", en: "Dark" },
         deducing: { zh: "正在进行推理 ", en: "Deducing " },
         plsEnterRuleName: { zh: "请输入规则名：", en: "Please enter rule name: " },
         plsEnterNewRule: { zh: '请输入新规则名：', en: "Please enter new rule name: " },

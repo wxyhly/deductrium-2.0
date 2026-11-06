@@ -4,6 +4,7 @@ import { LocalDraw } from "./localdraw.js";
 import { TileBlockType, blockMap, initMap, nameMap } from "./maploader.js";
 import { genOrdTiles } from "./ordinal.js";
 import { Polygon } from "./tiling.js";
+import { getMapPalette } from "./palette.js";
 // 多语言文本（Record）暂按当前语言选取显示；翻译逻辑尚未接入
 function tileText(tb) {
     return typeof tb.text === "string" ? tb.text : tb.text[LangMgr.lang] ?? Object.values(tb.text)[0] ?? "";
@@ -55,21 +56,23 @@ export class HWorld {
     }
     // 默认 tile 填充色（含高亮获取推理素的方块），未注入回调时使用
     defaultTileColor(block) {
+        const palette = getMapPalette();
         if (this.highLightGetD && typeof block?.text === "string" && block.text.match(/^获取(.+)推理素$/))
-            return "rgb(255,255,0)";
-        return ["rgb(255,255,255)", "rgb(220,220,220)", "rgb(250,160,20)", "rgb(200,255,20)", "rgb(180,255,240)"][block?.type ?? 1];
+            return palette.highlight;
+        return palette.tiles[block?.type ?? 1];
     }
     // 默认文字颜色
     defaultTextColor(block) {
-        return ["rgb(0,80,0)", "rgb(60,60,255)", "rgb(33,38,255)", "rgb(255,0,0)", "rgb(30,20,100)"][block.type];
+        return getMapPalette().text[block.type];
     }
     onLoop() {
         const ctxt = this.localDraw.ctxt;
+        const palette = getMapPalette();
         this.localDraw.clear();
-        ctxt.fillStyle = "rgb(220,220,220)";
+        ctxt.fillStyle = palette.border;
         this.localDraw.drawOutBorder();
         ctxt.textAlign = "center";
-        ctxt.fillStyle = "rgb(0,0,255)";
+        ctxt.strokeStyle = palette.outline;
         for (const [s, r] of this.atlasTile.rotors) {
             const block = this.getBlock(s);
             if (!block && !this.debugDraw)
@@ -82,7 +85,7 @@ export class HWorld {
             const block = this.getBlock(s);
             if (!block) {
                 if (this.debugDraw) {
-                    ctxt.fillStyle = "rgb(0,0,0)";
+                    ctxt.fillStyle = palette.debug;
                     this.localDraw.textTo(this.localCamMat.mul(r).apply(new Hvec), s);
                 }
                 continue;
@@ -93,7 +96,7 @@ export class HWorld {
             const text = this.onTileText?.(block) ?? tileText(block);
             this.localDraw.textTo(this.localCamMat.mul(r).apply(new Hvec), text);
         }
-        ctxt.fillStyle = "rgba(0,0,0,0.2)";
+        ctxt.fillStyle = palette.player;
         this.localDraw.drawPlayer();
     }
     hitTest(t) {

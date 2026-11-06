@@ -20,6 +20,9 @@ export class HyLayer {
         this.keyDowns.clear();
     }
     constructor() {
+        window.addEventListener("deductrium-theme-change", () => {
+            this.needUpdate = true;
+        });
         window.onresize = () => { this.onresize(); };
         this.onresize();
         this.keyDowns = new Set;
@@ -37,7 +40,22 @@ export class HyLayer {
                 this.world.moveCam(-ev.movementX / 1000, ev.movementY / 1000);
             this.needUpdate = true;
         });
+        const isControl = (target) => target instanceof Element &&
+            target.closest('input, textarea, select, button, [contenteditable]:not([contenteditable="false"])');
+        const releaseControlFocus = () => {
+            const control = document.activeElement;
+            if (control instanceof HTMLElement && isControl(control))
+                control.blur();
+        };
+        document.addEventListener("focusin", ev => {
+            if (isControl(ev.target))
+                this.keyDowns.clear();
+        });
         document.addEventListener("keydown", ev => {
+            if (isControl(ev.target)) {
+                this.keyDowns.clear();
+                return;
+            }
             this.keyDowns.add(ev.code);
         });
         document.addEventListener("keyup", ev => {
@@ -48,12 +66,14 @@ export class HyLayer {
         });
         this.canvas.addEventListener("mousedown", ev => {
             // if (ev.button !== 2) return;
+            releaseControlFocus();
             ev.preventDefault();
             ev.stopPropagation();
             this.outside = this.world.localDraw.hitTestPoincareDisk(ev.offsetX, ev.offsetY);
             this.needUpdate = true;
         });
         this.canvas.addEventListener("touchstart", ev => {
+            releaseControlFocus();
             ev.preventDefault();
             ev.stopPropagation();
             this.touchStartX = ev.targetTouches[0].clientX;

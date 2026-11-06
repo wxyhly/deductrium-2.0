@@ -4,6 +4,12 @@
 // 3D 圆规：先选择平面，再在平面内选圆心与圆上一点
 // ============================================================
 import { v3, v3add, v3sub, v3scale, v3dot, v3dist, collinear, GeoPoint, GeoLine, GeoPlane, GeoCircle, GeoSphere, planeNormal, planeBasis, sampleCirclePoints, raySphereIntersections, projectPointToLine, projectPointToCircle, sphereSilhouette, ConstructionEngine } from './geometry.js';
+// ============================================================
+// 语言（与全局 LangMgr 解耦：直接读 localStorage 'lang'）
+// ============================================================
+function drawingColor(light, dark) {
+    return document.documentElement.dataset.theme === 'dark' ? dark : light;
+}
 function getLang() {
     const s = localStorage.getItem('lang');
     if (s === 'zh' || s === 'en')
@@ -408,7 +414,7 @@ export class Renderer {
     render2d(ctx) {
         const w = this.width, h = this.height;
         // 网格：以世界原点投影位置为锚点（与坐标轴对齐），避免缩放时网格与轴不同步
-        ctx.strokeStyle = '#e8edf4';
+        ctx.strokeStyle = drawingColor('#e8edf4', '#28384c');
         ctx.lineWidth = 1;
         const gs = this.scale2d;
         const originX = this.width / 2 + this.offsetX;
@@ -427,7 +433,7 @@ export class Renderer {
         }
         // 坐标轴
         const o = this.project(v3(0, 0, 0));
-        ctx.strokeStyle = '#cbd5e1';
+        ctx.strokeStyle = drawingColor('#cbd5e1', '#536780');
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(0, o.y);
@@ -442,7 +448,7 @@ export class Renderer {
             const p = this.project(c.centerPos);
             const r = c.radius * this.scale2d;
             const hi = this.isHi(c);
-            ctx.strokeStyle = hi ? '#1a5cff' : 'rgba(26,92,255,0.6)';
+            ctx.strokeStyle = hi ? drawingColor('#1a5cff', '#8db5ff') : drawingColor('rgba(26,92,255,0.6)', 'rgba(141,181,255,0.7)');
             ctx.lineWidth = hi ? 2.5 : 1.5;
             ctx.setLineDash([5, 4]);
             ctx.beginPath();
@@ -466,7 +472,7 @@ export class Renderer {
     render3d(ctx) {
         const w = this.width, h = this.height;
         // 地面网格（z=0）
-        ctx.strokeStyle = '#e8edf4';
+        ctx.strokeStyle = drawingColor('#e8edf4', '#28384c');
         ctx.lineWidth = 1;
         for (let i = -10; i <= 10; i++) {
             const a = this.project(v3(i, 0, -10));
@@ -483,7 +489,7 @@ export class Renderer {
             ctx.stroke();
         }
         // 坐标轴（红 x / 绿 y / 蓝 z）
-        const axCol = ['#e05555', '#5cb878', '#1a5cff'];
+        const axCol = ['#e05555', '#5cb878', drawingColor('#1a5cff', '#8db5ff')];
         const dirs = [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)];
         const o0 = this.project(v3(0, 0, 0));
         for (let i = 0; i < 3; i++) {
@@ -510,8 +516,8 @@ export class Renderer {
             this.planePolys.push({ plane: pl, pts: corners });
             const isSelPlane = this.selectedPlane === pl;
             const isHi = this.hovered === pl;
-            ctx.fillStyle = isSelPlane ? 'rgba(26,92,255,0.22)' : isHi ? 'rgba(26,92,255,0.16)' : 'rgba(26,92,255,0.07)';
-            ctx.strokeStyle = isSelPlane ? '#1a5cff' : 'rgba(26,92,255,0.35)';
+            ctx.fillStyle = isSelPlane ? drawingColor('rgba(26,92,255,0.22)', 'rgba(141,181,255,0.22)') : isHi ? drawingColor('rgba(26,92,255,0.16)', 'rgba(141,181,255,0.16)') : drawingColor('rgba(26,92,255,0.07)', 'rgba(141,181,255,0.07)');
+            ctx.strokeStyle = isSelPlane ? drawingColor('#1a5cff', '#8db5ff') : drawingColor('rgba(26,92,255,0.35)', 'rgba(141,181,255,0.5)');
             ctx.lineWidth = isSelPlane ? 2 : 1;
             ctx.beginPath();
             ctx.moveTo(corners[0].x, corners[0].y);
@@ -521,7 +527,7 @@ export class Renderer {
             ctx.fill();
             ctx.stroke();
             // 平面标签
-            ctx.fillStyle = 'rgba(26,92,255,0.75)';
+            ctx.fillStyle = drawingColor('rgba(26,92,255,0.75)', 'rgba(141,181,255,0.85)');
             ctx.font = '600 12px "Segoe UI", sans-serif';
             ctx.fillText(this.getPlaneLabel(pl.id), corners[0].x - 12, corners[0].y + 18);
         }
@@ -540,7 +546,7 @@ export class Renderer {
             items.push({
                 depth: depthOf(pts3),
                 draw: () => {
-                    ctx.strokeStyle = hi ? '#1a5cff' : 'rgba(26,92,255,0.75)';
+                    ctx.strokeStyle = hi ? drawingColor('#1a5cff', '#8db5ff') : drawingColor('rgba(26,92,255,0.75)', 'rgba(141,181,255,0.85)');
                     ctx.lineWidth = hi ? 2.5 : 1.6;
                     ctx.setLineDash([5, 4]);
                     strokePolyline(ctx, scr);
@@ -555,7 +561,7 @@ export class Renderer {
                 depth: depthOf([C]),
                 draw: () => {
                     // 三个大圆：虚线
-                    ctx.strokeStyle = hi ? '#7c3aed' : 'rgba(124,58,237,0.55)';
+                    ctx.strokeStyle = hi ? drawingColor('#7c3aed', '#bf9cff') : drawingColor('rgba(124,58,237,0.55)', 'rgba(191,156,255,0.7)');
                     ctx.lineWidth = hi ? 2.5 : 1.3;
                     ctx.setLineDash([6, 5]);
                     for (const n of [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)]) {
@@ -563,7 +569,7 @@ export class Renderer {
                     }
                     // 永远正圆的轮廓（与视线垂直的大圆）：淡实线
                     const { w: viewDir } = cameraBasis(this.yaw, this.pitch);
-                    ctx.strokeStyle = hi ? '#c084fc' : 'rgba(168,85,247,0.32)';
+                    ctx.strokeStyle = hi ? '#c084fc' : drawingColor('rgba(168,85,247,0.32)', 'rgba(198,160,255,0.5)');
                     ctx.lineWidth = hi ? 2 : 1.1;
                     ctx.setLineDash([]);
                     strokePolyline(ctx, sphereSilhouette(s, viewDir, 64).map(p => this.project(p)));
@@ -592,7 +598,7 @@ export class Renderer {
         const ext = 2000;
         const ux = dx / len * ext, uy = dy / len * ext;
         // 主体：两点之间实线
-        ctx.strokeStyle = hi ? '#334155' : 'rgba(100,116,139,0.85)';
+        ctx.strokeStyle = hi ? drawingColor('#334155', '#d4dfef') : drawingColor('rgba(100,116,139,0.85)', 'rgba(178,197,222,0.85)');
         ctx.lineWidth = hi ? 2.5 : 1.4;
         ctx.setLineDash([]);
         ctx.beginPath();
@@ -600,7 +606,7 @@ export class Renderer {
         ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
         // 两端延伸：淡虚线（不可选）
-        ctx.strokeStyle = hi ? 'rgba(51,65,85,0.35)' : 'rgba(100,116,139,0.22)';
+        ctx.strokeStyle = hi ? drawingColor('rgba(51,65,85,0.35)', 'rgba(212,223,239,0.4)') : drawingColor('rgba(100,116,139,0.22)', 'rgba(178,197,222,0.25)');
         ctx.lineWidth = hi ? 1.4 : 1;
         ctx.setLineDash([5, 5]);
         ctx.beginPath();
@@ -619,12 +625,12 @@ export class Renderer {
         const isIns = this.inspectedPoint === p;
         const r = isSel ? 7 : isIns ? 6 : 4.5;
         if (isSel || isIns) {
-            ctx.fillStyle = 'rgba(26,92,255,0.12)';
+            ctx.fillStyle = drawingColor('rgba(26,92,255,0.12)', 'rgba(141,181,255,0.18)');
             ctx.beginPath();
             ctx.arc(pos.x, pos.y, r + 6, 0, Math.PI * 2);
             ctx.fill();
         }
-        ctx.fillStyle = p.isFree ? '#e2b04a' : '#1a5cff';
+        ctx.fillStyle = p.isFree ? '#e2b04a' : drawingColor('#1a5cff', '#8db5ff');
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -632,7 +638,7 @@ export class Renderer {
         ctx.fill();
         ctx.stroke();
         // 标签
-        ctx.fillStyle = '#334155';
+        ctx.fillStyle = drawingColor('#334155', '#d4dfef');
         ctx.font = '600 11px "Segoe UI", sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(this.getLabel(p.id), pos.x + r + 4, pos.y - r - 3);
@@ -660,6 +666,7 @@ export class App {
         this.setupUI();
         this.setupCanvasEvents();
         this.updateAll();
+        window.addEventListener('deductrium-theme-change', () => this.renderer.render());
         window.addEventListener('resize', () => {
             this.renderer.resize();
             this.renderer.render();
