@@ -8,6 +8,7 @@
     <link href="style/layer.css" rel="stylesheet" type="text/css">
     <link href="style/main.css" rel="stylesheet" type="text/css">
     <link href="style/token.css" rel="stylesheet" type="text/css">
+    <link href="style/survival.css" rel="stylesheet" type="text/css">
     <link href="style/list.css" rel="stylesheet" type="text/css">
     <link href="style/editor.css" rel="stylesheet" type="text/css">
     <link href="style/progress.css" rel="stylesheet" type="text/css">
@@ -79,6 +80,7 @@
                 <div id="cmd-output"></div>
                 <div id="cmd-error" style="color:red; display:none;"></div>
                 <div id="cmd-prompt" style="display:none;"></div>
+                <div id="hs-last-gate" class="hide"><span data-i18n="lastGate">最近接触的门：</span><span id="hs-last-gate-content"></span></div>
                 <div id="hs-cmd-input"></div>
             </div>
         </div>
@@ -166,6 +168,9 @@
                     <div class="pg-stat-row"><span data-i18n="statDeductrium">拥有推理素</span><strong id="pg-stat-deductrium">0</strong></div>
                     <div class="pg-stat-row"><span data-i18n="statConsumed">累计消耗推理素</span><strong id="pg-stat-consumed">0</strong></div>
                     <div class="pg-stat-row"><span data-i18n="statParcours">总方块步数</span><strong id="pg-stat-parcours">0</strong></div>
+                    <div class="pg-stat-row"><span data-i18n="statMaxOrd">最大序数</span><strong id="pg-stat-max-ord">0</strong></div>
+                    <div class="pg-stat-row"><span data-i18n="statNextOrd">下一可达序数</span><strong id="pg-stat-next-ord">1</strong></div>
+                    <div class="pg-stat-row"><span data-i18n="statOrdBase">序数进位基底</span><strong id="pg-stat-ord-base">16</strong></div>
                 </div>
             </div>
 

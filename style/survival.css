@@ -1,0 +1,29 @@
+.hs-plain-items .token-atom-item,
+.hs-plain-items .token-atom-var,
+.hs-plain-items .token-atom-free-var,
+.hs-plain-items .token-atom-locvar,
+.hs-plain-items .token-replvar-item,
+.hs-plain-items .token-replvar-var,
+.hs-plain-items .token-fn { font-style: normal; }
+
+/* The assertion renderer is supplied by the independent compact-notation change. */
+.hs-literal-assertions .ast-compact { display: contents; }
+.hs-literal-assertions .ast-compact-syntax { display: inline; }
+.hs-literal-assertions .ast-compact > sub,
+.hs-literal-assertions .ast-compact > sup {
+    font-size: inherit;
+    line-height: inherit;
+    vertical-align: baseline;
+}
+.hs-literal-assertions .ast-compact-nf > .ast-compact-parameter,
+.hs-literal-assertions .ast-compact-nf > .ast-compact-parameter * { color: inherit; }
+/* Preserve the variable token palette while the compact subscript is disabled. */
+.hs-literal-assertions .ast-compact-nf > .ast-compact-parameter .token-atom-var { color: rgb(9, 179, 43); }
+.hs-literal-assertions .ast-compact-nf > .ast-compact-parameter .token-atom-free-var { color: red; }
+.hs-literal-assertions .ast-compact-nf > .ast-compact-parameter .token-atom-locvar { color: rgb(151, 187, 24); }
+.hs-literal-assertions .ast-compact-nf > .ast-compact-parameter .token-replvar-var { color: #a36400; }
+.hs-literal-assertions .ast-compact-target::before,
+.hs-literal-assertions .ast-compact-scope::before,
+.hs-literal-assertions .ast-compact-dt::after { content: none; }
+
+#hs-last-gate { padding: 4px 0; overflow-wrap: anywhere; }

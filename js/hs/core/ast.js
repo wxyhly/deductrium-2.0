@@ -39,6 +39,12 @@ export class AST {
     becomeItem() {
         if (this.type === NodeType.ATOM_UKNOWN || this.type === NodeType.ATOM_WFF && this.name.match(/^[^A-Z]/))
             this.type = NodeType.ATOM_ITEM;
+        // Command arguments initially use the ambiguous wff grammar, just as
+        // the left operand of an equality does. Only named calls can become
+        // functions; a relation such as x=y must still fail checkITEM().
+        if (this.type === NodeType.PRED && !["=", "@", "\\<", "\\>", "\\<=", "\\>=", "\\d", "\\c"].includes(this.name)) {
+            this.type = NodeType.FN;
+        }
         if (this.type === NodeType.SB)
             this.nodes[0].becomeItem();
     }

@@ -51,7 +51,11 @@ try {
             ctxt.stroke = function(...args) { strokes.push(this.strokeStyle); return stroke.apply(this,args); };
             ctxt.fillText = function(...args) { texts.push(this.fillStyle); return text.apply(this,args); };
             try { w.onLoop(); } finally { ctxt.fill=fill;ctxt.stroke=stroke;ctxt.fillText=text; }
-            return {p,fills,strokes,texts,tiles:p.tiles.map((_,type)=>w.onTileColor({type},false)),text:p.text.map((_,type)=>w.onTextColor({type})),highlight:w.onTileColor({type:0,data:{getD:true}},true)};
+            const earned=window.game.gotRewards.has('highlightd');
+            window.game.gotRewards.add('highlightd');
+            const highlight=w.onTileColor({type:0,data:{getD:true}},true);
+            if(!earned)window.game.gotRewards.delete('highlightd');
+            return {p,fills,strokes,texts,tiles:p.tiles.map((_,type)=>w.onTileColor({type},false)),text:p.text.map((_,type)=>w.onTextColor({type})),highlight};
         });
         check(darkMap.tiles.every((color,index)=>color===darkMap.p.tiles[index]), 'all five map types use dark palette');
         check(darkMap.text.every((color,index)=>color===darkMap.p.text[index]), 'all map text types use dark palette');

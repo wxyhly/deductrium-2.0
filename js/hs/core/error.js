@@ -34,6 +34,8 @@ export const HSError = {
     dname404(ruleName) { return { type: "dname404", ruleName }; },
     pname404(propName) { return { type: "pname404", propName }; },
     unknownCmd(command) { return { type: "unknownCmd", command }; },
+    lockedFeature(feature) { return { type: "lockedFeature", feature }; },
+    quantifyAxiomOnly: { type: "quantifyAxiomOnly" },
     argNotEnough(command) { return { type: "argNotEnough", command }; },
     delFail(item, rely, cause) { return { type: "delFail", item, rely, cause }; },
     invalidPropDir: { type: "invalidPropDir" },

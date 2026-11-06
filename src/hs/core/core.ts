@@ -5,6 +5,9 @@ import { combineRules, assertToAST, genConditionStep, genQuantStep, genUnivStep,
 import { Deduction, DeductionStep, Proposition } from "./deduction.js";
 import { HSError, HSErrorInfo, isHSErrorInfo } from "./error.js";
 import { HSParser } from "./parser.js";
+import { getNumberLiteralDefinition } from "./number/literals.js";
+import { generateNumberProof } from "./number/natural.js";
+import { generateIntegerProof } from "./number/integer.js";
 const RuleNameNotAllowedStartsWith = "acdempuv0123456789#$%<>.";
 
 // props相关的完整状态，用于保存/恢复当前props数据
@@ -51,7 +54,19 @@ export class HilbertSystem {
 
     getD(dname: AST): Deduction {
         if (dname.type === NodeType.ATOM_DNAME) {
-            const d = this.rules.get(dname.name);
+            let d = this.rules.get(dname.name);
+            if (!d) {
+                const definition = getNumberLiteralDefinition(dname.name);
+                // Use the same definition-only extension policy as the static library.
+                const definitionPrerequisite = /^d(?:R|[+-]?\d.*r$)/.test(dname.name) ? "dR"
+                    : /^d(?:Q|[+-]?\d.*[q.]|[+-]?\d+\.)/.test(dname.name) ? "dQ"
+                    : dname.name.startsWith("dZ") ? "dZ" : "apn1";
+                if (definition && this.rules.has(definitionPrerequisite)) {
+                    const ast = new HSParser().parse(definition, "rule");
+                    d = new Deduction(new Set, dname.clone(), [], ast.nodes.slice(0, -1), ast.nodes[ast.nodes.length - 1]);
+                    this.rules.set(dname.name, d);
+                } else d = generateNumberProof(this, dname.name) ?? generateIntegerProof(this, dname.name);
+            }
             if (!d) throw HSError.dname404(dname.name);
             return d;
         }
