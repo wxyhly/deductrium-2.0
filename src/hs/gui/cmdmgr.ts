@@ -45,6 +45,10 @@ export function getCommand(name: string): CommandDefinition | undefined {
     return registry.get(name);
 }
 
+export function clearCommands() {
+    registry.clear();
+}
+
 export function getCommandNames(): string[] {
     return [...registry.keys()];
 }

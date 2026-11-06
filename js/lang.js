@@ -51,6 +51,7 @@ export class LangMgr {
         ruleList: { zh: '规则表', en: "Rule Table" },
         propList: { zh: '推理表', en: "Deduction Steps" },
         cmdBar: { zh: '命令栏', en: "Command" },
+        lastGate: { zh: '最近接触的门：', en: "Last gate: " },
         addFolder: { zh: '+ 文件夹', en: "+ Folder" },
         // 菜单
         rename: { zh: '重命名', en: "Rename" },
@@ -84,6 +85,9 @@ export class LangMgr {
         statDeductrium: { zh: '拥有推理素', en: "Deductrium Owned" },
         statConsumed: { zh: '累计消耗推理素', en: "Total Deductrium Consumed" },
         statParcours: { zh: '总方块步数', en: "Total Block Steps" },
+        statMaxOrd: { zh: '最大序数', en: "Maximum Ordinal" },
+        statNextOrd: { zh: '下一可达序数', en: "Next Reachable Ordinal" },
+        statOrdBase: { zh: '序数进位基底', en: "Ordinal Carry Base" },
         saveMgmt: { zh: '存档管理', en: "Save Management" },
         currentProgress: { zh: '当前进度', en: "Current Progress" },
         gameMode: { zh: '游戏模式', en: "Game Mode" },
@@ -433,6 +437,10 @@ export class LangMgr {
                 return zh ? `未知推理步骤：${info.propName}` : `unknown deduction step: ${info.propName}`;
             case "unknownCmd":
                 return zh ? `未知命令：${info.command}` : `unknown command: ${info.command}`;
+            case "lockedFeature":
+                return zh ? `尚未解锁：${info.feature}` : `not unlocked: ${info.feature}`;
+            case "quantifyAxiomOnly":
+                return zh ? "当前概括仅允许无条件的公理规则；请先解锁条件概括元定理" : "generalization currently accepts only unconditional axioms; unlock conditional generalization first";
             case "argNotEnough":
                 return zh ? `命令${info.command}的参数不足` : `not enough arguments for command ${info.command}`;
             case "delFail":

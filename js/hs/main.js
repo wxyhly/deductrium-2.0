@@ -1,7 +1,7 @@
 import { HSParser } from "./core/parser.js";
 import { highlightHTML, SyntaxEditor, SyntaxViewer } from "../astrender.js";
 import { TreeListViewer, makeResizable } from "../listmgr.js";
-import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, getCommandNames } from "./gui/cmdmgr.js";
+import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, clearCommands, getCommandNames } from "./gui/cmdmgr.js";
 import { CommandCompletion } from "./gui/completion.js";
 import { createRulePreview } from "./gui/rule-preview.js";
 import { AST } from "./core/ast.js";
@@ -15,6 +15,8 @@ import { LangMgr } from "../lang.js";
 import { Serde } from "./serde.js";
 import { SheetGui } from "./gui/sheet.js";
 import { initialCreativeRules, initialSurvivalRules } from "./core/initial.js";
+import { SurvivalAccess } from "./access.js";
+import { getSurvivalRules } from "./rewards.js";
 import { checkDeletion, deleteSelection, planDeletion } from "./editing.js";
 import { findTargets, targetAtom, targetList } from "./targets.js";
 import { ProofNavigator } from "./proof-navigation.js";
@@ -51,7 +53,36 @@ export class HSLayer {
     inspectionExpanded = null;
     inspectionRuleExpanded = null;
     onchange;
+    survivalAccess = null;
+    lastGateAST = null;
+    lastGateViewer;
     getSheetGui() { return this.sheetGui; }
+    rememberGate(ast) {
+        if (this.survivalAccess && !this.survivalAccess.rewards.has("copygateD"))
+            return;
+        this.lastGateAST = ast;
+        this.refreshRewardUI();
+    }
+    refreshRewardUI() {
+        if (typeof document === "undefined")
+            return;
+        const rewards = this.survivalAccess?.rewards;
+        const layer = document.querySelector('div[data-layer="D-layer"]');
+        layer?.classList.toggle("hs-plain-items", !!rewards && !rewards.has("italic-item"));
+        layer?.classList.toggle("hs-literal-assertions", !!rewards && !rewards.has("omit-fn"));
+        document.getElementById("ruleAddFolder")?.classList.toggle("hide", !!rewards && !rewards.has("mkdir"));
+        const gateRow = document.getElementById("hs-last-gate");
+        const gateContent = document.getElementById("hs-last-gate-content");
+        if (gateRow && gateContent) {
+            gateRow.classList.toggle("hide", !this.lastGateAST || !!rewards && !rewards.has("copygateD"));
+            this.lastGateViewer?.destroy();
+            this.lastGateViewer = undefined;
+            gateContent.replaceChildren();
+            if (this.lastGateAST && (!rewards || rewards.has("copygateD"))) {
+                this.lastGateViewer = new SyntaxViewer(gateContent, new HSParser(), this.lastGateAST.toString(), this.lastGateAST.type === NodeType.RULE ? "rule" : "wff");
+            }
+        }
+    }
     // [p]门判定：任意sheet满足（无断言/假设 + 某步骤wrap后ast等于目标）
     // 步骤在 c/v 文件夹内时，ast 需包上相应条件/量词（captureScope 得层级再 wrap）
     checkPropGate(ast) {
@@ -128,6 +159,10 @@ export class HSLayer {
                 return false;
             if (r.children)
                 return true;
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("renameD")) {
+                this.cmdEngine.reportError(HSError.lockedFeature("renameD"));
+                return false;
+            }
             if (!name?.trim())
                 return false;
             if (this.cmdEngine.isExecuting() || this.navigator.active) {
@@ -151,9 +186,10 @@ export class HSLayer {
             return true;
         };
         this.ruleListView.menuItems = r => {
-            const arr = [
-                { label: LangMgr.text.rename, action: "rename", icon: '✏️' },
-            ];
+            const arr = [];
+            if (r.children || !this.survivalAccess || this.survivalAccess.rewards.has("renameD")) {
+                arr.push({ label: LangMgr.text.rename, action: "rename", icon: '✏️' });
+            }
             if (r.children) {
                 if (r === this.activeRuleFolder) {
                     arr.push({ label: LangMgr.text.clearActiveFolder, action: "clearActiveFolder", icon: '⭐' });
@@ -249,6 +285,10 @@ export class HSLayer {
                 this.cmdEngine.reportError(HSError.cmdIsRunning);
                 return;
             }
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("mkdir")) {
+                this.cmdEngine.reportError(HSError.lockedFeature("mkdir"));
+                return;
+            }
             // 新文件夹添加到活动文件夹末尾（无活动则为根目录末尾），并立即激活就地改名
             const folder = { name: LangMgr.text.newFolder, uuid: 0, children: [] };
             if (this.activeRuleFolder)
@@ -268,6 +308,13 @@ export class HSLayer {
         this.propListView.allowDrop = (src, dst, pos) => {
             if (this.cmdEngine.isExecuting() || this.navigator.active)
                 return false;
+            const scope = !dst ? src.parent : pos === "inside" ? dst : dst.parent;
+            try {
+                this.survivalAccess?.checkMove(src, scope, this.hilbertSystem);
+            }
+            catch {
+                return false;
+            }
             // dst为null表示拖到列表末尾的占位符：等价于移动到src所在父级的末尾
             if (!dst) {
                 const parent = src.parent;
@@ -577,9 +624,48 @@ export class HSLayer {
             this.propListView.expandedFolders = new Set(ids.map(id => idToUuid.get(id)).filter((x) => x !== undefined));
         };
         this.sheetGui.render();
+        this.refreshRewardUI();
     }
     executeCmd(cmd) {
         this.cmdEngine.run(cmd);
+    }
+    checkInteractiveRule(ast) {
+        this.survivalAccess?.checkRuleName(ast, this.hilbertSystem);
+        const rule = this.isMsbtDname(ast) ? undefined : this.hilbertSystem.getD(ast);
+        this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp, rule);
+    }
+    checkInteractiveSpecial() {
+        this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp);
+    }
+    configureSurvival(rewards) {
+        this.survivalAccess = new SurvivalAccess();
+        this.lastGateAST = null;
+        clearCommands();
+        this.unlockBasicPropCmd();
+        for (const reward of rewards)
+            this.applyReward(reward);
+        this.refreshRewardUI();
+    }
+    applyReward(reward) {
+        // Creative mode already exposes the full library and command set.
+        if (!this.survivalAccess)
+            return;
+        this.survivalAccess.rewards.add(reward);
+        const commands = {
+            macro: ["m"], hyp: ["hyp"], mcpt: ["mcpt"], mnt: ["mcnt"],
+        };
+        for (const command of commands[reward] ?? [])
+            this.unlockBasicRuleCmd(command);
+        if (reward === "mct" || reward === "mdt" || reward === "mcpt")
+            this.unlockMetaBlock("c");
+        if (reward === "1st" || reward === "mcvt" || reward === "mvt" || reward === "met")
+            this.unlockMetaBlock("v");
+        if (reward === "mkdir")
+            this.unlockMetaBlock("f");
+        const rules = getSurvivalRules(this.survivalAccess.rewards, this.hilbertSystem.rules, this.hilbertSystem.renamedSysRule);
+        if (rules)
+            this.addRules(rules);
+        this.refreshRewardUI();
     }
     refreshInspection() {
         if (this.navigator.active && !this.inspectionExpanded) {
@@ -669,6 +755,7 @@ export class HSLayer {
     }
     inlineTarget(target) {
         if (target.kind === "step") {
+            this.survivalAccess?.checkExpand(target.step, this.hilbertSystem);
             const folders = this.hilbertSystem.expand(target.step) || [];
             for (const f of folders) {
                 if (!f.uuid)
@@ -680,10 +767,12 @@ export class HSLayer {
             const rule = this.hilbertSystem.getD(new HSParser().parse(target.name, "dname"));
             if (!rule.step || rule.error)
                 throw HSError.atomicStep(rule.name);
+            const commands = this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd"));
+            this.survivalAccess?.checkReplay(commands, this.hilbertSystem);
             // Validate in isolation before opening a new sheet or mutating the current proof.
             const check = new HilbertSystem();
             check.rules = new Map(this.hilbertSystem.rules);
-            check.fromCmd(this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd")));
+            check.fromCmd(commands);
             if (this.hilbertSystem.props.length) {
                 this.sheetGui.addSheet(false);
                 this.sheetGui.sheets[this.sheetGui.activeIndex].name = target.name;
@@ -705,6 +794,8 @@ export class HSLayer {
             target.node.name = name;
         }
         else {
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("renameD"))
+                throw HSError.lockedFeature("renameD");
             const old = target.name;
             const contexts = this.editingContexts();
             this.hilbertSystem.renameD(old, name);
@@ -805,6 +896,7 @@ export class HSLayer {
                         let ast;
                         try {
                             ast = new HSParser().parse(e, "dname");
+                            this.checkInteractiveRule(ast);
                             // msbt 是元规则（不注册为规则实体），跳过 getD 校验；
                             // 但规则模板的结论须为 xx↔xx/xx=xx，第一时间检查
                             if (this.isMsbtDname(ast))
@@ -820,6 +912,7 @@ export class HSLayer {
                 };
             }
             // msbt：替换元定理（msbt>/msbt<），走独立参数流程
+            this.checkInteractiveRule(args[0]);
             if (this.isMsbtDname(args[0])) {
                 return this.msbtGetNextParam(args);
             }
@@ -885,6 +978,7 @@ export class HSLayer {
             };
         }, async (args) => {
             // 参数齐了执行时也清一下行点击回调（正常情况下clearState已清，这里兜底）
+            this.checkInteractiveRule(args[0]);
             this.propListView.onRowClick = () => { };
             this.ruleListView.onRowClick = () => { };
             // msbt：替换元定理特殊处理（不进 getD）
@@ -938,156 +1032,164 @@ export class HSLayer {
             this.propListView.refresh();
         });
     }
-    unlockBasicRuleCmd() {
-        defineCommand('m', (args) => {
-            if (args.length === 0) {
-                this.hilbertSystem.checkConclusionInPropList();
-                this.cmdInput.setParserArgs("dname");
-                let i = 1;
-                while (true) {
-                    if (!this.hilbertSystem.rules.get("s" + i))
-                        break;
-                    i++;
+    unlockBasicRuleCmd(command) {
+        if (!command || command === "m")
+            defineCommand('m', (args) => {
+                if (args.length === 0) {
+                    this.hilbertSystem.checkConclusionInPropList();
+                    this.cmdInput.setParserArgs("dname");
+                    let i = 1;
+                    while (true) {
+                        if (!this.hilbertSystem.rules.get("s" + i))
+                            break;
+                        i++;
+                    }
+                    return {
+                        prompt: LangMgr.text.plsEnterNewRule, default: "s" + i, parse: e => {
+                            let ast;
+                            try {
+                                ast = new HSParser().parse(e, "dname");
+                                return { success: true, value: ast };
+                            }
+                            catch (e) {
+                                return { success: false, error: e };
+                            }
+                        }
+                    };
+                }
+                return null;
+            }, async (args) => {
+                if (!args[0])
+                    throw HSError.emptyValue;
+                this.hilbertSystem.m(args[0].name);
+                // 新规则添加到活动文件夹末尾（无活动则为根目录末尾）
+                const node = { name: args[0].name, uuid: 0 };
+                if (this.activeRuleFolder)
+                    this.activeRuleFolder.children.push(node);
+                else
+                    this.ruleList.push(node);
+                this.propListView.refresh();
+                this.ruleListView.refresh();
+            });
+        if (!command || command === "hyp")
+            defineCommand('hyp', (args) => {
+                if (args.length === 0) {
+                    this.cmdInput.setParserArgs("wff");
+                    return {
+                        prompt: LangMgr.text.plsEnterHyp, default: "", parse: e => {
+                            let ast;
+                            try {
+                                ast = new HSParser().parse(e, "wff");
+                                return { success: true, value: ast };
+                            }
+                            catch (e) {
+                                return { success: false, error: e };
+                            }
+                        }
+                    };
+                }
+                return null;
+            }, async (args) => {
+                if (!args[0])
+                    throw HSError.emptyValue;
+                this.hilbertSystem.hyp(args[0]);
+                this.propListView.refresh();
+            });
+        // mcpt：命题逻辑自动推理（特殊元规则，独立命令，不走 d 命令交互）
+        if (!command || command === "mcpt")
+            defineCommand('mcpt', (args) => {
+                this.checkInteractiveSpecial();
+                if (args.length === 0) {
+                    this.cmdInput.setParserArgs("wff");
+                    return {
+                        prompt: LangMgr.text.plsEnterHyp, default: "", parse: e => {
+                            let ast;
+                            try {
+                                ast = new HSParser().parse(e, "wff");
+                                return { success: true, value: ast };
+                            }
+                            catch (e) {
+                                return { success: false, error: e };
+                            }
+                        }
+                    };
+                }
+                return null;
+            }, async (args) => {
+                if (!args[0])
+                    throw HSError.emptyValue;
+                this.checkInteractiveSpecial();
+                this.hilbertSystem.mcpt(args[0]);
+                this.propListView.refresh();
+            });
+        // mcnt：量词换名元定理（特殊元规则，独立命令，不走 d 命令交互）
+        if (!command || command === "mcnt")
+            defineCommand('mcnt', (args) => {
+                this.checkInteractiveSpecial();
+                // 完整参数：mcnt 目标(wff或推理步骤) 换名规则{..}
+                if (args.length >= 2)
+                    return null;
+                const need = args.length; // 下一个要填的参数（0=目标，1=换名规则）
+                let prompt;
+                let mode;
+                if (need === 0) {
+                    prompt = LangMgr.text.plsEnterMsbtTarget;
+                    mode = "wff";
+                }
+                else {
+                    prompt = LangMgr.text.plsEnterMcntRule;
+                    mode = "item";
+                }
+                this.cmdInput.setParserArgs(mode);
+                // 目标参数：同时支持点击高亮ast插入 与 点击推理行选择步骤（与msbt一致）
+                if (need === 0) {
+                    SyntaxViewer.onClickAst = this.cmdUIMgr.insertText;
+                    this.propListView.onRowClick = p => { if (p.from.type !== "f" && p.from.type !== "v" && p.from.type !== "a")
+                        this.cmdEngine.run(String(p.id)); };
+                    this.ruleListView.onRowClick = () => { };
+                }
+                else {
+                    SyntaxViewer.onClickAst = null;
+                    this.propListView.onRowClick = () => { };
+                    this.ruleListView.onRowClick = () => { };
                 }
                 return {
-                    prompt: LangMgr.text.plsEnterNewRule, default: "s" + i, parse: e => {
+                    prompt, default: "", parse: e => {
                         let ast;
                         try {
-                            ast = new HSParser().parse(e, "dname");
-                            return { success: true, value: ast };
-                        }
-                        catch (e) {
-                            return { success: false, error: e };
-                        }
-                    }
-                };
-            }
-            return null;
-        }, async (args) => {
-            if (!args[0])
-                throw HSError.emptyValue;
-            this.hilbertSystem.m(args[0].name);
-            // 新规则添加到活动文件夹末尾（无活动则为根目录末尾）
-            const node = { name: args[0].name, uuid: 0 };
-            if (this.activeRuleFolder)
-                this.activeRuleFolder.children.push(node);
-            else
-                this.ruleList.push(node);
-            this.propListView.refresh();
-            this.ruleListView.refresh();
-        });
-        defineCommand('hyp', (args) => {
-            if (args.length === 0) {
-                this.cmdInput.setParserArgs("wff");
-                return {
-                    prompt: LangMgr.text.plsEnterHyp, default: "", parse: e => {
-                        let ast;
-                        try {
-                            ast = new HSParser().parse(e, "wff");
-                            return { success: true, value: ast };
-                        }
-                        catch (e) {
-                            return { success: false, error: e };
-                        }
-                    }
-                };
-            }
-            return null;
-        }, async (args) => {
-            if (!args[0])
-                throw HSError.emptyValue;
-            this.hilbertSystem.hyp(args[0]);
-            this.propListView.refresh();
-        });
-        // mcpt：命题逻辑自动推理（特殊元规则，独立命令，不走 d 命令交互）
-        defineCommand('mcpt', (args) => {
-            if (args.length === 0) {
-                this.cmdInput.setParserArgs("wff");
-                return {
-                    prompt: LangMgr.text.plsEnterHyp, default: "", parse: e => {
-                        let ast;
-                        try {
-                            ast = new HSParser().parse(e, "wff");
-                            return { success: true, value: ast };
-                        }
-                        catch (e) {
-                            return { success: false, error: e };
-                        }
-                    }
-                };
-            }
-            return null;
-        }, async (args) => {
-            if (!args[0])
-                throw HSError.emptyValue;
-            this.hilbertSystem.mcpt(args[0]);
-            this.propListView.refresh();
-        });
-        // mcnt：量词换名元定理（特殊元规则，独立命令，不走 d 命令交互）
-        defineCommand('mcnt', (args) => {
-            // 完整参数：mcnt 目标(wff或推理步骤) 换名规则{..}
-            if (args.length >= 2)
-                return null;
-            const need = args.length; // 下一个要填的参数（0=目标，1=换名规则）
-            let prompt;
-            let mode;
-            if (need === 0) {
-                prompt = LangMgr.text.plsEnterMsbtTarget;
-                mode = "wff";
-            }
-            else {
-                prompt = LangMgr.text.plsEnterMcntRule;
-                mode = "item";
-            }
-            this.cmdInput.setParserArgs(mode);
-            // 目标参数：同时支持点击高亮ast插入 与 点击推理行选择步骤（与msbt一致）
-            if (need === 0) {
-                SyntaxViewer.onClickAst = this.cmdUIMgr.insertText;
-                this.propListView.onRowClick = p => { if (p.from.type !== "f" && p.from.type !== "v" && p.from.type !== "a")
-                    this.cmdEngine.run(String(p.id)); };
-                this.ruleListView.onRowClick = () => { };
-            }
-            else {
-                SyntaxViewer.onClickAst = null;
-                this.propListView.onRowClick = () => { };
-                this.ruleListView.onRowClick = () => { };
-            }
-            return {
-                prompt, default: "", parse: e => {
-                    let ast;
-                    try {
-                        if (mode === "item") {
-                            ast = new HSParser().parse(e, "item");
-                            MCNT.getsubIndices(ast); // 预校验换名规则格式
-                        }
-                        else {
-                            ast = new HSParser().parse(e, "wff");
-                            // 原子：可能是推理步骤引用（如 1/a），查表命中则当步骤；否则必须是合法wff
-                            if (ast.isAtom()) {
-                                if (!this.hilbertSystem.getP(ast.name))
-                                    ast.checkWFF();
+                            if (mode === "item") {
+                                ast = new HSParser().parse(e, "item");
+                                MCNT.getsubIndices(ast); // 预校验换名规则格式
                             }
                             else {
-                                ast.checkWFF();
+                                ast = new HSParser().parse(e, "wff");
+                                // 原子：可能是推理步骤引用（如 1/a），查表命中则当步骤；否则必须是合法wff
+                                if (ast.isAtom()) {
+                                    if (!this.hilbertSystem.getP(ast.name))
+                                        ast.checkWFF();
+                                }
+                                else {
+                                    ast.checkWFF();
+                                }
                             }
+                            return { success: true, value: ast };
                         }
-                        return { success: true, value: ast };
+                        catch (e) {
+                            return { success: false, error: e };
+                        }
                     }
-                    catch (e) {
-                        return { success: false, error: e };
-                    }
-                }
-            };
-        }, async (args) => {
-            // 参数齐了执行时也清一下行点击回调（正常情况下clearState已清，这里兜底，与msbt一致）
-            this.propListView.onRowClick = () => { };
-            this.ruleListView.onRowClick = () => { };
-            SyntaxViewer.onClickAst = null;
-            if (!args[0])
-                throw HSError.emptyValue;
-            this.hilbertSystem.mcnt(args);
-            this.propListView.refresh();
-        });
+                };
+            }, async (args) => {
+                // 参数齐了执行时也清一下行点击回调（正常情况下clearState已清，这里兜底，与msbt一致）
+                this.propListView.onRowClick = () => { };
+                this.ruleListView.onRowClick = () => { };
+                SyntaxViewer.onClickAst = null;
+                if (!args[0])
+                    throw HSError.emptyValue;
+                this.checkInteractiveSpecial();
+                this.hilbertSystem.mcnt(args);
+                this.propListView.refresh();
+            });
     }
     unlockMetaBlock(type) {
         this.unlockCommonMetaBlockCmd();

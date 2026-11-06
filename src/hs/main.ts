@@ -1,7 +1,7 @@
 import { HSParser } from "./core/parser.js";
 import { highlightHTML, SyntaxEditor, SyntaxViewer } from "../astrender.js";
 import { TreeListViewer, ListNode, makeResizable } from "../listmgr.js";
-import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, getCommandNames, ParamRequest } from "./gui/cmdmgr.js";
+import { CommandUIManager, defineCommand, ExecutionEngine, getCommand, clearCommands, getCommandNames, ParamRequest } from "./gui/cmdmgr.js";
 import { CommandCompletion, CompletionEntry } from "./gui/completion.js";
 import { createRulePreview } from "./gui/rule-preview.js";
 import { AST, MatchTable } from "./core/ast.js";
@@ -15,6 +15,8 @@ import { LangMgr } from "../lang.js";
 import { Serde } from "./serde.js";
 import { SheetGui } from "./gui/sheet.js";
 import { initialCreativeRules, initialSurvivalRules } from "./core/initial.js";
+import { SurvivalAccess } from "./access.js";
+import { getSurvivalRules } from "./rewards.js";
 import { checkDeletion, deleteSelection, planDeletion, DeletionPlan } from "./editing.js";
 import { EditingTarget, findTargets, targetAtom, targetList } from "./targets.js";
 import { ProofNavigator } from "./proof-navigation.js";
@@ -50,7 +52,37 @@ export class HSLayer {
     private inspectionExpanded: Set<number> | null = null;
     private inspectionRuleExpanded: Set<number> | null = null;
     onchange?: () => void;
+    private survivalAccess: SurvivalAccess | null = null;
+    private lastGateAST: AST | null = null;
+    private lastGateViewer?: SyntaxViewer;
     getSheetGui() { return this.sheetGui; }
+
+    rememberGate(ast: AST) {
+        if (this.survivalAccess && !this.survivalAccess.rewards.has("copygateD")) return;
+        this.lastGateAST = ast;
+        this.refreshRewardUI();
+    }
+
+    private refreshRewardUI() {
+        if (typeof document === "undefined") return;
+        const rewards = this.survivalAccess?.rewards;
+        const layer = document.querySelector('div[data-layer="D-layer"]');
+        layer?.classList.toggle("hs-plain-items", !!rewards && !rewards.has("italic-item"));
+        layer?.classList.toggle("hs-literal-assertions", !!rewards && !rewards.has("omit-fn"));
+        document.getElementById("ruleAddFolder")?.classList.toggle("hide", !!rewards && !rewards.has("mkdir"));
+        const gateRow = document.getElementById("hs-last-gate");
+        const gateContent = document.getElementById("hs-last-gate-content");
+        if (gateRow && gateContent) {
+            gateRow.classList.toggle("hide", !this.lastGateAST || !!rewards && !rewards.has("copygateD"));
+            this.lastGateViewer?.destroy();
+            this.lastGateViewer = undefined;
+            gateContent.replaceChildren();
+            if (this.lastGateAST && (!rewards || rewards.has("copygateD"))) {
+                this.lastGateViewer = new SyntaxViewer(gateContent, new HSParser(), this.lastGateAST.toString(),
+                    this.lastGateAST.type === NodeType.RULE ? "rule" : "wff");
+            }
+        }
+    }
 
     // [p]门判定：任意sheet满足（无断言/假设 + 某步骤wrap后ast等于目标）
     // 步骤在 c/v 文件夹内时，ast 需包上相应条件/量词（captureScope 得层级再 wrap）
@@ -119,6 +151,10 @@ export class HSLayer {
         this.ruleListView.onRename = (r, name) => {
             if (this.navigator.active) return false;
             if (r.children) return true;
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("renameD")) {
+                this.cmdEngine.reportError(HSError.lockedFeature("renameD"));
+                return false;
+            }
             if (!name?.trim()) return false;
             if (this.cmdEngine.isExecuting() || this.navigator.active) { this.cmdEngine.reportError(HSError.cmdIsRunning); return false; }
             try { this.hilbertSystem.renameD(r.name, name) } catch (e) { this.cmdEngine.reportError(e as any); return false; };
@@ -131,9 +167,10 @@ export class HSLayer {
             return true;
         };
         this.ruleListView.menuItems = r => {
-            const arr: any[] = [
-                { label: LangMgr.text.rename, action: "rename", icon: '✏️' },
-            ];
+            const arr: any[] = [];
+            if (r.children || !this.survivalAccess || this.survivalAccess.rewards.has("renameD")) {
+                arr.push({ label: LangMgr.text.rename, action: "rename", icon: '✏️' });
+            }
             if (r.children) {
                 if (r === this.activeRuleFolder) {
                     arr.push({ label: LangMgr.text.clearActiveFolder, action: "clearActiveFolder", icon: '⭐' },);
@@ -199,6 +236,10 @@ export class HSLayer {
         }
         document.getElementById("ruleAddFolder")!.addEventListener("click", () => {
             if (this.navigator.active) { this.cmdEngine.reportError(HSError.cmdIsRunning); return; }
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("mkdir")) {
+                this.cmdEngine.reportError(HSError.lockedFeature("mkdir"));
+                return;
+            }
             // 新文件夹添加到活动文件夹末尾（无活动则为根目录末尾），并立即激活就地改名
             const folder: ListNode = { name: LangMgr.text.newFolder, uuid: 0, children: [] };
             if (this.activeRuleFolder) this.activeRuleFolder.children!.push(folder);
@@ -218,6 +259,9 @@ export class HSLayer {
         this.propListView.wideToggleFolderRange = it => it.from.type === "f";
         this.propListView.allowDrop = (src, dst, pos) => {
             if (this.cmdEngine.isExecuting() || this.navigator.active) return false;
+            const scope = !dst ? src.parent : pos === "inside" ? dst : dst.parent;
+            try { this.survivalAccess?.checkMove(src, scope, this.hilbertSystem); }
+            catch { return false; }
             // dst为null表示拖到列表末尾的占位符：等价于移动到src所在父级的末尾
             if (!dst) {
                 const parent = src.parent;
@@ -473,9 +517,41 @@ export class HSLayer {
             );
         };
         this.sheetGui.render();
+        this.refreshRewardUI();
     }
     executeCmd(cmd: string) {
         this.cmdEngine.run(cmd);
+    }
+    private checkInteractiveRule(ast: AST) {
+        this.survivalAccess?.checkRuleName(ast, this.hilbertSystem);
+        const rule = this.isMsbtDname(ast) ? undefined : this.hilbertSystem.getD(ast);
+        this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp, rule);
+    }
+    private checkInteractiveSpecial() {
+        this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp);
+    }
+    configureSurvival(rewards: Iterable<string>) {
+        this.survivalAccess = new SurvivalAccess();
+        this.lastGateAST = null;
+        clearCommands();
+        this.unlockBasicPropCmd();
+        for (const reward of rewards) this.applyReward(reward);
+        this.refreshRewardUI();
+    }
+    applyReward(reward: string) {
+        // Creative mode already exposes the full library and command set.
+        if (!this.survivalAccess) return;
+        this.survivalAccess.rewards.add(reward);
+        const commands: Record<string, ("m" | "hyp" | "mcpt" | "mcnt")[]> = {
+            macro: ["m"], hyp: ["hyp"], mcpt: ["mcpt"], mnt: ["mcnt"],
+        };
+        for (const command of commands[reward] ?? []) this.unlockBasicRuleCmd(command);
+        if (reward === "mct" || reward === "mdt" || reward === "mcpt") this.unlockMetaBlock("c");
+        if (reward === "1st" || reward === "mcvt" || reward === "mvt" || reward === "met") this.unlockMetaBlock("v");
+        if (reward === "mkdir") this.unlockMetaBlock("f");
+        const rules = getSurvivalRules(this.survivalAccess.rewards, this.hilbertSystem.rules, this.hilbertSystem.renamedSysRule);
+        if (rules) this.addRules(rules);
+        this.refreshRewardUI();
     }
     private refreshInspection() {
         if (this.navigator.active && !this.inspectionExpanded) {
@@ -548,14 +624,17 @@ export class HSLayer {
     }
     private inlineTarget(target: EditingTarget) {
         if (target.kind === "step") {
+            this.survivalAccess?.checkExpand(target.step, this.hilbertSystem);
             const folders = this.hilbertSystem.expand(target.step) || [];
             for (const f of folders) { if (!f.uuid) f.uuid = this.propListView.idCounter++; this.propListView.expandedFolders.add(f.uuid); }
         } else {
             const rule = this.hilbertSystem.getD(new HSParser().parse(target.name, "dname"));
             if (!rule.step || rule.error) throw HSError.atomicStep(rule.name);
+            const commands = this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd"));
+            this.survivalAccess?.checkReplay(commands, this.hilbertSystem);
             // Validate in isolation before opening a new sheet or mutating the current proof.
             const check = new HilbertSystem(); check.rules = new Map(this.hilbertSystem.rules);
-            check.fromCmd(this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd")));
+            check.fromCmd(commands);
             if (this.hilbertSystem.props.length) {
                 this.sheetGui.addSheet(false);
                 this.sheetGui.sheets[this.sheetGui.activeIndex].name = target.name;
@@ -573,6 +652,7 @@ export class HSLayer {
         } else if (target.kind === "folder") {
             target.node.name = name;
         } else {
+            if (this.survivalAccess && !this.survivalAccess.rewards.has("renameD")) throw HSError.lockedFeature("renameD");
             const old = target.name;
             const contexts = this.editingContexts();
             this.hilbertSystem.renameD(old, name);
@@ -648,6 +728,7 @@ export class HSLayer {
                         let ast: AST;
                         try {
                             ast = new HSParser().parse(e, "dname");
+                            this.checkInteractiveRule(ast);
                             // msbt 是元规则（不注册为规则实体），跳过 getD 校验；
                             // 但规则模板的结论须为 xx↔xx/xx=xx，第一时间检查
                             if (this.isMsbtDname(ast)) this.checkMsbtRuleTemplate(ast);
@@ -660,6 +741,7 @@ export class HSLayer {
                 };
             }
             // msbt：替换元定理（msbt>/msbt<），走独立参数流程
+            this.checkInteractiveRule(args[0]);
             if (this.isMsbtDname(args[0])) {
                 return this.msbtGetNextParam(args);
             }
@@ -718,6 +800,7 @@ export class HSLayer {
             };
         }, async (args) => {
             // 参数齐了执行时也清一下行点击回调（正常情况下clearState已清，这里兜底）
+            this.checkInteractiveRule(args[0]);
             this.propListView.onRowClick = () => { };
             this.ruleListView.onRowClick = () => { };
             // msbt：替换元定理特殊处理（不进 getD）
@@ -768,8 +851,8 @@ export class HSLayer {
             this.propListView.refresh();
         });
     }
-    unlockBasicRuleCmd() {
-        defineCommand('m', (args: AST[]) => {
+    unlockBasicRuleCmd(command?: "m" | "hyp" | "mcpt" | "mcnt") {
+        if (!command || command === "m") defineCommand('m', (args: AST[]) => {
             if (args.length === 0) {
                 this.hilbertSystem.checkConclusionInPropList();
                 this.cmdInput.setParserArgs("dname");
@@ -798,7 +881,7 @@ export class HSLayer {
             this.propListView.refresh();
             this.ruleListView.refresh();
         });
-        defineCommand('hyp', (args: AST[]) => {
+        if (!command || command === "hyp") defineCommand('hyp', (args: AST[]) => {
             if (args.length === 0) {
                 this.cmdInput.setParserArgs("wff");
                 return {
@@ -820,7 +903,8 @@ export class HSLayer {
             this.propListView.refresh();
         });
         // mcpt：命题逻辑自动推理（特殊元规则，独立命令，不走 d 命令交互）
-        defineCommand('mcpt', (args: AST[]) => {
+        if (!command || command === "mcpt") defineCommand('mcpt', (args: AST[]) => {
+            this.checkInteractiveSpecial();
             if (args.length === 0) {
                 this.cmdInput.setParserArgs("wff");
                 return {
@@ -838,11 +922,13 @@ export class HSLayer {
             return null;
         }, async (args) => {
             if (!args[0]) throw HSError.emptyValue;
+            this.checkInteractiveSpecial();
             this.hilbertSystem.mcpt(args[0]);
             this.propListView.refresh();
         });
         // mcnt：量词换名元定理（特殊元规则，独立命令，不走 d 命令交互）
-        defineCommand('mcnt', (args: AST[]) => {
+        if (!command || command === "mcnt") defineCommand('mcnt', (args: AST[]) => {
+            this.checkInteractiveSpecial();
             // 完整参数：mcnt 目标(wff或推理步骤) 换名规则{..}
             if (args.length >= 2) return null;
             const need = args.length; // 下一个要填的参数（0=目标，1=换名规则）
@@ -894,6 +980,7 @@ export class HSLayer {
             this.ruleListView.onRowClick = () => { };
             SyntaxViewer.onClickAst = null;
             if (!args[0]) throw HSError.emptyValue;
+            this.checkInteractiveSpecial();
             this.hilbertSystem.mcnt(args);
             this.propListView.refresh();
         });

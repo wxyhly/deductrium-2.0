@@ -171,7 +171,13 @@ export class Proposition {
                 const target = t ?? data.conditions[data.conditions.length - 1]?.id;
                 return `${prefix}${name} ${p} ${target} ${i}`.trimEnd();
             }
-            return `${prefix}${name} ${cond ? cond + " " : ""}${values.join(" ")}`.trimEnd();
+            // A leading sign would otherwise combine with the preceding
+            // condition id or replacement value as a binary operation.
+            const parameters = values.map(value => {
+                const text = value.toString();
+                return /^[+-]/.test(text) ? `(${text})` : text;
+            });
+            return `${prefix}${name} ${cond ? cond + " " : ""}${parameters.join(" ")}`.trimEnd();
         }
         throw "can't reach";
     }

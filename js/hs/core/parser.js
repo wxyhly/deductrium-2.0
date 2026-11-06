@@ -33,13 +33,13 @@ function genAscii2unicodeTable(strMap) {
     }
     return Array.from(Object.entries(res)).sort((a, b) => b[0].length - a[0].length);
 }
-const charSeps = '()[]{},;|:=+*! \t\n\\';
+const charSeps = '()[]{},;|:=+-*/! \t\n\\';
 // 命令名扫描分隔符：\ 不是分隔符——规则名中 \ 是合法字符（如 d\c），
 // 命令名 d 后必须跟空格等才断开（tokenizeRuleName 已用不含 \ 的 ruleCharSeps 处理规则名）
 const cmdSeps = charSeps.replace("\\", "");
 const predSyms = ["=", "@", "\\<", "\\>", "\\<=", "\\>=", "\\d", "\\c"];
 // 集合/算术二元运算（按优先级：∪ < ∩ < +- < *× < \\）
-const setSyms = ["\\u", "\\i", "+", "-", "\\\\", "*", "\\x"];
+const setSyms = ["\\u", "\\i", "+", "-", "\\\\", "*", "/", "\\x"];
 // rulename parse rule:
 const prefix = new Set("uvce<>");
 const ruleCharSeps = "(,;\n \t:)";
@@ -208,6 +208,10 @@ export class HSParser {
                 continue;
             }
             let cmdFormat = commandDefs[word];
+            // Attached symbols in d+1, d/| and d{..} belong to the rule
+            // name. The explicit command d is separated by space or '('.
+            if (word === "d" && this.cursor < text.length && !/[\s(]/.test(text[this.cursor]))
+                cmdFormat = undefined;
             if (!cmdFormat) {
                 this.cursor = start;
                 const cmd = (word === "#nf" || word === "#of" || word === "#dt") && text.slice(this.cursor + 3).trim().startsWith("(") ? "hyp" : "d";
@@ -764,7 +768,7 @@ export class HSParser {
     parseMult(isItem) {
         let leftToken = this.token;
         let left = this.parseDiff(isItem);
-        while (this.token && (this.token.text === '*' || this.token.text === '\\x')) {
+        while (this.token && (this.token.text === '*' || this.token.text === '/' || this.token.text === '\\x')) {
             this.remarkItem(left, leftToken);
             if (isItem === F3)
                 throw new Error("Set operations only allowed in item context");
@@ -797,11 +801,14 @@ export class HSParser {
         return left;
     }
     parseFn(isItem) {
-        // 一元正号/负号：+23 → 23、-x → -x（-13 已作为 atom；这里兜底括号内 +x）
+        // Signed numeral atoms belong to a different number system from naturals.
+        // Keep signs on literals; a general unary operation remains an FN node.
         if (this.token?.text === "+" || this.token?.text === "-") {
-            const start = this.token.start;
+            const sign = this.token;
             this.nextSym();
-            return this.parseFn(isItem);
+            const value = this.parseFn(T3);
+            const literal = value.type === NodeType.ATOM_ITEM && /^\d+(?:\.\d*)?[qr]?$/.test(value.name);
+            return new AST(literal ? NodeType.ATOM_ITEM : NodeType.FN, literal ? sign.text + value.name : sign.text, ...(literal ? [] : [value])).range(sign.start, value.end);
         }
         const token = this.token;
         let left;
@@ -1113,6 +1120,8 @@ export class HSParser {
             if (setSyms.includes(ast.name)) {
                 const a = ast.nodes[0];
                 const b = ast.nodes[1];
+                if (!b)
+                    return ast.name + "(" + HSParser.stringify(a, false) + ")";
                 return left + HSParser.stringify(a, a.type === NodeType.FN && setSyms.includes(a.name)) + (ascii2unicodeTable[ast.name] || ast.name) + HSParser.stringify(b, b.type === NodeType.FN && setSyms.includes(b.name)) + right;
             }
             return (ast.name === "()" || ast.name === "{}" ? "" : ast.name) + (ast.name === "{}" ? "{" : "(") + ast.nodes.map(e => HSParser.stringify(e, false)).join(",") + (ast.name === "{}" ? "}" : ")");
@@ -1130,7 +1139,11 @@ export class HSParser {
             return `{${ast.nodes[0].name}|${HSParser.stringify(ast.nodes[1], false)}}`;
         }
         if (ast.type === NodeType.RPL) {
-            return `{${HSParser.stringify(ast.nodes[0], false)}|${ast.nodes[1].name}∈${HSParser.stringify(ast.nodes[2], false)}}`;
+            const image = ast.nodes[0];
+            const text = HSParser.stringify(image, false);
+            // An atomic image needs parentheses to distinguish replacement
+            // {($A)|x∈B} from the class-binder syntax {$A|P} on reparse.
+            return `{${image.isAtom() ? "(" + text + ")" : text}|${ast.nodes[1].name}∈${HSParser.stringify(ast.nodes[2], false)}}`;
         }
         if (ast.type === NodeType.RULE) {
             const conc = ast.nodes.pop();
