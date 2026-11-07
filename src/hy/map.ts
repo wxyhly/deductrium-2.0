@@ -437,7 +437,7 @@ export const mapData = `
 :%,5$[=getD:70]
 :mcvt,0#[p](∀$0:($1∧$2)) ↔ ((∀$0:$1) ∧ (∀$0:$2))
 :%,2$[=getD:40]
-:mcvt,3@[zh]条件概括元定理[n]让var更强[n]可以认为和正常推理无异[en]Conditional generalization metatheorem[n] can add same quantifier to all conditions [n]and conclusions of a given deduction rule
+:mcvt,3@[zh]条件概括元定理可把[n]定理的所有条件和结论[n]都加上相同的量词[n]同时加强var[en]Conditional generalization metatheorem[n] can add same quantifier to all conditions [n]and conclusions of a given deduction rule
 :mvt,0@[zh]概括元定理是说[n]若定理的所有条件[n]都没自由出现$0[n]则可单独在结论中[n]加上量词V$0[en]Generalization metatheorem states that[n]if all conditions of a rule[n]have no free occurrence of $0[n]then quantifier V$0 can be added to conclusion
 // 分离公理与空集
 
