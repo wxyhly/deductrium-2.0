@@ -4,12 +4,14 @@ import { TTLayer } from "./tt/main.js";
 import { AST } from "./hs/core/ast.js";
 import { HSParser } from "./hs/core/parser.js";
 import { HyLayer } from "./hy/gui.js";
-import { blockMap, nameMap, TileBlock, TileBlockType } from "./hy/maploader.js";
+import { blockMap, nameMap, TileBlock, TileBlockType, editorPreview, editorPreviewSaveMode } from "./hy/maploader.js";
 import { LangMgr } from "./lang.js";
 import { ProgressLayer, kbFullId } from "./pg/main.js";
 import { SaveLoad } from "./saveload.js";
 import { calcMaxReachOrd, cmp, printOrd } from "./hy/ordinal.js";
-import { getMapPalette } from "./hy/palette.js";
+import { tileColor, tileTextColor, tileDisplayText } from "./hy/appearance.js";
+import { stringifyDeductriumAmout } from "./format.js";
+import { createMapScriptState, planMapScript, MapScriptPlan } from "./hy/script.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
 // 旧地图的 dstr 是展示文字；目标必须按稳定 ID 查找，不能解析本地化文案。
@@ -37,6 +39,8 @@ class Game {
     maxOrd: number[] = [];
     nextOrd: number[] = [1];
     ordBase = 15;
+    mapScript = createMapScriptState();
+    private lastScriptError = "";
 
     langMgr = new LangMgr(SaveLoad.getSavedLang());
     hsLayer = new HSLayer;
@@ -46,7 +50,7 @@ class Game {
     private initialMapState = new Map(Array.from(blockMap, ([hash, block]) =>
         [hash, { ...block, data: { ...block.data } }] as const));
     private initialMapNames = new Map(nameMap);
-    saveload = new SaveLoad(gameMode, () => {
+    saveload = new SaveLoad(editorPreview ? editorPreviewSaveMode() : gameMode, () => {
         // 创造模式目前只有推理层（hs）+ 类型层（tt）；几何层/奖励/成就/经济仅生存模式
         if (gameMode === "creative") return { hs: this.hsLayer.serialize(), tt: this.ttLayer.serialize(), ly: this.getCurrentLayer() };
         return {
@@ -63,6 +67,7 @@ class Game {
             tp: this.tilesParcour,
             mo: this.maxOrd.slice(),
             ob: this.ordBase,
+            ms: this.mapScript,
         };
     }, (data) => {
         if (data.hs) this.hsLayer.deserialize(data.hs);
@@ -80,7 +85,9 @@ class Game {
             // 接线前的存档没有 mo/ob，仍可从当前位置和奖励恢复已有进度。
             this.maxOrd = [...(data.mo ?? this.hyLayer.world.currentOrd ?? [])];
             this.ordBase = data.ob ?? 15;
+            this.mapScript = createMapScriptState(data.ms);
             this.applyGotRewards();
+            this.restoreMapScript();
             this.updateStats();
             this.progressLayer.refreshAchievements();
             this.progressLayer.refreshSymbols();
@@ -128,6 +135,73 @@ class Game {
         this.hsLayer.onchange = () => this.saveload.notifySave();
         this.ttLayer.onchange = () => this.saveload.notifySave();
         this.hyLayer.onchange = () => this.saveload.notifySave();
+        if (gameMode === "survival") {
+            this.restoreMapScript();
+            if (firstLoad) {
+                const hash = this.hyLayer.world.currentTile.join(",");
+                const block = blockMap.get(hash);
+                if (block) this.runMapScript(block, hash);
+            }
+        }
+    }
+
+    private restoreMapScript() {
+        this.hsLayer.setMapDisabledAxioms?.(this.mapScript.disabledAxioms);
+        for (const reward of this.mapScript.rewards) this.hsLayer.applyReward(reward);
+        for (const layer of this.mapScript.layers) this.showLayerButton(layer, true);
+    }
+    private prepareMapScript(block: TileBlock, hash: string): { plan: MapScriptPlan; money: number; id: string } | false | undefined {
+        if (typeof block.data?.script !== "string" || !block.data.script.trim()) return;
+        const id = block.name || hash;
+        // Reserve the legacy toll before planning, so combined costs cannot overdraw.
+        const money = this.deductrium - (block.type === TileBlockType.Gate ? block.data.payD ?? 0 : 0);
+        try {
+            const plan = planMapScript(block.data.script, this.mapScript, {
+                money, rewards: this.gotRewards,
+                hasTile: target => blockMap.has(nameMap.get(target) ?? target),
+                hasAxiom: name => this.hsLayer.hasMapAxiom(name),
+            }, !block.data.scriptRepeat && this.mapScript.done.includes(id));
+            this.lastScriptError = "";
+            return { plan, money, id };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (this.lastScriptError !== id + message) this.showToast(message);
+            this.lastScriptError = id + message;
+            return false;
+        }
+    }
+    private commitMapScript(prepared: ReturnType<Game["prepareMapScript"]>) {
+        if (!prepared) return;
+        const { plan, money, id } = prepared;
+        if (!plan.state.done.includes(id)) plan.state.done.push(id);
+        this.mapScript = plan.state;
+        this.deductriumConsumed += plan.spent;
+        const delta = plan.money - money;
+        if (delta) this.addDeductrium(delta);
+        for (const effect of plan.effects) {
+            if (effect.op === "reward") {
+                this.gotRewards.add(effect.id);
+                this.applyUnlockEffect({ type: TileBlockType.Road, name: effect.id, text: "", data: {} });
+            } else if (effect.op === "message") this.showToast(effect.text);
+            else if (effect.op === "open" || effect.op === "close" || effect.op === "tile" || effect.op === "text") {
+                const hash = nameMap.get(effect.id) ?? effect.id;
+                const tile = blockMap.get(hash)!;
+                Object.assign(tile, plan.state.tileEdits[effect.id]);
+                if (effect.op === "close" || effect.op === "tile" && effect.type !== TileBlockType.Road) {
+                    this.destructedGates.delete(effect.id); this.destructedGates.delete(hash);
+                    if (tile.data) tile.data.del = false;
+                }
+            }
+        }
+        this.restoreMapScript();
+        this.updateStats();
+        this.saveload.notifySave();
+    }
+    private runMapScript(block: TileBlock, hash: string): boolean {
+        const prepared = this.prepareMapScript(block, hash);
+        if (prepared === false) return false;
+        this.commitMapScript(prepared);
+        return true;
     }
 
     private getCurrentLayer(): string {
@@ -266,6 +340,10 @@ class Game {
         nameMap.clear();
         for (const [hash, initial] of this.initialMapState) blockMap.set(hash, { ...initial, data: { ...initial.data } });
         for (const [name, hash] of this.initialMapNames) nameMap.set(name, hash);
+        for (const [id, edit] of Object.entries(this.mapScript.tileEdits)) {
+            const tile = blockMap.get(nameMap.get(id) ?? id);
+            if (tile) Object.assign(tile, edit);
+        }
         this.restoreOrdinalMap();
         for (const layer of ["D-layer", "P-layer"]) this.showLayerButton(layer, false);
         for (const key of this.gotRewards) {
@@ -337,33 +415,18 @@ class Game {
         });
     }
     initHyGUI() {
-        // 几何层渲染回调：tile 颜色/文字按 data/type 处理（渲染逻辑集中在 game.ts）
-        this.hyLayer.world.onTileColor = (block, highLight) => {
-            const palette = getMapPalette();
-            if (highLight && block?.data?.getD && !block.data.got && this.gotRewards.has("highlightd")) return palette.highlight;
-            return palette.tiles[block?.type ?? 1];
-        };
-        this.hyLayer.world.onTextColor = block => getMapPalette().text[block.type];
-        this.hyLayer.world.onTileText = (block: TileBlock) => {
-            const data = block.data ?? {};
-            let text = typeof block.text === "string" ? block.text : block.text[LangMgr.lang] ?? Object.values(block.text)[0] ?? "";
-            if (data.p || data.d) {
-                // 门文本已由地图脚本转为 unicode，直接显示
-                text += data.p ? "\n#p" : "\n#d";
-            }
-            if (data.del) text += "\n" + LangMgr.text.delGate;
-            if (data.never) text = data.got ? LangMgr.text.neverReward : LangMgr.text.neverLocked;
-            if (data.dstr) text = LangMgr.text.dstrPrefix + data.dstr;
-            if (data.getD) text = LangMgr.formalize.getD(stringifyDeductriumAmout(data.getD), data.got);
-            if (data.payD && !data.requiresReward) text = LangMgr.formalize.payD(stringifyDeductriumAmout(data.payD));
-            if (data.unl) text = (data.got ? LangMgr.text.unlockedPrefix : LangMgr.text.unlockPrefix) + text;
-            return text;
-        };
+        // 生存地图与编辑器共用同一套颜色和显示文字规则。
+        this.hyLayer.world.onTileColor = (block, highLight) => tileColor(block, highLight, this.gotRewards.has("highlightd"));
+        this.hyLayer.world.onTextColor = tileTextColor;
+        this.hyLayer.world.onTileText = tileDisplayText;
+        this.hyLayer.world.onEnterRoad = (hash, block) =>
+            this.initialMapState.get(hash)?.type === TileBlockType.Gate || this.runMapScript(block, hash);
         // 获得奖励：记录 data.got=true；type 从 reward 改为 road（非 reward 不动）
         // 游戏中获取推理素（加载存档时直接读存档总量，不重复加钱）
         this.hyLayer.world.onGetReward = (hash, block, isLoading) => {
             block.data ??= {};
             const alreadyGot = this.gotRewards.has(block.name || hash);
+            if (!isLoading && !this.runMapScript(block, hash)) return false;
             block.data.got = true;
             this.gotRewards.add(block.name || hash);
             this.applyUnlockEffect(block);
@@ -385,6 +448,8 @@ class Game {
         };
         // 闸门通过判定：payD 扣费（移植旧版逻辑）+ dG 拆门技能
         this.hyLayer.world.onPassGate = (name, tile, hash) => {
+            const script = this.prepareMapScript(tile, hash);
+            if (script === false) return false;
             const automaticExit = Object.values(typeof tile.text === "string" ? { text: tile.text } : tile.text)
                 .some(text => text.endsWith("#imm"));
             const gateTest = (): boolean => {
@@ -442,9 +507,10 @@ class Game {
                     if (ast) this.hsLayer.rememberGate(ast);
                     return ast ? this.hsLayer.checkRuleGate(ast) : false;
                 }
-                return false;
+                return typeof data.script === "string" && !!data.script.trim();
             };
             if (!gateTest()) return false;
+            this.commitMapScript(script);
             // 成就：通过门（data.ac）即完成
             if (tile.data?.ac) this.finishAchievement(tile.data.ac);
             // 知识库：门带 data.info 解锁
@@ -491,19 +557,6 @@ function parseDeductriumAmout(str: string) {
     else if (str.endsWith("g")) coeff = 1e6;
     else if (str.endsWith("T")) coeff = 1e12;
     return Number(str.replaceAll(/[a-zA-Zµ]+/g, "")) * coeff!;
-}
-function stringifyDeductriumAmout(n: number) {
-    const absn = Math.abs(n);
-    if (absn >= 1e12) {
-        return n / 1e12 + "T";
-    } if (absn >= 1e9) {
-        return n / 1e9 + "kg";
-    } if (absn >= 1e6) {
-        return n / 1e6 + "g";
-    } if (absn >= 1e3) {
-        return n / 1e3 + "mg";
-    }
-    return n + "µg"
 }
 // axiom a2: |-($1→$2→$3)→($1→$2)→($1→$3);
 // axiom a3: |-(¬$1→¬$2)→($2→$1);

@@ -20,6 +20,7 @@ import { getSurvivalRules } from "./rewards.js";
 import { checkDeletion, deleteSelection, planDeletion, DeletionPlan } from "./editing.js";
 import { EditingTarget, findTargets, targetAtom, targetList } from "./targets.js";
 import { ProofNavigator } from "./proof-navigation.js";
+import { MapAxiomPolicy } from "./map-policy.js";
 
 // a/d 开头的公理规则在存档中只存名称占位（name:ax:.），内容以初始定义为准：
 // 这样存档体积小、作者更新 init 规则后玩家无需重置存档。
@@ -53,6 +54,16 @@ export class HSLayer {
     private inspectionRuleExpanded: Set<number> | null = null;
     onchange?: () => void;
     private survivalAccess: SurvivalAccess | null = null;
+    private mapPolicy?: MapAxiomPolicy;
+    private mapDisabledAxioms = new Set<string>();
+    hasMapAxiom(name: string): boolean {
+        return [...initialCreativeRules.split("\n"), ...initialSurvivalRules.split("\n")]
+            .some(line => line.trimStart().startsWith(name + ":ax:"));
+    }
+    setMapDisabledAxioms(names: Iterable<string>) {
+        this.mapDisabledAxioms = new Set(names);
+        this.mapPolicy = this.mapDisabledAxioms.size ? new MapAxiomPolicy(this.hilbertSystem, this.mapDisabledAxioms) : undefined;
+    }
     private lastGateAST: AST | null = null;
     private lastGateViewer?: SyntaxViewer;
     getSheetGui() { return this.sheetGui; }
@@ -106,7 +117,7 @@ export class HSLayer {
                                 const wrapped = this.hilbertSystem.ref_addCaptureScopeToAST(
                                     p.ast, this.hilbertSystem.captureScope(null, p, [])
                                 );
-                                if (wrapped.equal(ast)) return true;
+                                if (wrapped.equal(ast) && (!this.mapPolicy || this.mapPolicy.allowsStep(p))) return true;
                             } catch { /* 层级捕获失败（如v作用域缺断言）跳过 */ }
                         }
                         if (p.children && iter(p.children)) return true;
@@ -124,6 +135,7 @@ export class HSLayer {
     checkRuleGate(ast: AST): boolean {
         for (const rule of this.hilbertSystem.rules.values()) {
             if (rule.error) continue;
+            if (this.mapPolicy && !this.mapPolicy.allowsRule(rule)) continue;
             try {
                 const ruleAst = new HSParser().parse(rule.toString(), "rule");
                 if (ruleAst && ruleAst.equal(ast)) return true;
@@ -260,7 +272,10 @@ export class HSLayer {
         this.propListView.allowDrop = (src, dst, pos) => {
             if (this.cmdEngine.isExecuting() || this.navigator.active) return false;
             const scope = !dst ? src.parent : pos === "inside" ? dst : dst.parent;
-            try { this.survivalAccess?.checkMove(src, scope, this.hilbertSystem); }
+            try {
+                this.survivalAccess?.checkMove(src, scope, this.hilbertSystem);
+                if (this.mapPolicy && !this.mapPolicy.allowsStep(src)) return false;
+            }
             catch { return false; }
             // dst为null表示拖到列表末尾的占位符：等价于移动到src所在父级的末尾
             if (!dst) {
@@ -523,11 +538,13 @@ export class HSLayer {
         this.cmdEngine.run(cmd);
     }
     private checkInteractiveRule(ast: AST) {
+        this.mapPolicy?.checkName(ast);
         this.survivalAccess?.checkRuleName(ast, this.hilbertSystem);
         const rule = this.isMsbtDname(ast) ? undefined : this.hilbertSystem.getD(ast);
         this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp, rule);
     }
     private checkInteractiveSpecial() {
+        if (this.mapDisabledAxioms?.size) throw new Error("公理受限时，请使用逐步推导代替自动元规则");
         this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp);
     }
     configureSurvival(rewards: Iterable<string>) {
@@ -624,11 +641,13 @@ export class HSLayer {
     }
     private inlineTarget(target: EditingTarget) {
         if (target.kind === "step") {
+            if (this.mapPolicy && !this.mapPolicy.allowsStep(target.step)) throw new Error("此推导依赖已禁用的公理");
             this.survivalAccess?.checkExpand(target.step, this.hilbertSystem);
             const folders = this.hilbertSystem.expand(target.step) || [];
             for (const f of folders) { if (!f.uuid) f.uuid = this.propListView.idCounter++; this.propListView.expandedFolders.add(f.uuid); }
         } else {
             const rule = this.hilbertSystem.getD(new HSParser().parse(target.name, "dname"));
+            if (this.mapPolicy && !this.mapPolicy.allowsRule(rule)) throw new Error("此规则依赖已禁用的公理");
             if (!rule.step || rule.error) throw HSError.atomicStep(rule.name);
             const commands = this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd"));
             this.survivalAccess?.checkReplay(commands, this.hilbertSystem);
@@ -815,6 +834,9 @@ export class HSLayer {
                 if (!p) throw HSError.matchCond(idx + 1, HSError.pname404(e.name));
                 return p;
             });
+            for (const condition of conds) {
+                if (this.mapPolicy && !this.mapPolicy.allowsStep(condition)) throw new Error("此条件依赖已禁用的公理");
+            }
             const replaceValues = Object.fromEntries(args.slice(1 + deduction.conditions.length).map(
                 (e, idx) => [deduction.replaceNames[idx][0], e])
             );

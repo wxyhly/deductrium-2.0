@@ -20,6 +20,7 @@ import { getSurvivalRules } from "./rewards.js";
 import { checkDeletion, deleteSelection, planDeletion } from "./editing.js";
 import { findTargets, targetAtom, targetList } from "./targets.js";
 import { ProofNavigator } from "./proof-navigation.js";
+import { MapAxiomPolicy } from "./map-policy.js";
 // a/d 开头的公理规则在存档中只存名称占位（name:ax:.），内容以初始定义为准：
 // 这样存档体积小、作者更新 init 规则后玩家无需重置存档。
 // 此处预解析 init 文本，构建 名字→完整规则行 的映射供占位符恢复。
@@ -54,6 +55,16 @@ export class HSLayer {
     inspectionRuleExpanded = null;
     onchange;
     survivalAccess = null;
+    mapPolicy;
+    mapDisabledAxioms = new Set();
+    hasMapAxiom(name) {
+        return [...initialCreativeRules.split("\n"), ...initialSurvivalRules.split("\n")]
+            .some(line => line.trimStart().startsWith(name + ":ax:"));
+    }
+    setMapDisabledAxioms(names) {
+        this.mapDisabledAxioms = new Set(names);
+        this.mapPolicy = this.mapDisabledAxioms.size ? new MapAxiomPolicy(this.hilbertSystem, this.mapDisabledAxioms) : undefined;
+    }
     lastGateAST = null;
     lastGateViewer;
     getSheetGui() { return this.sheetGui; }
@@ -102,7 +113,7 @@ export class HSLayer {
                         if (p.from.type === "d") {
                             try {
                                 const wrapped = this.hilbertSystem.ref_addCaptureScopeToAST(p.ast, this.hilbertSystem.captureScope(null, p, []));
-                                if (wrapped.equal(ast))
+                                if (wrapped.equal(ast) && (!this.mapPolicy || this.mapPolicy.allowsStep(p)))
                                     return true;
                             }
                             catch { /* 层级捕获失败（如v作用域缺断言）跳过 */ }
@@ -125,6 +136,8 @@ export class HSLayer {
     checkRuleGate(ast) {
         for (const rule of this.hilbertSystem.rules.values()) {
             if (rule.error)
+                continue;
+            if (this.mapPolicy && !this.mapPolicy.allowsRule(rule))
                 continue;
             try {
                 const ruleAst = new HSParser().parse(rule.toString(), "rule");
@@ -311,6 +324,8 @@ export class HSLayer {
             const scope = !dst ? src.parent : pos === "inside" ? dst : dst.parent;
             try {
                 this.survivalAccess?.checkMove(src, scope, this.hilbertSystem);
+                if (this.mapPolicy && !this.mapPolicy.allowsStep(src))
+                    return false;
             }
             catch {
                 return false;
@@ -630,11 +645,14 @@ export class HSLayer {
         this.cmdEngine.run(cmd);
     }
     checkInteractiveRule(ast) {
+        this.mapPolicy?.checkName(ast);
         this.survivalAccess?.checkRuleName(ast, this.hilbertSystem);
         const rule = this.isMsbtDname(ast) ? undefined : this.hilbertSystem.getD(ast);
         this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp, rule);
     }
     checkInteractiveSpecial() {
+        if (this.mapDisabledAxioms?.size)
+            throw new Error("公理受限时，请使用逐步推导代替自动元规则");
         this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp);
     }
     configureSurvival(rewards) {
@@ -755,6 +773,8 @@ export class HSLayer {
     }
     inlineTarget(target) {
         if (target.kind === "step") {
+            if (this.mapPolicy && !this.mapPolicy.allowsStep(target.step))
+                throw new Error("此推导依赖已禁用的公理");
             this.survivalAccess?.checkExpand(target.step, this.hilbertSystem);
             const folders = this.hilbertSystem.expand(target.step) || [];
             for (const f of folders) {
@@ -765,6 +785,8 @@ export class HSLayer {
         }
         else {
             const rule = this.hilbertSystem.getD(new HSParser().parse(target.name, "dname"));
+            if (this.mapPolicy && !this.mapPolicy.allowsRule(rule))
+                throw new Error("此规则依赖已禁用的公理");
             if (!rule.step || rule.error)
                 throw HSError.atomicStep(rule.name);
             const commands = this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd"));
@@ -994,6 +1016,10 @@ export class HSLayer {
                     throw HSError.matchCond(idx + 1, HSError.pname404(e.name));
                 return p;
             });
+            for (const condition of conds) {
+                if (this.mapPolicy && !this.mapPolicy.allowsStep(condition))
+                    throw new Error("此条件依赖已禁用的公理");
+            }
             const replaceValues = Object.fromEntries(args.slice(1 + deduction.conditions.length).map((e, idx) => [deduction.replaceNames[idx][0], e]));
             this.hilbertSystem.d(deduction, conds, replaceValues);
             this.propListView.refresh();

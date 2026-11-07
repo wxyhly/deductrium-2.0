@@ -68,7 +68,7 @@ function validateValues(values) {
     if (!keys.length || keys.some(key => key !== '' && !/^[A-Za-z]{2,3}$/.test(key)) || (keys.includes('') && keys.length > 1)) throw Error('无效的语言字段。');
 }
 
-function writeText(values) {
+export function writeText(values) {
     validateValues(values);
     // The runtime treats a backslash immediately before [ as a literal bracket.
     // Put a single backslash-ended language last so it cannot escape the next tag.

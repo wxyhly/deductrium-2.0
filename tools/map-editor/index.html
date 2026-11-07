@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deductrium · 地图编辑器</title>
+  <script src="../../js/theme.js"></script>
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">DEDUCTRIUM · MAP STUDIO</span><h1>地图编辑器 <span id="dirty-indicator" aria-label="保存状态"></span></h1></div>
+    <div class="actions">
+      <button id="new-project">新建空图</button><button id="official-map">加载官方图</button><button id="import">导入文件</button>
+      <button id="export-source">导出 map.ts</button><button id="export-project" class="primary">保存项目 JSON</button><button id="play-map">▶ 试玩地图</button>
+      <input id="file" type="file" accept=".ts,.json,.txt" hidden>
+    </div>
+  </header>
+  <nav class="toolbar" aria-label="编辑工具">
+    <div class="actions"><button id="undo" disabled>撤销</button><button id="redo" disabled>重做</button></div>
+    <label>工具 <select id="mode"><option value="select">选格</option><option value="0">画道路</option><option value="1">画墙</option><option value="2">画门</option><option value="3">画奖励</option><option value="4">画序数</option><option value="erase">擦除</option></select></label>
+    <label>预览语言 <select id="map-language"><option value="zh">中文</option><option value="en">English</option></select></label>
+    <label>主题 <select id="theme-select"><option value="auto">跟随系统</option><option value="light">白天</option><option value="dark">黑夜</option></select></label>
+    <label class="check"><input id="grid" type="checkbox">空格网格</label>
+    <label class="check"><input id="highlight" type="checkbox">推理素高亮</label>
+  </nav>
+  <div class="statusbar"><span id="status" role="status" aria-live="polite">正在加载…</span><span id="draft-status"></span><button id="recover-draft" hidden>导出未恢复草稿</button></div>
+  <main>
+    <aside class="library panel">
+      <details open><summary>项目</summary><form id="project-form"><label>项目 ID<input id="project-id" required></label><label>标题<input id="project-title"></label><button id="apply-project" type="submit">应用项目信息</button></form></details>
+      <div class="list-tools"><label for="search">查找格子</label><input id="search" type="search" placeholder="名称、文字、坐标、实例"><label>类型<select id="filter"><option value="all">全部</option><option value="0">道路</option><option value="1">墙</option><option value="2">门</option><option value="3">奖励</option><option value="4">序数</option><option value="mounted">模块实例格</option><option value="group">仅选区</option></select></label><div class="actions"><button id="select-filtered">选择筛选结果</button><button id="clear-group">清空选区</button></div><p id="count" class="hint"></p></div>
+      <div id="tiles" aria-label="地图格子列表"></div><button id="more-tiles" hidden>显示更多</button>
+    </aside>
+    <section class="map-pane panel" aria-label="地图视图">
+      <div class="pane-heading"><h2>双曲地图 <small>{6,4}</small></h2><button id="locate">定位当前格</button></div>
+      <form id="locate-form" class="locate-row"><label class="sr-only" for="location">名称或坐标</label><input id="location" placeholder="名称 / 0,1,3 / [] 原点"><button type="submit">前往</button><button id="home" type="button">原点</button></form>
+      <div class="canvas-wrap"><canvas id="map" aria-label="地图：单击选格或绘制，拖动平移，Shift 单击加入选区"></canvas><div id="markers" aria-hidden="true"></div><div class="map-note">拖动平移 · 单击使用工具 · Shift 单击多选<br>空白格也可选；邻接边编号 0–5</div></div>
+      <div class="map-footer"><output id="coordinate">原点 []</output><span id="selection-count">选区 0 格</span></div>
+      <div id="neighbors" class="neighbors" aria-label="当前格的相邻格"><span>相邻格</span><button data-edge="0">0</button><button data-edge="1">1</button><button data-edge="2">2</button><button data-edge="3">3</button><button data-edge="4">4</button><button data-edge="5">5</button></div>
+    </section>
+    <aside class="inspector panel">
+      <div class="pane-heading"><h2 id="tile-title">格子属性</h2><span id="pending" class="badge" hidden>尚未应用</span></div>
+      <div id="tile-meta" class="meta"></div><p id="mounted-note" class="notice" hidden></p>
+      <form id="tile-form">
+        <fieldset id="tile-fields"><div class="field-pair"><label>类型<select id="tile-type"><option value="0">道路 / 提示</option><option value="1">墙</option><option value="2">门</option><option value="3">奖励</option><option value="4">序数</option></select></label><label>名称<input id="tile-name" autocomplete="off"></label></div>
+          <label>文字格式<select id="text-mode"><option value="plain">通用文字</option><option value="languages">多语言文字</option></select></label>
+          <label id="plain-field">文字<textarea id="text-plain" rows="4" spellcheck="false"></textarea></label>
+          <div id="language-fields" hidden><label>中文 zh<textarea id="text-zh" rows="4" spellcheck="false"></textarea></label><label>English en<textarea id="text-en" rows="4" spellcheck="false"></textarea></label><details><summary>其他语言 JSON</summary><textarea id="text-other" rows="3" aria-label="其他语言 JSON" spellcheck="false">{}</textarea></details></div>
+          <label>地图脚本 script<textarea id="tile-script" rows="5" spellcheck="false" placeholder="奖励示例：disable axiom a3&#10;give key red&#10;门示例：require key red&#10;enable axiom a3"></textarea></label>
+          <p class="hint">每行一条命令。奖励可写 disable axiom a3 / give key red；门可写 require key red / enable axiom a3。钥匙按模块实例隔离；禁用公理也禁止依赖它的宏和过门证明。</p>
+          <details><summary>脚本命令参考</summary><p class="hint">每行一条命令，也可用分号分隔；// 开头的整行是注释。文字使用 JSON 双引号，ID 不含空格。下列 ID、金额和文字可替换：</p><pre class="script-reference">require key red
+require not-key red
+require flag ready
+require not-flag ready
+require reward prize
+require money &gt;= 10
+require count visits &gt;= 2
+give key red
+take key red
+give money 10
+take money 10
+set flag ready
+clear flag ready
+set count visits 0
+add count visits 1
+disable axiom a3
+enable axiom a3
+unlock reward prize
+unlock layer T-layer
+open gate door
+close gate door
+set tile door road
+set text door "新的文字"
+message "你好"</pre><p class="hint">比较符：&gt;=、&lt;=、==、!=、&gt;、&lt;。格子类型：road / wall / gate / reward / ordinal；层：D-layer / T-layer / P-layer / G-layer。具体语法由公共解析器校验，不支持 JavaScript 或 eval。</p><p class="hint">门的 require 条件每次进入都会检查；效果默认每个具名格执行一次。需要重复效果时，在其他 data JSON 中设置 "scriptRepeat": true。</p></details>
+          <label>其他 data JSON（script 由上方字段保存）<textarea id="tile-data" rows="7" spellcheck="false">{}</textarea></label>
+          <p class="hint">p / d / t / td / never、getD / payD、unl.layer、dstrTarget / requiresReward 等元数据直接写入 JSON，保留现有字段。</p>
+          <div class="actions"><button id="apply-tile" class="primary" type="submit">应用 Apply</button><button id="reset-form" type="button">还原表单</button><button id="remove-tile" class="danger" type="button">删除本格</button></div>
+        </fieldset>
+      </form>
+      <details id="module-panel" open><summary>模块库与挂载</summary>
+        <div class="field-pair"><label>导出模块 ID<input id="module-export-id" value="my-module"></label><label>模块标题<input id="module-export-title" value="我的模块"></label></div>
+        <p class="hint">以当前格为原点；默认导出选区，选区为空时导出当前单格。</p><button id="export-module">导出选区模块 JSON</button><button id="import-module">导入模块到库</button>
+        <label>模块库<select id="module-library" aria-label="模块库"></select></label>
+        <form id="mount-form"><label>实例 ID<input id="instance-id" value="instance-1" required></label><label>锚点坐标<input id="mount-at" value="[]" placeholder="[] 或 0,1,3"></label>
+          <div class="actions"><label>当前格的边<select id="mount-edge"><option value="here">原位</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><button id="anchor-selected" type="button">取当前格锚点</button></div>
+          <label>旋转<select id="mount-rotation"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
+          <div class="actions"><button id="preview-mount" type="button">预览挂载</button><button id="confirm-mount" class="primary" type="submit" disabled>确认挂载</button><button id="clear-preview" type="button">清除预览</button></div>
+        </form>
+        <output id="mount-preview" class="preview-output">先选择模块并预览。</output>
+      </details>
+      <details open><summary>模块实例</summary><div id="instances"></div></details>
+    </aside>
+  </main>
+  <div id="fatal" role="alert" hidden></div>
+  <script type="module" src="editor.mjs"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {MapDocument, readText} from '../tools/map-text-editor/model.mjs';
+import {MapDocument, readText} from '../tools/map-editor/source-text.mjs';
 import {Polygon} from '../js/hy/tiling.js';
 import {blockMap, initMap} from '../js/hy/maploader.js';
 const source = await readFile(new URL('../src/hy/map.ts',import.meta.url),'utf8');
@@ -74,4 +74,4 @@ check('unrepresentable slash-newline text stays in portable drafts and cannot si
         assert.deepEqual(restored.values(row.id),values);
     }
 });
-console.log(`${checks} map text editor checks passed`);
+console.log(`${checks} map source parser checks passed`);
