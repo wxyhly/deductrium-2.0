@@ -1,4 +1,5 @@
 import {buildWorld} from './publish.mjs';
+import {installWorldPicker} from './world-picker.mjs';
 
 export function installWorldSettings(api) {
     const host = document.getElementById('world-settings');
@@ -7,7 +8,7 @@ export function installWorldSettings(api) {
 <label>入口稳定 ID<input id="world-spawn" readonly></label><div class="actions"><button id="world-use-selection" type="button">当前格设为入口</button><label>朝向<select id="world-rotation">${[0,1,2,3,4,5].map(n=>`<option>${n}</option>`).join('')}</select></label></div>
 <label><input id="world-currency-enabled" type="checkbox">注册本 mod 的币种</label><div class="field-pair"><label>币种名称<input id="world-currency-name" maxlength="80"></label><label>币种符号<input id="world-currency-symbol" maxlength="16"></label></div><p id="world-currency-id" class="muted"></p>
 <details><summary>银行和版本迁移（高级）</summary><label>银行配置 JSON<textarea id="world-banks" rows="5">{}</textarea></label><p class="muted">每个方向须显式设置 from/to/rate/feeRate/feeFixed/minimum/rounding/precision。兑换奖励格的属性 JSON 写 exchange: {bank, from, to, amount}；格子文字说明金额与手续费，领取时直接兑换。</p><label>迁移计划 JSON<textarea id="world-migrations" rows="5">[]</textarea></label><p class="muted">每次升级须声明 from、to、remap、reset。移动/改名保持砖块 ID；修改题目或删格必须明确处理旧进度。</p></details><button id="world-apply" type="button">应用世界设置</button><p id="world-settings-status" role="status"></p>
-<details id="region-settings"><summary>半平面编辑范围</summary><label>边界格坐标<input id="region-hash" placeholder="空白代表原点"></label><div class="field-pair"><label>边界格的边<select id="region-edge">${[0,1,2,3,4,5].map(n=>`<option>${n}</option>`).join('')}</select></label><label>允许侧<select id="region-side"><option value="1">包含边界格的一侧</option><option value="-1">另一侧</option></select></label></div><p class="muted">mod 必须先设置半平面；所有 mod 格均须在内，主世界格均须在外。</p><label>扩展入口：官方格坐标<input id="world-main-hash" placeholder="空白代表官方原点"></label><label>官方格连接边<select id="world-entry-edge"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><label>相邻 mod 格稳定 ID<input id="world-entry-tile" placeholder="可在选择砖块后填入其 ID"></label><div class="actions"><button type="button" id="region-use-selection">以当前格为边界</button><button type="button" id="region-apply">应用范围</button><button type="button" id="region-clear">取消范围</button></div><p class="muted">按实际双曲多边形六个顶点校验；越界编辑、导入、挂载和更新会整体拒绝。</p></details>
+<details id="region-settings"><summary>半平面编辑范围</summary><button type="button" id="pick-region" class="primary">在地图上选择范围</button><p class="muted">点边界格 → 点选一条边 → 选择允许侧。绿色可编辑，灰色只读；完成后应用范围。</p><label>边界格坐标<input id="region-hash" placeholder="空白代表原点"></label><div class="field-pair"><label>边界格的边<select id="region-edge">${[0,1,2,3,4,5].map(n=>`<option>${n}</option>`).join('')}</select></label><label>允许侧<select id="region-side"><option value="1">包含边界格的一侧</option><option value="-1">另一侧</option></select></label></div><p class="muted">mod 必须先设置半平面；所有 mod 格均须在内，主世界格均须在外。</p><button type="button" id="pick-entry">在地图上连接扩展入口</button><p class="muted">依次点选官方可通行格和相邻的 mod 可通行格，自动填写连接边与稳定 ID。</p><label>扩展入口：官方格坐标<input id="world-main-hash" placeholder="空白代表官方原点"></label><label>官方格连接边<select id="world-entry-edge"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><label>相邻 mod 格稳定 ID<input id="world-entry-tile" placeholder="可在选择砖块后填入其 ID"></label><div class="actions"><button type="button" id="region-use-selection">以当前格为边界</button><button type="button" id="region-apply">应用范围</button><button type="button" id="region-clear">取消范围</button></div><p class="muted">按实际双曲多边形六个顶点校验；越界编辑、导入、挂载和更新会整体拒绝。</p></details>
 <details><summary>更新模块库版本</summary><label>新版模块 JSON<textarea id="module-update-json" rows="5"></textarea></label><label>明确删除的局部砖块 ID（JSON 数组）<textarea id="module-update-deleted" rows="2">[]</textarea></label><button type="button" id="module-update-apply">检查并更新全部实例</button></details>`;
     const $ = id => document.getElementById(id);
     let currentProject = api.project;
@@ -16,6 +17,27 @@ export function installWorldSettings(api) {
     const action = (run, message) => api.applyProject(run, message, {allowExternalPending:true});
     const status = (text, error=false) => { $('world-settings-status').textContent=text; $('world-settings-status').dataset.error=String(error); };
     const run = action => { try { return action(); } catch(error) {status(error.message,true);} };
+    const previewSettings = () => {
+        const region = pending.has('region') || api.project.region ? {
+            hash: $('region-hash').value, edge: Number($('region-edge').value), side: Number($('region-side').value)
+        } : null;
+        const entry = $('world-mode').value === 'extension' && $('world-entry-tile').value ? {
+            mainHash: $('world-main-hash').value, edge: Number($('world-entry-edge').value), tileId: $('world-entry-tile').value
+        } : null;
+        picker.setPreview(region, entry);
+        api.redraw();
+    };
+    const picker = installWorldPicker(api, {
+        onRegion(region) {
+            $('region-hash').value = region.hash; $('region-edge').value = region.edge; $('region-side').value = region.side;
+            pending.add('region'); previewSettings(); status('范围已选好，请点击“应用范围”');
+        },
+        onEntry(entry) {
+            $('world-mode').value = 'extension'; $('world-main-hash').value = entry.mainHash;
+            $('world-entry-edge').value = entry.edge; $('world-entry-tile').value = entry.tileId;
+            pending.add('world'); previewSettings(); status('扩展入口已选好，请点击“应用世界设置”');
+        }
+    });
     const refresh = () => {
         if (currentProject !== api.project) {currentProject = api.project;pending.clear();}
         const value=api.project.world ?? {};
@@ -33,10 +55,11 @@ export function installWorldSettings(api) {
         const region=api.project.region;
         $('region-hash').value=region?.hash ?? ''; $('region-edge').value=region?.edge ?? 0; $('region-side').value=region?.side ?? 1;
         }
+        previewSettings();
     };
-    const mark = event => {const id = event.target.id;pending.add(id.startsWith('region-') ? 'region' : id.startsWith('module-update-') ? 'module' : 'world');status('设置尚未应用');};
+    const mark = event => {const id = event.target.id;pending.add(id.startsWith('region-') ? 'region' : id.startsWith('module-update-') ? 'module' : 'world');previewSettings();status('设置尚未应用');};
     host.addEventListener('input',mark);host.addEventListener('change',mark);
-    $('world-use-selection').onclick=()=>run(()=>{if(!api.selected)throw Error('请选择已有砖块作为入口');$('world-spawn').value=api.selected.id;pending.add('world');status('入口已选择，请应用设置');});
+    $('world-use-selection').onclick=()=>run(()=>{if(!api.selected)throw Error('请选择已有砖块作为入口');$('world-spawn').value=api.selected.id;pending.add('world');previewSettings();status('入口已选择，请应用设置');});
     $('world-apply').onclick=()=>run(()=>{
         const settings={revision:Number($('world-revision').value),mode:$('world-mode').value,
             ...($('world-mode').value==='extension'?{entry:{mainHash:$('world-main-hash').value.trim(),edge:Number($('world-entry-edge').value),tileId:$('world-entry-tile').value}}:{}),
@@ -49,7 +72,9 @@ export function installWorldSettings(api) {
     const download=(filename,data)=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
     $('export-world').onclick=()=>run(()=>{const world=publish();download(world.id+'.world.json',world);status('已发布世界 JSON；项目 JSON 另存编辑信息');});
     $('play-world').onclick=()=>run(()=>{const world=publish();localStorage.setItem('deductrium2_world_manifest',JSON.stringify(world));window.open('../../index.html?mod-world','_blank','noopener');status('已打开世界；进度按世界 ID 隔离，版本更新须通过迁移校验');});
-    $('region-use-selection').onclick=()=>{$('region-hash').value=api.selectedHash;pending.add('region');status('边界已选择，请应用范围');};
+    $('pick-region').onclick=()=>run(()=>picker.begin('region'));
+    $('pick-entry').onclick=()=>run(()=>picker.begin('entry'));
+    $('region-use-selection').onclick=()=>{$('region-hash').value=api.selectedHash;pending.add('region');previewSettings();status('边界已选择，请应用范围');};
     $('region-apply').onclick=()=>run(()=>{const region={hash:$('region-hash').value,edge:Number($('region-edge').value),side:Number($('region-side').value)};action(project=>project.setRegion(region),'半平面范围已应用');pending.delete('region');refresh();status('范围已应用');});
     $('region-clear').onclick=()=>run(()=>{action(project=>project.setRegion(null),'范围已取消');pending.delete('region');refresh();});
     $('module-update-apply').onclick=()=>run(()=>{const input=JSON.parse($('module-update-json').value),deletedTileIds=JSON.parse($('module-update-deleted').value);let diff;action(project=>{diff=project.updateModule(input,{deletedTileIds});},'模块全部实例已更新');pending.delete('module');status(`更新 ${diff.instanceIds.length} 个实例；保留 ${diff.retainedTileIds.length} 格，新增 ${diff.addedTileIds.length} 格，删除 ${diff.deletedTileIds.length} 格`);});

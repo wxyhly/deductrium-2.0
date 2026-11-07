@@ -1,0 +1,8 @@
+.world-picker-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+.world-picker-toolbar{position:absolute;left:8px;bottom:8px;z-index:7;width:min(440px,calc(100% - 16px));padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);box-shadow:0 4px 22px #0003;pointer-events:auto}
+.world-picker-toolbar strong{font-size:14px}.world-picker-toolbar p{font-size:12px;line-height:1.5;margin:5px 0 8px;overflow-wrap:anywhere;min-height:36px}.world-picker-toolbar small{display:block;margin-top:6px;font-size:11px;color:var(--muted)}
+.world-picker-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}.world-picker-actions button{min-height:44px;padding:7px 10px;font-size:12px}.world-picker-actions #world-picker-flip{margin-right:auto}
+.world-picker-edges{position:absolute;inset:0;z-index:6;pointer-events:none}.world-picker-edges button{position:absolute;transform:translate(-50%,-50%);width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;border:2px solid var(--accent);background:var(--panel);color:var(--ink);font-size:15px;font-weight:700;box-shadow:0 1px 8px #0004;pointer-events:auto;touch-action:manipulation}
+.world-picker-edges button[aria-pressed=true]{background:var(--accent);color:var(--panel);outline:3px solid var(--panel)}
+.world-picker-edges[data-layout=strip] button{border-radius:8px}
+@media(max-width:700px){.world-picker-toolbar{padding:8px 10px}.world-picker-toolbar p{margin:3px 0 5px;min-height:0}.world-picker-toolbar small{font-size:10px}.world-picker-actions{gap:4px}.world-picker-actions button{padding:5px 8px}}

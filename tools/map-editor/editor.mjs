@@ -9,8 +9,9 @@ const hashLabel = hash => hash || '[]（原点）';
 let EditorProject, Hvec, Rotor, LangMgr, parseMapScript, blockMap, nameMap, world, project;
 let selectedHash = '', group = new Set(), dirty = false, fieldDirty = false, infoDirty = false;
 let blockedDraft = null, preview = null, visibleLimit = 150, filePurpose = 'auto', drag = null;
-let renderFrame = 0, importBusy = false, ui, scriptUI;
+let renderFrame = 0, importBusy = false, ui, scriptUI, mapInteraction = null;
 let officialTiles = new Map();
+let pickerOfficialBase = false;
 const officialTile = hash => project?.world?.mode === 'extension' ? officialTiles.get(hash) : undefined;
 const pendingGuards = new Set();
 const externalPending = () => [...pendingGuards].some(check => check());
@@ -93,7 +94,7 @@ function persist() {
 }
 function syncTiles() {
     blockMap.clear(); nameMap.clear();
-    if (project.world?.mode === 'extension') for (const [hash, tile] of officialTiles) {
+    if (project.world?.mode === 'extension' || pickerOfficialBase) for (const [hash, tile] of officialTiles) {
         blockMap.set(hash, clone(tile));
         if (tile.name) nameMap.set(tile.name, hash);
     }
@@ -126,6 +127,7 @@ function draw() {
         renderFrame = 0;
         world.onLoop();
         drawMarkers();
+        mapInteraction?.draw();
     });
 }
 function resize() {
@@ -504,7 +506,11 @@ function wireUI() {
         if (!drag || drag.id !== event.pointerId) return;
         const click = !drag.moved; drag = null;
         if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-        if (click) { const hash = hashAtPoint(event.clientX, event.clientY); if (hash !== null) useTool(hash, event.shiftKey); }
+        if (click) {
+            const hash = hashAtPoint(event.clientX, event.clientY);
+            if (mapInteraction?.click(hash, event.clientX, event.clientY)) return;
+            if (hash !== null) useTool(hash, event.shiftKey);
+        }
     };
     canvas.onpointercancel = canvas.onlostpointercapture = () => { drag = null; };
     window.addEventListener('keydown', event => {
@@ -559,7 +565,12 @@ try {
         get project() { return project; }, get world() { return world; }, get selectedHash() { return selectedHash; },
         get selected() { return project.tiles.get(selectedHash); }, get selection() { return Object.freeze([...group]); },
         get dirty() { return dirty || fieldDirty || infoDirty || externalPending(); }, get preview() { return preview; },
+        get officialTiles() { return new Map(officialTiles); },
         storageKey: STORAGE_KEY, selectHash, hashAtPoint,
+        openPanel(name, focus = false) { ui.openPanel(name, focus); },
+        redraw() { updateDirty(); draw(); },
+        setMapInteraction(interaction) { mapInteraction = interaction; draw(); },
+        showOfficialBase(visible) { pickerOfficialBase = !!visible; syncTiles(); draw(); },
         registerPendingGuard(check) { pendingGuards.add(check); return () => pendingGuards.delete(check); },
         applyProject(action, message = '项目已更新', options = {}) { requireApplied(options); return change(() => action(project), message); },
         mount(moduleId, placement) { return guard(() => { requireApplied(); return change(() => project.mount(moduleId, placement), '模块已挂载'); }); }
