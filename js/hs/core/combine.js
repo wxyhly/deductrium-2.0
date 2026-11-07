@@ -477,7 +477,11 @@ export function combineRules(host, dname, withProof = true, previewWork) {
                     rvFn[name] = fresh ? applyMT(fresh.clone()) : new AST(NodeType.ATOM_WFF, name);
                 }
                 const finalP = host.d(fn, pcs, rvFn);
-                if (!finalP.ast.equal(conclusion))
+                // addP reduces #sb in the derived proposition. Compare with
+                // the same normalization, leaving the schema and previews intact.
+                const expected = conclusion.clone();
+                Assertion.reduceSbFn(assertions, expected);
+                if (!finalP.ast.equal(expected))
                     throw HSError.combineConclusionMismatch;
                 steps = host.props.slice(0);
                 host.loadContext(saved);
