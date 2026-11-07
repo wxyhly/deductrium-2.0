@@ -994,6 +994,27 @@ export function planMapScript(source, state, env, checksOnly = false) {
     let demolished = 0;
     let eventPolicy;
     const tileTypes = new Map();
+    // Declarations permit static references anywhere in the tree, including other handlers.
+    // Actual availability still follows only the selected execution and its staged state.
+    const declaredAxioms = new Set();
+    const collectAxioms = (statements) => {
+        for (const statement of statements) {
+            if (statement.op === 'on')
+                collectAxioms(statement.body);
+            else if (statement.op === 'if') {
+                for (const branch of statement.branches)
+                    collectAxioms(branch.body);
+                if (statement.elseBody !== undefined)
+                    collectAxioms(statement.elseBody);
+            }
+            else if (statement.op === 'add' && statement.kind === 'axiom')
+                declaredAxioms.add(statement.id);
+        }
+    };
+    collectAxioms(commands);
+    const hasAxiom = (id) => Object.hasOwn(next.engine.axioms, id)
+        // The live engine still contains incoming custom axioms removed during this plan.
+        || (!Object.hasOwn(incoming.engine.axioms, id) && env.hasAxiom(id));
     const metric = (name, line) => {
         if (name === 'ordinal-base' && ordinal)
             return ordinal.base;
@@ -1079,7 +1100,7 @@ export function planMapScript(source, state, env, checksOnly = false) {
                 fail(command.line, selfReference ? `@self target is not an available tile: ${command.id}` : `Unknown tile: ${command.id}`);
             }
             if ('op' in command && (command.op === 'enable' || command.op === 'disable')
-                && command.kind === 'axiom' && !env.hasAxiom(command.id))
+                && command.kind === 'axiom' && !declaredAxioms.has(command.id) && !hasAxiom(command.id))
                 fail(command.line, `Unknown axiom: ${command.id}`);
             if (command.kind === 'tile' && 'comparison' in command && !tileTypes.has(command.id)) {
                 if (!env.getTileType)
@@ -1188,8 +1209,8 @@ export function planMapScript(source, state, env, checksOnly = false) {
             case 'reward': return ownsReward(predicate.id);
             case 'not-reward': return !ownsReward(predicate.id);
             case 'layer': return next.layers.includes(predicate.id) || (env.hasLayer?.(predicate.id) ?? false);
-            case 'axiom': return env.hasAxiom(predicate.id) && !next.disabledAxioms.includes(predicate.id);
-            case 'not-axiom': return !env.hasAxiom(predicate.id) || next.disabledAxioms.includes(predicate.id);
+            case 'axiom': return hasAxiom(predicate.id) && !next.disabledAxioms.includes(predicate.id);
+            case 'not-axiom': return !hasAxiom(predicate.id) || next.disabledAxioms.includes(predicate.id);
             case 'money': return compare(balances.reasoning, predicate.comparison, operand(predicate));
             case 'currency': return compare(balances[predicate.currency], predicate.comparison, operand(predicate));
             case 'count': return compare(count(predicate.id), predicate.comparison, operand(predicate));
@@ -1349,6 +1370,8 @@ export function planMapScript(source, state, env, checksOnly = false) {
                     break;
                 }
                 case 'axiom':
+                    if (!hasAxiom(command.id))
+                        fail(line, `Unknown axiom: ${command.id}`);
                     changeMember(next.disabledAxioms, command.id, op === 'disable');
                     break;
                 case 'reward':

@@ -21,6 +21,8 @@ export function tileDisplayText(block: TileBlock): string {
         text += data.p ? "\n#p" : "\n#d";
     }
     if (data.del) text += "\n" + LangMgr.text.delGate;
+    if (data.script && data.got && data.exchange === undefined && !data.never && !data.dstr && !data.getD
+        && !data.unl && !(data.payD && !data.requiresReward)) text = LangMgr.claimedRewardText(text);
     if (data.never) text = data.got ? LangMgr.text.neverReward : LangMgr.text.neverLocked;
     if (data.dstr) text = LangMgr.text.dstrPrefix + data.dstr;
     if (data.getD) text = LangMgr.formalize.getD(stringifyDeductriumAmout(data.getD), data.got);

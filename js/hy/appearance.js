@@ -19,6 +19,9 @@ export function tileDisplayText(block) {
     }
     if (data.del)
         text += "\n" + LangMgr.text.delGate;
+    if (data.script && data.got && data.exchange === undefined && !data.never && !data.dstr && !data.getD
+        && !data.unl && !(data.payD && !data.requiresReward))
+        text = LangMgr.claimedRewardText(text);
     if (data.never)
         text = data.got ? LangMgr.text.neverReward : LangMgr.text.neverLocked;
     if (data.dstr)

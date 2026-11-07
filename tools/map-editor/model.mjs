@@ -1,7 +1,8 @@
 import {MapDocument, writeText} from './source-text.mjs';
 import {parseTileContent} from '../../js/hy/maploader.js';
 import {parseMapScript, rewriteMapScript} from '../../js/hy/script.js';
-import {halfPlaneContains, canonicalPath, transport, relativePath} from './geometry.mjs';
+import {validateWorldBase} from '../../js/hy/world.js';
+import {halfPlaneContains, canonicalPath, transport, relativePath, regionContains, relocationFrame} from './geometry.mjs';
 export {canonicalPath, transport, relativePath} from './geometry.mjs';
 
 const clone = value => structuredClone(value);
@@ -214,6 +215,71 @@ export class EditorProject {
         if (this._world && !world) throw Error('已配置世界不能取消 mod 编辑保护');
         if (world && !this._region) throw Error('请先设置 mod 半平面范围');
         this._change(()=>{this._world=world;},true);
+    }
+    /** Detached, publishable candidate. input.rotation omitted tries 0..5;
+     * an explicit rotation checks only that orientation. Invalid previews throw.
+     */
+    previewAttachment(input, officialTiles) {
+        return this._attachment(input, officialTiles, this.world);
+    }
+    // settings.spawn uses the old tile frame, just like the existing world.
+    // Recompute from live input instead of trusting a previously returned preview.
+    attachToOfficial(input, officialTiles, settings = this.world) {
+        const result = this._attachment(input, officialTiles, settings), next = result.project;
+        const tiles = new Map(clone([...next.tiles])), instances = clone(next.instances);
+        const region = next.region, world = next.world;
+        this._change(()=>{this.tiles=tiles;this.instances=instances;this._region=region;this._world=world;},true);
+        return result;
+    }
+    _attachment(input, officialTiles, settings) {
+        if (!object(input)) throw Error('连接参数须包含 tileId、mainHash 和 edge');
+        tileIdentifier(input.tileId);
+        const source = [...this.tiles.values()].find(tile=>tile.id===input.tileId);
+        if (!source || source.type !== 0 && source.type !== 3) throw Error('连接入口须为现有 mod 道路或奖励格');
+        const mainHash = key(canonicalPath(input.mainHash,this.polygon)), edge = input.edge;
+        if (!Number.isInteger(edge) || edge < 0 || edge > 5) throw Error('连接边须为 0～5');
+        if (input.rotation !== undefined && (!Number.isInteger(input.rotation) || input.rotation < 0 || input.rotation > 5)) throw Error('旋转方向须为 0～5');
+        if (!officialTiles || typeof officialTiles.get !== 'function' || typeof officialTiles.keys !== 'function' || typeof officialTiles.has !== 'function') throw Error('连接需要只读官方底图');
+        const main = officialTiles.get(mainHash);
+        if (!main || main.type !== 0 && main.type !== 3) throw Error('连接目标须为真实官方道路或奖励格');
+        const target = this.polygon.getNeighborAndDir(canonicalPath(mainHash,this.polygon),edge,true)[0];
+        const region = {hash:mainHash,edge,side:-1}, opposite = {...region,side:1};
+        if (officialTiles.has(key(target))) throw Error('连接目标邻格已被官方底图占用');
+        for (const hash of officialTiles.keys()) {
+            if (!regionContains(hash,opposite,this.polygon)) throw Error(`官方砖块 ${hash || '原点'} 不完全位于连接半平面的另一侧`);
+        }
+        const entry = {mainHash,edge,tileId:source.id};
+        const world = worldValue(settings ?? {revision:1,spawn:{tileId:source.id,rotation:0},banks:{},migrations:[]});
+        const spawn = [...this.tiles.values()].find(tile=>tile.id===world.spawn?.tileId);
+        if (!spawn || !Number.isInteger(world.spawn.rotation) || world.spawn.rotation < 0 || world.spawn.rotation > 5) throw Error('世界出生格或朝向无效');
+        const rotations = input.rotation === undefined ? [0,1,2,3,4,5] : [input.rotation];
+        const errors = [];
+        for (const rotation of rotations) {
+            try {
+                const root = relocationFrame(source.hash,target,rotation,this.polygon);
+                const frame = root.transform;
+                const data = this.toJSON();
+                data.tiles = data.tiles.map(tile=>({...tile,hash:key(frame(tile.hash).at)}));
+                data.instances = data.instances.map(instance=>({...instance,...frame(instance.at,instance.rotation)}));
+                data.region = clone(region);
+                data.world = {...clone(world),mode:'extension',entry:clone(entry),
+                    // Game applies spawn.rotation to the camera, the inverse of
+                    // the tile's transported frame (instance rotations are forward).
+                    spawn:{...clone(world.spawn),rotation:mod(world.spawn.rotation-frame(spawn.hash).rotation)}};
+                const candidate = EditorProject.fromJSON(data,this.polygon);
+                candidate.setReadonlyBase(new Set([...this._readonlyBase,...officialTiles.keys()]));
+                // Preserve expanded-tile iteration order and the next loose ID.
+                candidate.tiles = new Map([...this.tiles.keys()].map(hash=>{
+                    const moved = key(frame(hash).at); return [moved,candidate.tiles.get(moved)];
+                }));
+                candidate._nextId = this._nextId;
+                validateWorldBase({...candidate.world,format:'deductrium-world-v2',id:candidate.id,title:candidate.title,
+                    region:candidate.region,tiles:[...candidate.tiles.values()].map(({instanceId,localId,...tile})=>tile)},officialTiles);
+                return {input:{tileId:source.id,mainHash,edge,rotation},entry:clone(entry),region:clone(region),rotation,
+                    tiles:candidate.tiles,project:candidate};
+            } catch (error) { errors.push(`${rotation}: ${error.message}`); }
+        }
+        throw Error(`无法整体连接地图（${errors.join('；')}）`);
     }
     setInfo(id, title, options = {}) {
         identifier(id,'地图 ID'); if (typeof title !== 'string' || title.length > 240) throw Error('地图标题最多 240 字');

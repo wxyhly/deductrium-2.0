@@ -974,6 +974,22 @@ export function planMapScript(source: string, state: MapScriptState, env: MapScr
     let demolished = 0;
     let eventPolicy: 'once' | 'repeat' | undefined;
     const tileTypes = new Map<string, number>();
+    // Declarations permit static references anywhere in the tree, including other handlers.
+    // Actual availability still follows only the selected execution and its staged state.
+    const declaredAxioms = new Set<string>();
+    const collectAxioms = (statements: readonly MapScriptStatement[]): void => {
+        for (const statement of statements) {
+            if (statement.op === 'on') collectAxioms(statement.body);
+            else if (statement.op === 'if') {
+                for (const branch of statement.branches) collectAxioms(branch.body);
+                if (statement.elseBody !== undefined) collectAxioms(statement.elseBody);
+            } else if (statement.op === 'add' && statement.kind === 'axiom') declaredAxioms.add(statement.id);
+        }
+    };
+    collectAxioms(commands);
+    const hasAxiom = (id: string): boolean => Object.hasOwn(next.engine.axioms, id)
+        // The live engine still contains incoming custom axioms removed during this plan.
+        || (!Object.hasOwn(incoming.engine.axioms, id) && env.hasAxiom(id));
     const metric = (name: MapScriptMetric, line: number): number => {
         if (name === 'ordinal-base' && ordinal) return ordinal.base;
         if (name === 'spent') return validValue((metrics.spent ?? 0) + spent, false, line);
@@ -1031,7 +1047,7 @@ export function planMapScript(source: string, state: MapScriptState, env: MapScr
                 fail(command.line, selfReference ? `@self target is not an available tile: ${command.id}` : `Unknown tile: ${command.id}`);
             }
             if ('op' in command && (command.op === 'enable' || command.op === 'disable')
-                && command.kind === 'axiom' && !env.hasAxiom(command.id)) fail(command.line, `Unknown axiom: ${command.id}`);
+                && command.kind === 'axiom' && !declaredAxioms.has(command.id) && !hasAxiom(command.id)) fail(command.line, `Unknown axiom: ${command.id}`);
             if (command.kind === 'tile' && 'comparison' in command && !tileTypes.has(command.id)) {
                 if (!env.getTileType) fail(command.line, 'Tile predicates require env.getTileType');
                 const type = economyAtLine(command.line, () => env.getTileType!(command.id));
@@ -1119,8 +1135,8 @@ export function planMapScript(source: string, state: MapScriptState, env: MapScr
             case 'reward': return ownsReward(predicate.id);
             case 'not-reward': return !ownsReward(predicate.id);
             case 'layer': return next.layers.includes(predicate.id) || (env.hasLayer?.(predicate.id) ?? false);
-            case 'axiom': return env.hasAxiom(predicate.id) && !next.disabledAxioms.includes(predicate.id);
-            case 'not-axiom': return !env.hasAxiom(predicate.id) || next.disabledAxioms.includes(predicate.id);
+            case 'axiom': return hasAxiom(predicate.id) && !next.disabledAxioms.includes(predicate.id);
+            case 'not-axiom': return !hasAxiom(predicate.id) || next.disabledAxioms.includes(predicate.id);
             case 'money': return compare(balances.reasoning, predicate.comparison, operand(predicate));
             case 'currency': return compare(balances[predicate.currency], predicate.comparison, operand(predicate));
             case 'count': return compare(count(predicate.id), predicate.comparison, operand(predicate));
@@ -1237,7 +1253,10 @@ export function planMapScript(source: string, state: MapScriptState, env: MapScr
                 if (op === 'take' && command.currency === 'type') typeSpent = validValue(typeSpent + value, false, line);
                 break;
             }
-            case 'axiom': changeMember(next.disabledAxioms, command.id, op === 'disable'); break;
+            case 'axiom':
+                if (!hasAxiom(command.id)) fail(line, `Unknown axiom: ${command.id}`);
+                changeMember(next.disabledAxioms, command.id, op === 'disable');
+                break;
             case 'reward':
                 if (command.op === 'clear' || command.op === 'reset') {
                     changeMember(next.rewards, command.id, false);

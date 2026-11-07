@@ -13,7 +13,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
     const toolbar = document.createElement('section');
     toolbar.id = 'world-picker-toolbar'; toolbar.className = 'world-picker-toolbar'; toolbar.hidden = true;
     toolbar.setAttribute('aria-label', '地图范围与入口选取');
-    toolbar.innerHTML = '<strong id="world-picker-title"></strong><p id="world-picker-status" role="status" aria-live="polite"></p><div class="world-picker-actions"><button type="button" id="world-picker-flip">翻转 mod 范围</button><button type="button" id="world-picker-cancel">取消</button><button type="button" id="world-picker-confirm" class="primary">确认选择</button></div><small>拖动地图平移 · 选取时涂色为 mod 范围 · 确认后涂色侧不可写 · Esc 取消</small>';
+    toolbar.innerHTML = '<strong id="world-picker-title"></strong><p id="world-picker-status" role="status" aria-live="polite"></p><div class="world-picker-actions"><button type="button" id="world-picker-flip">翻转 mod 范围</button><button type="button" id="world-picker-relocate">移动 mod 后连接</button><button type="button" id="world-picker-reselect">重选 mod 入口</button><button type="button" id="world-picker-rotate">旋转 mod</button><button type="button" id="world-picker-cancel">取消</button><button type="button" id="world-picker-confirm" class="primary">确认选择</button></div><small>拖动地图平移 · 选取时涂色为 mod 范围 · 确认后涂色侧不可写 · Esc 取消</small>';
     const edges = document.createElement('div');
     edges.className = 'world-picker-edges'; edges.hidden = true;
     edges.setAttribute('role', 'group'); edges.setAttribute('aria-label', '选择边界格的一条边');
@@ -23,8 +23,10 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         button.textContent = String(edge); button.title = `选择第 ${edge} 条边`;
         button.setAttribute('aria-label', `边 ${edge}`);
         button.onclick = () => {
-            if (kind !== 'region' || !draftRegion) return;
-            draftRegion.edge = edge; update(); api.redraw();
+            if (kind === 'entry' && moving?.mainHash != null) place(edge);
+            else if (kind === 'region' && draftRegion) draftRegion.edge = edge;
+            else return;
+            update(); api.redraw();
         };
         edges.append(button); return button;
     });
@@ -32,15 +34,21 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
     const status = toolbar.querySelector('#world-picker-status');
     const confirm = toolbar.querySelector('#world-picker-confirm');
     const flip = toolbar.querySelector('#world-picker-flip');
+    const relocate = toolbar.querySelector('#world-picker-relocate');
+    const reselect = toolbar.querySelector('#world-picker-reselect');
+    const rotate = toolbar.querySelector('#world-picker-rotate');
     let project = api.project, kind = null, draftRegion = null, draftEntry = null;
     let previewRegion = copy(project.region), previewEntry = copy(project.world?.entry);
     let original = null, mainHash = null, message = '', regionError = '';
+    let moving = null, placement = null, previewPlacement = null;
+    let placementSnapshot = null;
     const frames = new Map();
 
     const polygon = () => api.world.atlasTile;
     const normalize = hash => canonicalPath(hash, polygon()).join(',');
-    const shownRegion = () => kind === 'region' ? draftRegion : previewRegion;
+    const shownRegion = () => kind === 'region' ? draftRegion : moving ? placement?.region : previewRegion;
     const shownEntry = () => kind === 'entry' ? draftEntry : previewEntry;
+    const shownTiles = () => (moving ? placement?.tiles : previewPlacement?.tiles) ?? project.tiles;
     const extensionMode = () => project.world?.mode === 'extension'
         || document.getElementById('world-mode')?.value === 'extension';
 
@@ -61,8 +69,11 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
     }
 
     function update() {
-        toolbar.hidden = !kind; edges.hidden = kind !== 'region' || !draftRegion;
+        toolbar.hidden = !kind; edges.hidden = !(kind === 'region' && draftRegion) && !(kind === 'entry' && moving?.mainHash != null);
         flip.hidden = kind !== 'region';
+        relocate.hidden = kind !== 'entry' || !!moving;
+        reselect.hidden = kind !== 'entry' || !moving?.tileId;
+        rotate.hidden = kind !== 'entry' || !moving || moving.mainHash == null;
         toolbar.dataset.kind = kind || '';
         toolbar.querySelector('#world-picker-title').textContent = kind === 'entry' ? '连接扩展入口' : '选择半平面范围';
         if (kind === 'region') {
@@ -72,15 +83,41 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
                 : '第 1 步：点选地图上的边界格；再从六条边中选择。');
             confirm.disabled = !draftRegion || !!regionError;
         } else if (kind === 'entry') {
-            status.textContent = message || (draftEntry
+            status.textContent = message || (moving ? placement
+                ? `移动预览：${project.tiles.size} 格 · 旋转 ${placement.rotation} · 官方 [${draftEntry.mainHash || '原点'}] → 边 ${draftEntry.edge} → mod ${draftEntry.tileId}。确认后仍须应用世界设置。`
+                : !moving.tileId ? '第 1 步：当前仅显示 mod，点击它的道路或奖励格作为连接入口。'
+                    : moving.mainHash == null ? `已选 mod ${moving.tileId}；第 2 步：当前仅显示官方地图，点击官方道路或奖励格。`
+                        : '请选择官方格的一条连接边；mod 必须整体位于主地图外侧。'
+                : draftEntry
                 ? `官方 [${draftEntry.mainHash || '原点'}] → 边 ${draftEntry.edge} → mod ${draftEntry.tileId}。确认后填写入口。`
                 : mainHash !== null ? `已选官方 [${mainHash || '原点'}]；第 2 步：点相邻的 mod 道路或奖励格。`
                     : '第 1 步：点选官方道路或奖励格；第 2 步：点相邻的 mod 格。');
             confirm.disabled = !draftEntry;
         }
         for (const [edge, button] of edgeButtons.entries()) {
-            button.setAttribute('aria-pressed', String(draftRegion?.edge === edge));
+            button.setAttribute('aria-pressed', String((moving ? moving.edge : draftRegion?.edge) === edge));
         }
+    }
+
+    function displayPlacement() {
+        if (moving) api.setWorldPreview?.({official: !!moving.tileId, tiles: !moving.tileId ? project.tiles : placement?.tiles ?? new Map()});
+        else api.setWorldPreview?.(previewPlacement ? {official: true, tiles: previewPlacement.tiles} : null);
+    }
+    function startMoving() {
+        moving = {}; placement = null; placementSnapshot = null; draftEntry = null; mainHash = null; message = '';
+        displayPlacement(); update(); api.redraw();
+    }
+    function place(edge, rotation) {
+        moving.edge = edge; placement = null; placementSnapshot = null; draftEntry = null; message = '';
+        if (rotation !== undefined) moving.rotation = rotation;
+        try {
+            placement = project.previewAttachment({tileId:moving.tileId, mainHash:moving.mainHash, edge,
+                ...(rotation === undefined ? {} : {rotation})}, api.officialTiles);
+            if (placement.errors?.length) throw Error(placement.errors.join('；'));
+            placementSnapshot = JSON.stringify(project.toJSON());
+            draftEntry = copy(placement.entry); moving.rotation = placement.rotation;
+        } catch (error) { placement = null; message = error.message; }
+        displayPlacement();
     }
 
     function stop({restore = false, panel = true, identity = false} = {}) {
@@ -89,8 +126,10 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         if (restore && original && !identity) {
             previewRegion = original.region; previewEntry = original.entry;
         }
-        original = null; draftRegion = draftEntry = null; mainHash = null; message = '';
+        original = null; draftRegion = draftEntry = null; mainHash = null; message = ''; moving = null; placement = null;
+        placementSnapshot = null;
         api.showOfficialBase?.(false);
+        displayPlacement();
         update();
         if (panel) api.openPanel('project', false);
         api.redraw();
@@ -101,8 +140,13 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
             stop({panel: false, identity: true});
             project = api.project;
             previewRegion = copy(project.region); previewEntry = copy(project.world?.entry);
+            previewPlacement = null; api.setWorldPreview?.(null);
             frames.clear();
+        } else if (placement && placementSnapshot !== JSON.stringify(project.toJSON())) {
+            moving = {}; placement = null; placementSnapshot = null; draftEntry = null; mainHash = null;
+            message = '项目已变化，请重新选择 mod 入口并生成移动预览。';
         }
+        if (moving) displayPlacement();
         update();
     }
 
@@ -118,18 +162,29 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         const toggle = document.getElementById('toggle-inspector');
         if (document.getElementById('inspector')?.dataset.expanded === 'true') toggle?.click();
         api.showOfficialBase?.(kind === 'entry' || extensionMode());
+        const official = api.officialTiles;
+        if (kind === 'entry' && [...project.tiles.keys()].some(hash=>official.has(hash))) startMoving();
         update(); api.redraw();
         toolbar.querySelector('#world-picker-cancel').focus({preventScroll: true});
     }
 
     function click(hash) {
         refresh();
-        if (!kind) return false;
+        if (!kind) return !!previewPlacement;
         message = '';
         try {
             hash = normalize(hash);
             if (kind === 'region') {
                 draftRegion = {hash, edge: draftRegion?.edge ?? 0, side: draftRegion?.side ?? 1};
+            } else if (moving) {
+                if (!moving.tileId) {
+                    const mod = project.tiles.get(hash);
+                    if (!walkable(mod)) message = '请选择 mod 的道路或奖励格。';
+                    else { moving.tileId = mod.id; displayPlacement(); }
+                } else {
+                    if (!walkable(api.officialTiles.get(hash))) message = '请选择官方地图的道路或奖励格。';
+                    else { moving.mainHash = hash; mainHash = hash; placement = null; placementSnapshot = null; draftEntry = null; moving.edge = undefined; displayPlacement(); }
+                }
             } else {
                 const official = api.officialTiles.get(hash), mod = project.tiles.get(hash);
                 if (walkable(official)) {
@@ -153,6 +208,12 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
     }
 
     toolbar.querySelector('#world-picker-cancel').onclick = () => stop({restore: true});
+    relocate.onclick = startMoving;
+    reselect.onclick = startMoving;
+    rotate.onclick = () => {
+        if (moving?.mainHash == null || moving.edge === undefined) return;
+        place(moving.edge, ((moving.rotation ?? 0) + 1) % 6); update(); api.redraw();
+    };
     flip.onclick = () => {
         if (!draftRegion) return;
         draftRegion.side *= -1; message = ''; update(); api.redraw();
@@ -160,10 +221,10 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
     confirm.onclick = () => {
         refresh();
         if (!kind || confirm.disabled) return;
-        const selectedKind = kind, value = copy(kind === 'region' ? draftRegion : draftEntry);
+        const selectedKind = kind, value = copy(kind === 'region' ? draftRegion : draftEntry), selectedPlacement = placement;
         if (selectedKind === 'region') previewRegion = copy(value); else previewEntry = copy(value);
         stop();
-        if (selectedKind === 'region') onRegion?.(value); else onEntry?.(value);
+        if (selectedKind === 'region') onRegion?.(value); else onEntry?.(value, selectedPlacement);
     };
     window.addEventListener('keydown', event => {
         if (event.key === 'Escape' && kind) {
@@ -201,17 +262,19 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
         const region = shownRegion(), entry = shownEntry();
         const official = api.officialTiles;
-        const showOfficial = project.world?.mode === 'extension' || kind === 'entry'
+        const showOfficial = moving ? !!moving.tileId : project.world?.mode === 'extension' || kind === 'entry'
             || (kind === 'region' && extensionMode());
+        const tiles = shownTiles();
         const scale = api.world.localDraw.scale * Math.min(width, height) / 2;
         const projectPoint = p => ({x: width / 2 + p.x / (p.z + 1) * scale,
             y: height / 2 + p.y / (p.z + 1) * scale});
         const vertices = [[-1,1],[1,1],[2,0],[1,-1],[-1,-1],[-2,0]]
             .map(([x,y]) => new Hvec(Math.sqrt(3), x / Math.sqrt(2), y * Math.sqrt(1.5)));
-        if (kind === 'region' && region) {
+        const edgeHash = moving?.mainHash ?? (kind === 'region' ? region?.hash : undefined);
+        if (edgeHash != null) {
             let positions = [];
             try {
-                const frame=viewFrame(region.hash), center=projectPoint(frame.apply(new Hvec()));
+                const frame=viewFrame(edgeHash), center=projectPoint(frame.apply(new Hvec()));
                 positions=edgeButtons.map((_,edge)=>{
                     const p=projectPoint(frame.mul(Rotor.rotate(edge*Math.PI/3)).apply(polygon().edge));
                     let dx=p.x-center.x, dy=p.y-center.y;
@@ -291,7 +354,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
                 } finally { ctx.restore(); }
                 // Whole-tile eligibility uses the exact six-vertex predicate, including boundary equality.
                 for (const hash of api.world.atlasTile.rotors.keys()) {
-                    if (!project.tiles.has(hash) && !(showOfficial && official.has(hash))) continue;
+                    if (!tiles.has(hash) && !(showOfficial && official.has(hash))) continue;
                     const allowed = regionContains(hash,region,polygon()) && !(showOfficial && official.has(hash));
                     if (kind === 'region' ? allowed : !allowed) { ctx.fillStyle = 'rgba(29,174,103,.17)'; ctx.fill(tilePath(hash)); }
                 }
@@ -302,7 +365,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
             const officialHash = kind === 'entry' ? mainHash : entry?.mainHash;
             if (officialHash != null) mark(officialHash,'rgba(232,165,33,.5)');
             if (entry) {
-                const tile=[...project.tiles.values()].find(tile=>tile.id===entry.tileId);
+                const tile=[...tiles.values()].find(tile=>tile.id===entry.tileId);
                 if (tile) {
                     mark(tile.hash,'rgba(21,165,131,.5)');
                     const a=projectPoint(viewFrame(entry.mainHash).apply(new Hvec())), b=projectPoint(viewFrame(tile.hash).apply(new Hvec()));
@@ -324,6 +387,11 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         previewRegion = safeRegion(region); previewEntry = safeEntry(entry);
         api.redraw();
     }
+    function setPlacement(value) {
+        previewPlacement = value;
+        if (!kind) displayPlacement();
+        api.redraw();
+    }
     function safeRegion(value) {
         try {
             if (!value || !Number.isInteger(value.edge) || value.edge<0 || value.edge>5 || ![1,-1].includes(value.side)) return null;
@@ -337,5 +405,5 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         } catch { return null; }
     }
     api.setMapInteraction({click, draw});
-    return {begin, refresh, cancel: () => stop({restore:true}), setPreview};
+    return {begin, refresh, cancel: () => stop({restore:true}), setPreview, setPlacement};
 }

@@ -10,6 +10,7 @@
 - 右侧填写类型、名称、通用文字或 zh/en 与其他语言、完整 data JSON，再点击 **应用 Apply** 提交。未应用的表单不会悄悄写进项目或导出文件。切换格子会确认是否放弃表单；“还原表单”恢复当前已应用数据。
 - p/d/t/td/never、getD/payD、unl.layer、dstrTarget/requiresReward 等通过 data JSON 编辑，未修改字段会保留。填写严格 JSON，包括引号。
 - `data.script` 通过独立的多行脚本字段编辑；其他 data JSON 不重复填写 script。Apply 时调用公共 `parseMapScript` 校验语法，错误显示解析器提供的行信息，不提交半份修改。奖励示例为 `disable axiom a3` 换行 `give key red`；门示例为 `require key red` 换行 `enable axiom a3`。钥匙按模块实例隔离；禁用公理也会禁止依赖它的宏和过门证明。脚本执行由游戏的正式运行时负责。公理受限期间，自动元规则需要改用逐步推导；当前依赖检查无法确认的大型或特殊推导会被拒绝。
+- 脚本输入框高亮关键字、字符串、数字、注释和引用；候选使用同一份命令目录，并提示当前地图的格子 ID、币种、银行及脚本声明的公理等。Tab 接受候选，↑↓ 选择，Esc 关闭，Ctrl+空格主动提示；没有候选时 Tab 缩进两格，Shift+Tab 取消缩进。Enter 默认换行，先用方向键选中候选后才接受补全。文本保留原生选择、复制与撤销；补全后仍须 Apply 才写入地图。
 - 项目 ID / 标题另有“应用项目信息”，通过模型 `setInfo` 支持撤销。撤销、重做及 Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z、Ctrl/Cmd+Y 调用模型历史；输入框内保留浏览器原生文字撤销。
 - 地图直接使用 HWorld、LocalDraw 和公共 appearance 函数，保留原始字体、文字布局和玩家绘制。颜色、语言和主题与游戏共享。勾选空格网格时启用 HWorld 原生 debugDraw / navigateDraw；空白格即使未显示网格也可选择。覆盖在地图上的圆圈 / 方框仅标注选区和挂载预览。
 - 自由镜头跳过碰撞 / 奖励执行，显示数据与项目同步，不启动 Game、不写游戏存档，不生成运行时序数分支。
@@ -33,6 +34,8 @@ DSL 支持钥匙、旗标、奖励、金额、计数及已接入引擎的证明 
 命令按行或分号分隔；整行 `//` 注释可用。计数 / 金额比较符为 `>= <= == != > <`。例如 `require money >= 10`、`require count visits >= 2`、`set tile door road`、`set text door "新的文字"`、`message "你好"`。格子类型为 `road / wall / gate / reward / ordinal`；层名为 `D-layer / T-layer / P-layer / G-layer`。完整示例可展开编辑器的“脚本命令参考”。
 
 “显式事件与纯脚本门”模板组提供 #p / #d 证明门、按 dG 拆门、#<> 钥匙开门、起点初始化和触碰计数。`on touch/pass/collect/start` 块分别处理尝试碰格、过门、领取和新存档启动，以 `end` 闭合，不能与旧式平铺命令混写。各事件独立 once，需要重复时在块内写 `event repeat`。`@self` 在格子引用位置代表当前格。拆门模板沿用现有本地化提示；默认地图整体迁移为 built-in mod 属于后续工作。
+
+脚本奖励领取后沿用原版已领取文案：中文文字加“已”，“获取…”和“解锁…”显示为“已获取…”和“已解锁…”，英文对应 `Obtained` / `Unlocked`。只改变显示，保留原始多语言文字；读档与重复领取不叠加前缀，`clear reward` / `reset reward` 清除领取状态后恢复原文。银行兑换格保持可重复兑换文案。
 
 数值可读取 `currency(type)`、`count(visits)`、`metric(steps)`，并使用 `+ - *`、括号和 `min/max`。序数采用 `"[1,2]"` 形式的 JSON 字符串。完整命令、事务与 1.0 引擎边界见 [地图脚本说明](../../doc/map-mod-design.md#地图脚本)。
 
@@ -68,3 +71,9 @@ DSL 支持钥匙、旗标、奖励、金额、计数及已接入引擎的证明 
 运行 `node test/browser/map-world.mjs` 验证世界导入、设置、发布、银行、账本、迁移与恢复；`node test/browser/map-half-plane.mjs` 验证半平面限制、主世界入口与只读底图；`node test/browser/map-script-events.mjs` 验证显式事件、证明门、钥匙模板与拆门读档。这些脚本同样支持 `PLAYWRIGHT_MODULE`。
 
 `node test/browser/map-world-picker.mjs` 验证范围和入口点选、取消、拖动及桌面 / 手机布局。
+
+现有 mod 与官方地图坐标重叠时，“连接扩展入口”会先只显示 mod：选择 mod 的道路或奖励格，再在只显示官方地图的视图中选择连接格，最后点一条边，预览整张 mod 向官方地图外侧的移动。可旋转、更换连接边或重选 mod 入口；已经分离的地图也可点击“移动 mod 后连接”。所有格子的稳定 ID、脚本和模块实例保留，官方底图保持只读。确认只暂存预览，点击“应用世界设置”才将移动、范围与入口作为一次可撤销修改提交；“取消移动预览”保留原项目。若整个 mod 不能放进分隔半平面，预览会拒绝该位置。
+
+`add axiom` 可以写在任意触发事件中，不限于初始化；添加成功后默认可用。`enable axiom` / `disable axiom` 与公理条件按实际执行顺序识别同一脚本新增或移除的公理，失败或取消仍整体回滚。
+
+`node test/test-map-attachment.mjs` 与 `node test/browser/map-attachment.mjs` 验证整体连接的几何、原子性、桌面 / 手机交互及发布。

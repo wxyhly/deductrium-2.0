@@ -63,7 +63,7 @@ export const SCRIPT_GROUPS = [
     {label: '公理与解锁', entries: [
         entry('disable-axiom', '禁用公理', 'disable axiom a3', '也禁止依赖它的宏和过门证明。', 'a3'),
         entry('enable-axiom', '启用公理', 'enable axiom a3', '恢复公理可用性。', 'a3'),
-        entry('add-axiom', '添加地图公理', 'add axiom zMapAxiom "⊢$p"', '使用未占用的原子规则名和带 ⊢ 的完整规则。', 'zMapAxiom'),
+        entry('add-axiom', '添加地图公理', 'add axiom zMapAxiom "⊢$p"', '可在触碰、过门、领取或启动时添加；新增后默认可用。使用未占用的原子规则名和带 ⊢ 的完整规则。', 'zMapAxiom'),
         entry('remove-axiom', '移除地图公理', 'remove axiom zMapAxiom', '移除通过地图脚本添加的公理。', 'zMapAxiom'),
         entry('disable-type', '禁用类型', 'disable type Bool', '使用有效的类型组或系统名称。', 'Bool'),
         entry('enable-type', '启用类型', 'enable type Bool', '恢复指定类型组或系统名称。', 'Bool'),

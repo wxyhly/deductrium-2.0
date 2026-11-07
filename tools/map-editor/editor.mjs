@@ -12,6 +12,7 @@ let blockedDraft = null, preview = null, visibleLimit = 150, filePurpose = 'auto
 let renderFrame = 0, importBusy = false, ui, scriptUI, mapInteraction = null;
 let officialTiles = new Map();
 let pickerOfficialBase = false;
+let worldPreview = null;
 const officialTile = hash => project?.world?.mode === 'extension' ? officialTiles.get(hash) : undefined;
 const pendingGuards = new Set();
 const externalPending = () => [...pendingGuards].some(check => check());
@@ -94,16 +95,17 @@ function persist() {
 }
 function syncTiles() {
     blockMap.clear(); nameMap.clear();
-    if (project.world?.mode === 'extension' || pickerOfficialBase) for (const [hash, tile] of officialTiles) {
+    if (worldPreview ? worldPreview.official : project.world?.mode === 'extension' || pickerOfficialBase) for (const [hash, tile] of officialTiles) {
         blockMap.set(hash, clone(tile));
         if (tile.name) nameMap.set(tile.name, hash);
     }
-    for (const [hash, tile] of project.tiles) {
+    for (const [hash, tile] of worldPreview?.tiles ?? project.tiles) {
         blockMap.set(hash, clone(tile));
         if (tile.name) nameMap.set(tile.name, hash);
     }
 }
 function drawMarkers() {
+    if (worldPreview) { $('markers').replaceChildren(); return; }
     const rect = $('map').getBoundingClientRect(), fragment = document.createDocumentFragment();
     const add = (hash, className) => {
         const rotor = world.atlasTile.rotors.get(hash);
@@ -314,6 +316,7 @@ function download(name, text, type = 'application/json;charset=utf-8') {
 }
 function load(next, {modified = false, message = '项目已加载'} = {}) {
     next.setReadonlyBase(officialTiles.keys());
+    worldPreview = null;
     project = next; group = new Set(); selectedHash = project.tiles.has('') ? '' : project.tiles.keys().next().value ?? '';
     dirty = modified; fieldDirty = false; infoDirty = false; visibleLimit = 150;
     $('search').value = ''; $('filter').value = 'all';
@@ -380,7 +383,11 @@ function useTool(hash, shift) {
 }
 function wireUI() {
     ui = installUI();
-    scriptUI = installScriptEditor({parse: parseMapScript, say, refresh: updateDirty});
+    scriptUI = installScriptEditor({parse: parseMapScript, say, refresh: updateDirty, getContext: () => ({
+        tiles: [...project.tiles.values()].flatMap(tile => [tile.id, tile.name]).filter(Boolean),
+        currencies: ['reasoning', 'type', project.world?.currency?.id].filter(Boolean),
+        banks: Object.keys(project.world?.banks ?? {})
+    })});
     document.addEventListener('input', updateDirty);
     document.addEventListener('change', updateDirty);
     const markFieldsDirty = event => {
@@ -571,6 +578,7 @@ try {
         redraw() { updateDirty(); draw(); },
         setMapInteraction(interaction) { mapInteraction = interaction; draw(); },
         showOfficialBase(visible) { pickerOfficialBase = !!visible; syncTiles(); draw(); },
+        setWorldPreview(value) { worldPreview = value; syncTiles(); draw(); },
         registerPendingGuard(check) { pendingGuards.add(check); return () => pendingGuards.delete(check); },
         applyProject(action, message = '项目已更新', options = {}) { requireApplied(options); return change(() => action(project), message); },
         mount(moduleId, placement) { return guard(() => { requireApplied(); return change(() => project.mount(moduleId, placement), '模块已挂载'); }); }

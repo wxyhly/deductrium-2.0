@@ -109,3 +109,23 @@ test('shared deductrium formatting retains signs, fractions and all unit thresho
         [-7, '-7µg'], [-1000, '-1mg'], [-1e6, '-1g'], [-1e9, '-1kg'], [-1e12, '-1T'],
     ]) assert.equal(stringifyDeductriumAmout(amount), expected);
 });
+
+test('claimed script rewards reuse the native copy without changing stored text or duplicating prefixes', () => {
+    for (const [lang, labels] of [
+        ['zh', [['获取20µg推理素', '已获取20µg推理素'], ['解锁当且仅当', '已解锁当且仅当'], ['红钥匙', '已红钥匙'], ['已解锁宏', '已解锁宏']]],
+        ['en', [['Obtain 20µg of deductrium', 'Obtained 20µg of deductrium'], ['Unlock equivalence', 'Unlocked equivalence'], ['Red key', 'Claimed Red key'], ['Unlocked macros', 'Unlocked macros']]],
+    ]) withLanguage(lang, () => {
+        for (const [before, after] of labels) {
+            const reward = tile(before, {script: 'give key red'}, Type.Reward);
+            assert.equal(tileDisplayText(reward), before);
+            reward.data.got = true; reward.type = Type.Road;
+            for (let draw = 0; draw < 3; draw++) assert.equal(tileDisplayText(reward), after);
+            assert.equal(reward.text, before);
+            delete reward.data.got;
+            assert.equal(tileDisplayText(reward), before);
+        }
+        assert.equal(tileDisplayText(tile('', {script: 'give key red', got: true})), '');
+        assert.equal(tileDisplayText(tile('Counter', {script: 'event repeat', exchange: {}, got: true})), 'Counter');
+        assert.equal(tileDisplayText(tile('plain', {got: true})), 'plain');
+    });
+});

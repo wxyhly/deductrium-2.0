@@ -19,6 +19,19 @@ export class LangMgr {
                 el.textContent = text;
         });
     }
+    static claimedRewardText(text) {
+        if (!text)
+            return text;
+        const copy = (key) => this._text[key][this.lang];
+        const claimed = copy("claimedPrefix");
+        if ([claimed, copy("unlockedPrefix"), copy("obtainedPrefix")].some(prefix => text.startsWith(prefix)))
+            return text;
+        for (const [before, after] of [["unlockPrefix", "unlockedPrefix"], ["obtainPrefix", "obtainedPrefix"]]) {
+            if (text.startsWith(copy(before)))
+                return copy(after) + text.slice(copy(before).length);
+        }
+        return claimed + text;
+    }
     static _text = {
         theme: { zh: "主题", en: "Theme" },
         themeAuto: { zh: "跟随系统", en: "System" },
@@ -126,6 +139,9 @@ export class LangMgr {
         neverReward: { zh: '你拿到了本该\n永远拿不到的奖励\n如果你没有作弊\n则是游戏bug，请联系作者', en: 'You obtained the reward that\nshould never be obtainable.\nIf you didn\'t cheat,\nthis is a game bug — please contact the author' },
         unlockPrefix: { zh: '解锁', en: 'Unlock ' },
         unlockedPrefix: { zh: '已解锁', en: 'Unlocked ' },
+        obtainPrefix: { zh: '获取', en: 'Obtain ' },
+        obtainedPrefix: { zh: '已获取', en: 'Obtained ' },
+        claimedPrefix: { zh: '已', en: 'Claimed ' },
         // 推理表sheet
         newSheet: { zh: '新建推理表', en: "New Sheet" },
         defaultSheetName: { zh: '表', en: "Sheet" },
@@ -150,7 +166,7 @@ export class LangMgr {
         plsEnterCond: cond => this.lang === "zh" ? `请输入条件${cond}的命题编号，或点选命题` : `Please enter the proposition number for condition ${cond}, or click the proposition`,
         plsEnterSubst: sub => this.lang === "zh" ? `请输入替代${sub}的内容` : "",
         activePlaceholder: layer => this.lang === "zh" ? `默认在${layer}中操作` : `Default position in ${layer} for operation`,
-        getD: (n, got) => this.lang === "zh" ? `${got ? "已获取" : "获取"}${n}推理素` : `${got ? "Obtained" : "Obtain"} ${n} of deductrium`,
+        getD: (n, got) => this._text[got ? "obtainedPrefix" : "obtainPrefix"][this.lang] + n + (this.lang === "zh" ? "推理素" : " of deductrium"),
         payD: n => this.lang === "zh" ? `通过此门需消耗推理素${n}` : `To pass this gate you need ${n} of deductrium`,
         // 过门扣费警告（旧版逻辑：余额不足消耗量2倍时确认；无拆门技能时额外提示重复扣钱）
         payDWarning: (needed, has, hasDg) => this.lang === "zh"

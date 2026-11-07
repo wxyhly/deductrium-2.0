@@ -359,6 +359,11 @@ class Game {
                 this.finishAchievement(effect.id);
             else if (effect.op === "info")
                 this.unlockInfo(effect.id);
+            else if (effect.op === "clear-reward") {
+                const tile = blockMap.get(nameMap.get(effect.id) ?? effect.id);
+                if (tile?.data)
+                    tile.data.got = false;
+            }
             else if (effect.op === "reset") {
                 const hash = nameMap.get(effect.id) ?? effect.id;
                 const tile = blockMap.get(hash);

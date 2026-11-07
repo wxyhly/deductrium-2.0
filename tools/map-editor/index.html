@@ -84,7 +84,9 @@
           <div id="language-fields" hidden><label>中文 zh<textarea id="text-zh" rows="3" spellcheck="false"></textarea></label><label>English en<textarea id="text-en" rows="3" spellcheck="false"></textarea></label><details><summary>其他语言 JSON</summary><textarea id="text-other" rows="3" aria-label="其他语言 JSON" spellcheck="false">{}</textarea></details></div>
           <details id="script-section"><summary>脚本 <span id="script-summary" class="hint"></span></summary>
           <div class="script-toolbar" role="toolbar" aria-label="脚本工具"><select id="script-insert" aria-label="插入命令或模板"><option value="">插入…</option></select><button id="script-check" type="button">检查</button><button id="script-help-toggle" type="button" aria-controls="script-help" aria-expanded="false">参考</button></div>
-          <div class="code-field"><pre id="script-gutter" aria-hidden="true">1</pre><textarea id="tile-script" wrap="off" rows="6" spellcheck="false" aria-label="地图脚本" aria-describedby="script-error" placeholder="// 每行一条命令，如 give key red"></textarea></div>
+          <div class="code-field"><pre id="script-gutter" aria-hidden="true">1</pre><div class="script-code"><pre id="script-highlight" aria-hidden="true"></pre><textarea id="tile-script" wrap="off" rows="6" spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="地图脚本" aria-describedby="script-error script-keyboard-help" placeholder="// 每行一条命令，如 give key red"></textarea></div></div>
+          <div id="script-completions" role="listbox" aria-label="脚本补全" hidden></div>
+          <p id="script-keyboard-help" class="hint">Tab 补全 / 缩进 · ↑↓ 选择 · Esc 关闭 · Ctrl+空格 提示</p>
           <p id="script-error" class="field-error" aria-live="polite" hidden><span id="script-error-text"></span> <button id="script-goto" type="button">跳到该行</button></p>
           <section id="script-help" class="script-help" aria-label="脚本命令参考" hidden></section>
           </details>

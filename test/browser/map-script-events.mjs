@@ -28,25 +28,32 @@ const manifest={format:'deductrium-world-v1',id:'events',title:'事件测试',re
         tile('proof','1',2,'on touch\nevent repeat\nadd count touches 1\nremember proof "$a→$a"\nend\non pass\nrequire proof "$a→$a"\ntake money 3\nadd count passes 1\nend'),
         tile('rule','2',2,'on pass\nrequire rule "⊢$a→$a"\nset flag rule-passed\nend'),
         tile('blocked','3',2,'on touch\nevent repeat\nadd count attempts 1\nend\non pass\ngive money 100\nset flag leaked\nend',{requiresReward:'missing-reward'}),
-        tile('reward','4',3,'on touch\nadd count reward-touches 1\nend\non collect\ngive money 10\nadd count claims 1\nend'),
+        {...tile('reward','4',3,'on touch\nadd count reward-touches 1\nend\non collect\ngive money 10\nadd count claims 1\nend'), text:{zh:'获取10µg推理素',en:'Obtain 10µg of deductrium'}},
         tile('touch-only','1,1',2,'on touch\nevent repeat\nadd count touch-only 1\nend'),
-        tile('repeat','1,2',3,'on collect\nevent repeat\nreward keep\ngive money 1\nend'),
+        {...tile('repeat','1,2',3,'on collect\nevent repeat\nreward keep\ngive money 1\nend'),text:{zh:'获取1µg推理素',en:'Obtain 1µg of deductrium'}},
         tile('confirmation','1,3',2,'on touch\nevent repeat\nadd count confirms 1\nend\non pass\ntake money 2\nset flag confirmed\nconfirm "Proceed?"\nend'),
         tile('wall','1,4',1,'on touch\ngive money 999\nend'),
         tile('legacy','2,1',0,'give money 2'),
         tile('template-proof','2,2',2,template('on-proof-gate')),
         tile('template-rule','2,3',2,template('on-rule-gate')),
-        tile('demolition','2,4',3,'on collect\nunlock reward dG\nend'),
+        {...tile('demolition','2,4',3,'on collect\nunlock reward dG\nend'),text:{zh:'解锁拆门',en:'Unlock gate demolition'}},
         tile('key-open','3,1',3,template('on-collect-open').replaceAll('door','key-door')),
         tile('key-door','3,2',2,''),
         tile('key-demolish','3,3',3,template('on-collect-demolish').replaceAll('door','demolition-door')),
         tile('demolition-door','3,4',2,''),
-        tile('map-axiom','4,1',3,'on collect\n'+template('add-axiom')+'\nend'),
+        tile('map-axiom','4,1',3,'on collect\n'+template('add-axiom')+'\nenable axiom zMapAxiom\nrequire axiom zMapAxiom\nend'),
         tile('remove-map-axiom','4,2',0,'on touch\n'+template('remove-axiom')+'\nend'),
+        tile('reset-prize','4,3',0,'on touch\nevent repeat\nreset reward reward\nend'),
+        tile('clear-prize','4,4',0,'on touch\nevent repeat\nclear reward reward\nend'),
     ]};
 const hit=(page,hash)=>page.evaluate(hash=>game.hyLayer.world.hitTest(hash?hash.split(',').map(Number):[]),hash);
 const state=page=>page.evaluate(()=>({money:game.deductrium,ms:structuredClone(game.mapScript)}));
 const id=name=>'mod:events::'+name;
+const label=(page,hash,lang)=>page.evaluate(async({hash,lang})=>{
+    const {LangMgr}=await import('/js/lang.js');new LangMgr(lang);
+    const tile=game.hyLayer.world.getBlock(hash);game.hyLayer.needUpdate=true;
+    return {text:game.hyLayer.world.onTileText(tile),source:structuredClone(tile.text)};
+},{hash,lang});
 try {
     for(const viewport of [{width:1440,height:1000},{width:390,height:844}]) {
         const context=await browser.newContext({viewport}),page=await context.newPage(),errors=[];
@@ -57,6 +64,7 @@ try {
         assert.equal(await page.locator('#world-load-error').count(),0,await page.locator('body').innerText());
         assert.equal((await state(page)).ms.counts[id('starts')],1);
         assert.equal((await state(page)).ms.counts[id('start-touches')],undefined,'startup does not synthesize a touch');
+        assert.equal((await label(page,'4','zh')).text,'获取10µg推理素');
         assert.equal(await hit(page,'1'),false,'a script-only proof gate rejects before a proof exists');
         assert.equal((await state(page)).ms.counts[id('touches')],1,'touch commits independently of failed pass');
         assert.equal(await page.evaluate(()=>game.hsLayer.lastGateAST?.toString()),'$a→$a');
@@ -71,6 +79,8 @@ try {
         assert.deepEqual((await state(page)).ms.eventDone[id('reward')].slice().sort(),['collect','touch']);
         assert.equal(await hit(page,'4'),true,'consumed reward road remains traversable');
         assert.equal((await state(page)).money,10,'collect never reruns when reward becomes a road');
+        assert.equal((await label(page,'4','zh')).text,'已获取10µg推理素');
+        assert.equal((await label(page,'4','en')).text,'Obtained 10µg of deductrium');
         await page.evaluate(async()=>{const {HSParser}=await import('/js/hs/core/parser.js');game.hsLayer.hilbertSystem.fromCmd([new HSParser().parse('.i $a','cmd')]);});
         assert.equal(await hit(page,'1'),true);assert.equal((await state(page)).money,7);
         assert.equal((await state(page)).ms.counts[id('passes')],1);
@@ -81,6 +91,7 @@ try {
         assert.equal(await hit(page,'2'),true,'script-only rule gate accepts a recorded matching rule');
         for(let n=0;n<2;n++)assert.equal(await hit(page,'1,2'),true);
         assert.equal((await state(page)).money,9);assert.equal(await page.evaluate(()=>game.hyLayer.world.getBlock('1,2').type),3);
+        assert.equal((await label(page,'1,2','zh')).text,'已获取1µg推理素','repeated claims do not stack the prefix');
         assert.equal(await hit(page,'1,3'),false);assert.equal((await state(page)).money,9);
         assert.equal((await state(page)).ms.counts[id('confirms')],1);
         assert(!(await state(page)).ms.flags.includes(id('confirmed')),'cancelled pass effects roll back');
@@ -99,6 +110,8 @@ try {
         assert.equal(await hit(page,'3,2'),true);
         assert.equal(await page.evaluate(()=>game.hyLayer.world.getBlock('3,2').data?.del),undefined,'opening alone does not mark a door demolished');
         assert.equal(await hit(page,'2,4'),true,'collect the existing demolition ability');
+        assert.equal((await label(page,'2,4','zh')).text,'已解锁拆门');
+        assert.equal((await label(page,'2,4','en')).text,'Unlocked gate demolition');
         for(const hash of ['2,2','2,3']) {
             assert.equal(await hit(page,hash),true,'repeat pass can demolish after obtaining dG later');
             assert.equal(await page.evaluate(h=>game.hyLayer.world.getBlock(h).type,hash),0);
@@ -119,7 +132,20 @@ try {
         assert.equal(await page.evaluate(()=>game.hsLayer.hilbertSystem.rules.has('zMapAxiom')),true,'map axiom survives reload');
         assert.equal(await hit(page,'4,2'),true);
         assert.equal(await page.evaluate(()=>game.hsLayer.hilbertSystem.rules.has('zMapAxiom')),false);
-        assert.deepEqual(errors,[]);console.log(JSON.stringify({viewport,events:'PASS',proofGates:'PASS',templates:'PASS',reload:'PASS',errors}));
+        for(let draw=0;draw<3;draw++) assert.equal((await label(page,'4','zh')).text,'已获取10µg推理素','reload keeps a single claimed prefix');
+        assert.deepEqual((await label(page,'4','en')).source,{zh:'获取10µg推理素',en:'Obtain 10µg of deductrium'},'copy changes never rewrite map text');
+        assert.equal(await hit(page,'4,3'),true);
+        assert.equal((await label(page,'4','zh')).text,'获取10µg推理素','reset restores the unclaimed copy');
+        assert.equal(await hit(page,'4'),true);
+        assert.equal((await label(page,'4','zh')).text,'已获取10µg推理素','reclaim reuses the same copy');
+        const claimedType=await page.evaluate(()=>game.hyLayer.world.getBlock('4').type);
+        assert.equal(await hit(page,'4,4'),true);
+        assert.equal((await label(page,'4','zh')).text,'获取10µg推理素','clearing a claim updates the live label');
+        assert.equal(await page.evaluate(()=>game.hyLayer.world.getBlock('4').type),claimedType,'clearing a claim does not reset the tile');
+        await page.evaluate(()=>{game.saveload.cancelPendingSave();game.saveload.save();});
+        await page.reload();await page.waitForFunction(()=>window.game);
+        assert.equal((await label(page,'4','zh')).text,'获取10µg推理素','clear copy is identical after reload');
+        assert.deepEqual(errors,[]);console.log(JSON.stringify({viewport,events:'PASS',proofGates:'PASS',templates:'PASS',rewardCopy:'PASS',reload:'PASS',errors}));
         await context.close();
     }
 } finally {await browser.close();await new Promise(r=>server.close(r));}

@@ -1,4 +1,5 @@
 import {SCRIPT_RULES, SCRIPT_TRIGGER_TIMINGS, supportedScriptGroups} from './script-help.mjs';
+import {installScriptCodeEditor} from './script-code-editor.mjs';
 
 // Some browsers omit the offset in JSON.parse errors. Scan only on failure to
 // locate the first invalid token; JSON.parse remains the authoritative parser.
@@ -49,9 +50,10 @@ function jsonErrorOffset(source) {
     return offset;
 }
 
-export function installScriptEditor({parse, say, refresh}) {
+export function installScriptEditor({parse, say, refresh, getContext}) {
     const $ = id => document.getElementById(id);
     const script = $('tile-script'), data = $('tile-data'), gutter = $('script-gutter');
+    const code = installScriptCodeEditor(script, {getContext});
     let scriptIssue = null, dataIssue = null, scriptChecked = false, dataChecked = false;
     let scriptTimer, dataTimer;
     const lines = () => script.value.split('\n');
@@ -204,6 +206,7 @@ export function installScriptEditor({parse, say, refresh}) {
         check, readData,
         get errorMessage() { return scriptIssue ? `脚本第 ${scriptIssue.line} 行有错误` : dataIssue ? `data 第 ${dataIssue.line} 行有错误` : ''; },
         reset() {
+            code.refresh();
             clearTimeout(scriptTimer); clearTimeout(dataTimer);
             scriptIssue = dataIssue = null; scriptChecked = dataChecked = false;
             for (const field of [script, data]) field.removeAttribute('aria-invalid');
