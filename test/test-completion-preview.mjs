@@ -154,17 +154,27 @@ test('cyclic unification stops inside substitution before exponential tree alloc
     unchanged();
 });
 
-test('substitution composition keeps its correct mathematical schema without changing default replay behavior',()=>{
+test('substitution composition keeps preview schemas and checks normalized proofs',()=>{
     const system=fixture();
     add(system,'d{}','⊢∀x:¬x∈{}');
     const unchanged=snapshot(system);
-    const rule=system.getD(parse('<a4(d{})'),false);
-    assert.equal(createRulePreview(system)('<a4(d{})'),rule.toString());
+    let rule;
+    const reduce=Assertion.reduceSbFn;
+    try {
+        Assertion.reduceSbFn=()=>{throw Error('preview must not expand substitutions');};
+        rule=system.getD(parse('<a4(d{})'),false);
+        assert.equal(createRulePreview(system)('<a4(d{})'),rule.toString());
+    } finally {Assertion.reduceSbFn=reduce;}
     const reduced=rule.conclusion.clone();
     Assertion.reduceSbFn(rule.assertions,reduced);
     assert.ok(!reduced.toString().includes('#sb('));
     assert.match(reduced.toString(),/^¬\$[a-zA-Z]+∈\{\}$/);
-    assert.throws(()=>system.getD(parse('<a4(d{})')),e=>JSON.stringify(e).includes('combineConclusionMismatch'));
+    const checked=system.getD(parse('<a4(d{})'));
+    const checkedConclusion=checked.conclusion.clone();
+    Assertion.reduceSbFn(checked.assertions,checkedConclusion);
+    assert.ok(checkedConclusion.equal(reduced));
+    assert.equal(checked.toString(),rule.toString());
+    assert.ok(checked.step.length);
     unchanged();
 });
 
