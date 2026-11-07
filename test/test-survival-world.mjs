@@ -13,6 +13,7 @@ const { initialCreativeRules, initialSurvivalRules } = await import('../js/hs/co
 const { calcMaxReachOrd, cmp, printOrd, genOrdTiles } = await import('../js/hy/ordinal.js');
 const { Serde: HySerde } = await import('../js/hy/serde.js');
 const { Rotor } = await import('../js/hy/algebra.js');
+const { getMapPalette } = await import('../js/hy/palette.js');
 
 const quiet = fn => {
     const log = console.log;
@@ -80,11 +81,11 @@ function makeGame(data, mode = 'survival') {
     saved = data; confirmations = 0; confirmResult = true;
     const Game = new Function('window', 'document', 'confirm', 'initialCreativeRules', 'initialSurvivalRules',
         'HSLayer', 'TTLayer', 'HyLayer', 'blockMap', 'nameMap', 'TileBlockType', 'LangMgr',
-        'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd', gameSource)(
+        'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd', 'getMapPalette', gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
-        ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd);
+        ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd, getMapPalette);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;
