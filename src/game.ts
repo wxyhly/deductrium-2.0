@@ -141,10 +141,13 @@ class Game {
         }
         if (firstLoad && activeWorld) {
             const world = activeWorld;
-            const spawn = world.tiles.find(tile => tile.id === world.spawn.tileId)!;
-            this.hyLayer.world.currentTile = spawn.hash ? spawn.hash.split(",").map(Number) : [];
-            this.hyLayer.world.localCamMat = Rotor.rotate(activeWorld.spawn.rotation * Math.PI / 3);
-            this.hyLayer.world.atlasTile.generateRotors(this.hyLayer.world.currentTile);
+            // Extensions keep HWorld's official spawn; only standalone maps override it.
+            if (world.mode === "standalone") {
+                const spawn = world.tiles.find(tile => tile.id === world.spawn.tileId)!;
+                this.hyLayer.world.currentTile = spawn.hash ? spawn.hash.split(",").map(Number) : [];
+                this.hyLayer.world.localCamMat = Rotor.rotate(world.spawn.rotation * Math.PI / 3);
+                this.hyLayer.world.atlasTile.generateRotors(this.hyLayer.world.currentTile);
+            }
             this.modBalances = activeWorld.currency ? {[activeWorld.currency.id]: 0} : {};
         }
         if (gameMode === "creative") {

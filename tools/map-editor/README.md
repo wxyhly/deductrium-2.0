@@ -68,6 +68,8 @@ DSL 支持钥匙、旗标、奖励、金额、计数及已接入引擎的证明 
 
 世界试玩采用 `?mod-world` 和按世界 ID 隔离的存档；它与旧的按内容 hash 隔离的“试玩地图”用途不同。更新保留稳定 ID 和事件完成记录，避免重复领奖；模式不能在原存档中悄悄切换。配置和迁移规则见 [地图模块说明](../../doc/map-mod-design.md)。
 
+扩展主世界的新存档从官方出生点开始，通过连接入口进入 mod；独立世界使用配置的出生格与朝向。已有存档恢复上次位置，出生格的 `on start` 只在新存档实际出生时执行。
+
 运行 `node test/browser/map-world.mjs` 验证世界导入、设置、发布、银行、账本、迁移与恢复；`node test/browser/map-half-plane.mjs` 验证半平面限制、主世界入口与只读底图；`node test/browser/map-script-events.mjs` 验证显式事件、证明门、钥匙模板与拆门读档。这些脚本同样支持 `PLAYWRIGHT_MODULE`。
 
 `node test/browser/map-world-picker.mjs` 验证范围和入口点选、取消、拖动及桌面 / 手机布局。

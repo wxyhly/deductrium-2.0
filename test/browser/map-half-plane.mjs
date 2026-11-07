@@ -12,9 +12,9 @@ const region = {hash:'1', edge:4, side:-1};
 const entry = {mainHash:'1', edge:4, tileId:'entry'};
 const fixture = {
     format:'deductrium-world-v2', id:'half-plane-browser', title:'Half-plane browser test',
-    revision:1, mode:'extension', region, entry, spawn:{tileId:'entry', rotation:0},
+    revision:1, mode:'extension', region, entry, spawn:{tileId:'entry', rotation:3},
     banks:{}, migrations:[], tiles:[{id:'entry', hash:'1,4', type:0, text:'Mod entrance',
-        data:{script:'on touch\nadd count touches 1\nend'}}],
+        data:{script:'on start\nadd count starts 1\nend\non touch\nadd count touches 1\nend'}}],
 };
 const server = createServer(async (req, res) => {
     try {
@@ -198,7 +198,15 @@ try {
             assert.deepEqual((await readMap(gamePage)).filter(([h])=>h!=='1,4'),base,
                 'runtime extension preserves the entire official base');
             const initial = await progress(gamePage);
-            assert.deepEqual(initial.current,[1,4]);
+            assert.deepEqual(initial.current,[], 'fresh extensions start at the official spawn');
+            assert.equal(initial.worldPosition.hash,'');
+            assert.equal(initial.worldPosition.tileId,undefined);
+            assert.equal(initial.ms.counts['mod:half-plane-browser::starts'], undefined,
+                'a remote mod spawn must not run its start handler');
+            assert.equal(await gamePage.evaluate(()=>{
+                const r=game.hyLayer.world.localCamMat;
+                return r.r===1 && r.x===0 && r.y===0 && r.z===0;
+            }),true,'mod spawn rotation must not rotate the official spawn');
             assert.equal(initial.ms.counts['mod:half-plane-browser::touches'], undefined,
                 'spawn does not synthesize touch/pass events');
             await gamePage.evaluate(async () => {
@@ -270,6 +278,12 @@ try {
             assert.deepEqual(only.map(([h])=>h),['1,4'],'standalone loads only mod tiles');
             assert.equal(await gamePage.evaluate(()=>game.hyLayer.world.hitTest([1])),false);
             assert.deepEqual((await progress(gamePage)).current,[1,4]);
+            assert.equal((await progress(gamePage)).ms.counts['mod:half-plane-standalone::starts'],1,
+                'standalone worlds still execute their configured spawn start handler');
+            assert.equal(await gamePage.evaluate(()=>{
+                const r=game.hyLayer.world.localCamMat;
+                return Math.abs(r.r)<1e-12 && Math.abs(Math.abs(r.z)-1)<1e-12;
+            }),true,'standalone worlds keep their configured spawn rotation');
             assert.equal(await gamePage.evaluate(()=>localStorage.getItem('deductrium2_survival')),officialSave);
             assert.deepEqual(errors,[]);
             console.log(JSON.stringify({viewport,officialTiles:base.length,editor:'PASS',atomicRejections:atomic.length,
