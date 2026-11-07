@@ -102,7 +102,7 @@ test('checksOnly validates the entire script and requirements but skips every ef
 take money 999; disable axiom apn5; open gate door; set tile sign wall;
 unlock reward custom; unlock layer G-layer; message "skip";
 require key owned; require not-key new; require not-flag changed; require count n == 2; require money == 20`, state, environment(), true);
-    assert.deepEqual(plan, { state, money: 20, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 20, type: 0 }, effects: [], status: 'pass', attemptEffects: [] });
+    assert.deepEqual(plan, { state, money: 20, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 20, type: 0 }, effects: [], status: 'pass', handled: true, attemptEffects: [] });
     assert.notEqual(plan.state, state);
     for (const source of ['give key new; require key new', 'take key owned; require not-key owned',
         'require key owned; set tile missing road', 'require key owned; enable axiom unknown',
@@ -209,7 +209,7 @@ test('checksOnly validates bank references and all rule data but never performs 
     const env = environment({ money: 0, typeMoney: 0, banks: { central: bank() } });
     const plan = planMapScript(`exchange central reasoning 100; give currency type 8; take currency reasoning 9;
 require currency reasoning == 0; require currency type == 0`, state, env, true);
-    assert.deepEqual(plan, { state, money: 0, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 0, type: 0 }, effects: [], status: 'pass', attemptEffects: [] });
+    assert.deepEqual(plan, { state, money: 0, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 0, type: 0 }, effects: [], status: 'pass', handled: true, attemptEffects: [] });
     assert.throws(() => planMapScript('exchange missing reasoning 2', state, env, true), /Unknown bank/);
     assert.throws(() => planMapScript('exchange central reasoning 1', state, env, true), /minimum/);
     const invalid = bank(); invalid.rules[1].rounding = 'auto';

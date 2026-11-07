@@ -10,6 +10,8 @@ let EditorProject, Hvec, Rotor, LangMgr, parseMapScript, blockMap, nameMap, worl
 let selectedHash = '', group = new Set(), dirty = false, fieldDirty = false, infoDirty = false;
 let blockedDraft = null, preview = null, visibleLimit = 150, filePurpose = 'auto', drag = null;
 let renderFrame = 0, importBusy = false, ui, scriptUI;
+let officialTiles = new Map();
+const officialTile = hash => project?.world?.mode === 'extension' ? officialTiles.get(hash) : undefined;
 const pendingGuards = new Set();
 const externalPending = () => [...pendingGuards].some(check => check());
 
@@ -91,6 +93,10 @@ function persist() {
 }
 function syncTiles() {
     blockMap.clear(); nameMap.clear();
+    if (project.world?.mode === 'extension') for (const [hash, tile] of officialTiles) {
+        blockMap.set(hash, clone(tile));
+        if (tile.name) nameMap.set(tile.name, hash);
+    }
     for (const [hash, tile] of project.tiles) {
         blockMap.set(hash, clone(tile));
         if (tile.name) nameMap.set(tile.name, hash);
@@ -169,13 +175,14 @@ function renderTextMode() {
     $('plain-field').hidden = multilingual; $('language-fields').hidden = !multilingual;
 }
 function fillForm() {
-    const tile = project.tiles.get(selectedHash), text = tile?.text ?? '';
+    const base = officialTile(selectedHash), editable = !base && project.canEdit(selectedHash);
+    const tile = project.tiles.get(selectedHash) ?? base, text = tile?.text ?? '';
     $('tile-title').textContent = tile ? `${TYPES[tile.type]}属性` : '空白格 · 可新增';
-    $('tile-meta').textContent = `坐标 ${hashLabel(selectedHash)} · ${tile ? `ID ${tile.id}` : '空白，Apply 后新增'}`;
+    $('tile-meta').textContent = `坐标 ${hashLabel(selectedHash)} · ${base ? '官方地图 · 只读' : !editable ? '半平面外 · 只读' : tile ? `ID ${tile.id}` : '空白，Apply 后新增'}`;
     const at = selectedHash ? selectedHash.split(',').map(Number) : [];
     for (const button of $('neighbors').querySelectorAll('button[data-edge]')) {
         const neighborHash = world.atlasTile.getNeighborAndDir(at, Number(button.dataset.edge), true)[0].join(',');
-        const neighbor = project.tiles.get(neighborHash);
+        const neighbor = project.tiles.get(neighborHash) ?? officialTile(neighborHash);
         button.dataset.kind = neighbor ? String(neighbor.type) : 'empty';
         const label = `边 ${button.dataset.edge}：${neighbor ? `${TYPES[neighbor.type]} ${neighbor.name || neighbor.id}` : '空白'} · ${hashLabel(neighborHash)}`;
         button.setAttribute('aria-label', label); button.title = label;
@@ -191,9 +198,9 @@ function fillForm() {
     delete data.script;
     $('tile-data').value = JSON.stringify(data, null, 2);
     $('data-summary').textContent = `${Object.keys(data).length} 个字段`;
-    $('tile-fields').disabled = !!tile?.instanceId;
+    $('tile-fields').disabled = !!tile?.instanceId || !editable;
     $('tile-form').hidden = !!tile?.instanceId;
-    $('remove-tile').disabled = !tile;
+    $('remove-tile').disabled = !tile || !editable;
     $('mounted-note').hidden = !tile?.instanceId;
     $('mounted-note').replaceChildren();
     if (tile?.instanceId) {
@@ -304,6 +311,7 @@ function download(name, text, type = 'application/json;charset=utf-8') {
     link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function load(next, {modified = false, message = '项目已加载'} = {}) {
+    next.setReadonlyBase(officialTiles.keys());
     project = next; group = new Set(); selectedHash = project.tiles.has('') ? '' : project.tiles.keys().next().value ?? '';
     dirty = modified; fieldDirty = false; infoDirty = false; visibleLimit = 150;
     $('search').value = ''; $('filter').value = 'all';
@@ -335,7 +343,7 @@ async function importFile(file, purpose) {
             return;
         }
         let next;
-        const publishedWorld = data?.format === 'deductrium-world-v1';
+        const publishedWorld = ['deductrium-world-v1', 'deductrium-world-v2'].includes(data?.format);
         if (publishedWorld) {
             const {projectFromWorld} = await import('./publish.mjs');
             next = projectFromWorld(data, world.atlasTile);
@@ -523,6 +531,7 @@ try {
     ({parseMapScript} = modules[6]);
     new LangMgr('zh'); $('map-language').value = 'zh';
     world = new modules[1].HWorld($('map'));
+    officialTiles = new Map([...blockMap].map(([hash,tile]) => [hash,clone(tile)]));
     // Free camera traversal must never run reward, gate, ordinal or game-save logic.
     world.hitTest = () => true;
     world.getBlock = hash => blockMap.get(hash) ?? blockMap.get(nameMap.get(hash));

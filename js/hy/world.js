@@ -1,5 +1,6 @@
 /** Data-only published worlds and transactional save migration; no DOM or storage access. */
 import { Polygon } from './tiling.js';
+import { regionContains } from './half-plane.js';
 import { validateBankConfig } from './economy.js';
 import { validateMapBankOffer } from './bank.js';
 import { createMapScriptState, parseMapScript, formatMapScript, rewriteMapScript } from './script.js';
@@ -133,6 +134,8 @@ function script(source, world, names) {
         if ('kind' in command && 'id' in command) {
             if (['gate', 'tile', 'text'].includes(command.kind)
                 || ('op' in command && command.op === 'reset' && command.kind === 'reward')) {
+                if (command.id === '@self')
+                    return command;
                 const target = names.get(command.id);
                 if (!target)
                     fail(`Unknown internal script tile: ${command.id}`);
@@ -151,6 +154,8 @@ function script(source, world, names) {
         return { ...value, left: condition(value.left), right: condition(value.right) };
     };
     const statements = (values) => values.map(value => {
+        if (value.op === 'on')
+            return { ...value, body: statements(value.body) };
         if (value.op !== 'if')
             return reference(value);
         return { ...value, branches: value.branches.map(branch => ({ ...branch, condition: condition(branch.condition), body: statements(branch.body) })),
@@ -191,14 +196,33 @@ function runtime(world) {
 export function parseWorld(input) {
     const w = json(input);
     const required = ['format', 'id', 'title', 'revision', 'mode', 'spawn', 'tiles', 'banks', 'migrations'];
-    fields(w, [...required, 'currency'], required, 'manifest');
-    if (w.format !== 'deductrium-world-v1')
+    fields(w, [...required, 'currency', 'region', 'entry'], required, 'manifest');
+    if (w.format !== 'deductrium-world-v1' && w.format !== 'deductrium-world-v2')
         fail('Unsupported world format');
     worldId(w.id);
     text(w.title, 'title', 200, 1);
     revision(w.revision);
     if (w.mode !== 'standalone' && w.mode !== 'extension')
         fail('Invalid world mode');
+    if (w.region !== undefined) {
+        fields(w.region, ['hash', 'edge', 'side'], ['hash', 'edge', 'side'], 'region');
+        w.region.hash = hash(w.region.hash);
+        rotation(w.region.edge);
+        if (w.region.side !== 1 && w.region.side !== -1)
+            fail('Region side must be 1 or -1');
+    }
+    if (w.format === 'deductrium-world-v2' && !w.region)
+        fail('World v2 requires region; choose a mod half-plane');
+    if (w.format === 'deductrium-world-v2' && w.mode === 'extension' && !w.entry)
+        fail('Extension v2 requires adjacent entry; choose an official neighbor');
+    if (w.entry !== undefined) {
+        if (w.mode !== 'extension')
+            fail('Only extension worlds have an official entry');
+        fields(w.entry, ['mainHash', 'edge', 'tileId'], ['mainHash', 'edge', 'tileId'], 'entry');
+        w.entry.mainHash = hash(w.entry.mainHash);
+        rotation(w.entry.edge);
+        localId(w.entry.tileId);
+    }
     if (w.currency !== undefined) {
         fields(w.currency, ['id', 'name', 'symbol'], ['id', 'name'], 'currency');
         if (w.currency.id !== `mod:${w.id}`)
@@ -227,6 +251,8 @@ export function parseWorld(input) {
         fields(tile, ['id', 'hash', 'type', 'name', 'text', 'data'], ['id', 'hash', 'type', 'text'], 'tile');
         worldTileId(w.id, tile.id);
         tile.hash = hash(tile.hash);
+        if (w.region && !regionContains(tile.hash, w.region, polygon))
+            fail(`Tile outside mod half-plane: ${tile.id}`);
         if (ids.has(tile.id) || hashes.has(tile.hash))
             fail('Duplicate tile ID or canonical hash');
         ids.add(tile.id);
@@ -270,6 +296,14 @@ export function parseWorld(input) {
     const spawn = w.tiles.find((t) => t.id === w.spawn.tileId);
     if (!spawn || spawn.type !== 0 && spawn.type !== 3)
         fail('Spawn must be a walkable road/reward tile');
+    if (w.entry) {
+        const entry = w.tiles.find((t) => t.id === w.entry.tileId);
+        if (!entry || entry.type !== 0 && entry.type !== 3)
+            fail('Entry must be a walkable mod road/reward tile');
+        const [neighbor] = polygon.getNeighborAndDir(w.entry.mainHash === '' ? [] : w.entry.mainHash.split(',').map(Number), w.entry.edge, true);
+        if (neighbor.join(',') !== entry.hash)
+            fail('Entry tile must be the exact official neighbor at entry.edge');
+    }
     if (!Array.isArray(w.migrations))
         fail('Migrations must be an array');
     const froms = new Set();
@@ -300,6 +334,27 @@ export function parseWorld(input) {
     return w;
 }
 export function worldRuntimeTiles(world) { return runtime(parseWorld(world)); }
+/** Call with the untouched official map, before installing any extension tiles. */
+export function validateWorldBase(world, officialBase) {
+    const w = parseWorld(world);
+    if (w.mode !== 'extension')
+        return;
+    if (w.entry) {
+        const main = officialBase.get(w.entry.mainHash);
+        if (!main || main.type !== 0 && main.type !== 3)
+            fail('Entry mainHash must identify an existing official walkable road/reward tile');
+    }
+    if (w.region) {
+        const opposite = { ...w.region, side: w.region.side === 1 ? -1 : 1 };
+        for (const at of officialBase.keys()) {
+            if (!regionContains(hash(at), opposite, polygon))
+                fail(`Official tile intersects mod half-plane: ${at || 'origin'}`);
+        }
+    }
+    for (const tile of w.tiles)
+        if (officialBase.has(tile.hash))
+            fail(`Extension overlaps official tile: ${tile.id}`);
+}
 export function worldSaveMode(world) { return `world-${worldId(world.id)}`; }
 function ordered(value) {
     if (Array.isArray(value))
@@ -318,7 +373,7 @@ function goal(tile) {
 }
 export function worldSaveMeta(world) {
     const w = parseWorld(world);
-    return { id: w.id, revision: w.revision, tiles: runtime(w).map(([, tile]) => ({ id: tile.name, goal: goal(tile) })),
+    return { id: w.id, revision: w.revision, mode: w.mode, tiles: runtime(w).map(([, tile]) => ({ id: tile.name, goal: goal(tile) })),
         ...(w.currency ? { currency: { id: w.currency.id } } : {}) };
 }
 /**
@@ -335,7 +390,9 @@ export function migrateWorldSave(data, world) {
     const w = parseWorld(world), nextMeta = worldSaveMeta(w), next = json(data);
     record(next, 'save');
     const meta = record(next.world, 'save.world');
-    fields(meta, ['id', 'revision', 'tiles', 'currency'], ['id', 'revision', 'tiles'], 'save.world');
+    fields(meta, ['id', 'revision', 'tiles', 'currency', 'mode'], ['id', 'revision', 'tiles'], 'save.world');
+    if (meta.mode !== undefined && meta.mode !== w.mode)
+        fail('Saved world mode changed');
     if (meta.id !== w.id)
         fail('Unknown saved world');
     revision(meta.revision);
@@ -458,6 +515,19 @@ export function migrateWorldSave(data, world) {
                 const mapped = translate(id, true);
                 return mapped === null ? [] : [mapped];
             }))];
+        if (state.eventDone) {
+            const events = {};
+            for (const [id, done] of Object.entries(state.eventDone)) {
+                if (!id.startsWith('mod:') && w.mode === 'extension') {
+                    events[id] = done;
+                    continue;
+                }
+                const mapped = translate(id, true);
+                if (mapped !== null)
+                    events[mapped] = done;
+            }
+            state.eventDone = events;
+        }
         const edits = {};
         for (const [id, edit] of Object.entries(state.tileEdits)) {
             if (!id.startsWith('mod:') && w.mode === 'extension') {

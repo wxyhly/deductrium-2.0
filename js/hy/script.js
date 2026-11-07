@@ -9,6 +9,7 @@ const TILE_NAMES = ['road', 'wall', 'gate', 'reward', 'ordinal'];
 const COMPARISONS = ['>=', '<=', '==', '!=', '>', '<'];
 const LAYERS = ['D-layer', 'T-layer', 'P-layer', 'G-layer'];
 const METRICS = ['steps', 'demolished', 'spent', 'ordinal-base'];
+const EVENT_NAMES = ['touch', 'pass', 'collect', 'start'];
 function fail(line, message) {
     throw new Error(`Map script line ${line}: ${message}`);
 }
@@ -16,6 +17,11 @@ function validId(value, line) {
     if (typeof value !== 'string' || !value.length || value.length > MAX_ID || /[\s\u0000-\u001f\u007f;"]/.test(value)) {
         fail(line, 'Invalid ID (1–128 characters, no whitespace or script separators)');
     }
+    return value;
+}
+function eventName(value, line) {
+    if (typeof value !== 'string' || !EVENT_NAMES.includes(value))
+        fail(line, 'Unknown event (touch, pass, collect or start)');
     return value;
 }
 function validValue(value, integer, line) {
@@ -473,6 +479,7 @@ export function parseMapScript(source) {
         fail(1, 'Source exceeds 16384 characters');
     const commands = [];
     const stack = [];
+    const events = new Set();
     let body = commands;
     let statements = 0;
     const lines = source.split(/\r\n|\r|\n/);
@@ -487,10 +494,28 @@ export function parseMapScript(source) {
             if (++statements > MAX_COMMANDS)
                 fail(line, 'Script exceeds 256 commands');
             const op = tokens[0].value;
-            if (op === 'if' || op === 'elif') {
+            if (op === 'on') {
+                if (tokens.length !== 2 || tokens.some(token => token.quoted))
+                    fail(line, 'Expected on touch/pass/collect/start');
+                if (stack.length)
+                    fail(line, 'Event handlers must be top-level');
+                if (commands.length && !events.size)
+                    fail(line, 'Cannot mix event handlers and flat commands');
+                const event = eventName(tokens[1].value, line);
+                if (events.has(event))
+                    fail(line, `Duplicate event handler: ${event}`);
+                events.add(event);
+                const node = { line, op, event, body: [], endLine: line };
+                body.push(node);
+                stack.push({ node, body });
+                body = node.body;
+            }
+            else if (op === 'if' || op === 'elif') {
                 if (tokens[0].quoted)
                     fail(line, 'Control words must be bare tokens');
                 if (op === 'if') {
+                    if (!stack.length && events.size)
+                        fail(line, 'Cannot mix event handlers and flat commands');
                     if (stack.length >= MAX_DEPTH)
                         fail(line, 'Branch nesting exceeds 16');
                     const node = { line, op, branches: [], endLine: line };
@@ -498,7 +523,7 @@ export function parseMapScript(source) {
                     stack.push({ node, body });
                 }
                 const frame = stack[stack.length - 1];
-                if (!frame)
+                if (!frame || frame.node.op !== 'if')
                     fail(line, 'Unexpected elif');
                 if (frame.node.elseBody !== undefined)
                     fail(line, 'elif after else');
@@ -513,6 +538,8 @@ export function parseMapScript(source) {
                 if (!frame)
                     fail(line, `Unexpected ${op}`);
                 if (op === 'else') {
+                    if (frame.node.op !== 'if')
+                        fail(line, 'Unexpected else');
                     if (frame.node.elseBody !== undefined)
                         fail(line, 'Duplicate else');
                     frame.node.elseLine = line;
@@ -523,8 +550,11 @@ export function parseMapScript(source) {
                     body = stack.pop().body;
                 }
             }
-            else
+            else {
+                if (!stack.length && events.size)
+                    fail(line, 'Cannot mix event handlers and flat commands');
                 body.push(parseCommand(tokens, line));
+            }
             tokens = [];
         };
         let cursor = 0;
@@ -580,7 +610,7 @@ export function parseMapScript(source) {
         flush();
     });
     if (stack.length)
-        fail(stack[stack.length - 1].node.line, 'Missing end for if');
+        fail(stack[stack.length - 1].node.line, `Missing end for ${stack[stack.length - 1].node.op}`);
     return commands;
 }
 function formatNumber(expression) {
@@ -634,6 +664,8 @@ function formatStatements(commands, depth) {
     if (depth > MAX_DEPTH)
         fail(commands[0]?.line ?? 1, 'Branch nesting exceeds 16');
     return commands.map(command => {
+        if (command.op === 'on')
+            return [`on ${command.event}`, formatStatements(command.body, depth + 1), 'end'].filter(Boolean).join('\n');
         if (command.op === 'if') {
             if (!command.branches.length)
                 fail(command.line, 'if must contain a condition');
@@ -692,6 +724,10 @@ export function formatMapScript(commands) {
     parseMapScript(source);
     return source;
 }
+function hasTileReference(value) {
+    return 'kind' in value && 'id' in value && (['gate', 'tile', 'text'].includes(value.kind)
+        || ('op' in value && value.op === 'reset' && value.kind === 'reward'));
+}
 /** Only keys, flags, counters and tile references belong to a module namespace. */
 export function rewriteMapScript(source, namespace) {
     const rewriteNumber = (expression, line) => {
@@ -704,6 +740,8 @@ export function rewriteMapScript(source, namespace) {
     const rewritePredicate = (predicate) => {
         if ('expression' in predicate && predicate.expression)
             predicate = { ...predicate, expression: rewriteNumber(predicate.expression, predicate.line) };
+        if ('id' in predicate && hasTileReference(predicate) && predicate.id === '@self')
+            return predicate;
         if ('id' in predicate && ['key', 'not-key', 'flag', 'not-flag', 'count', 'tile'].includes(predicate.kind)) {
             return { ...predicate, id: validId(namespace(predicate.id), predicate.line) };
         }
@@ -717,6 +755,8 @@ export function rewriteMapScript(source, namespace) {
         return { ...condition, left: rewriteCondition(condition.left), right: rewriteCondition(condition.right) };
     };
     const rewriteStatements = (statements) => statements.map(command => {
+        if (command.op === 'on')
+            return { ...command, body: rewriteStatements(command.body) };
         if (command.op === 'if')
             return {
                 ...command,
@@ -727,6 +767,8 @@ export function rewriteMapScript(source, namespace) {
             return { ...command, ...rewritePredicate(command) };
         if ('expression' in command && command.expression)
             command = { ...command, expression: rewriteNumber(command.expression, command.line) };
+        if ('id' in command && hasTileReference(command) && command.id === '@self')
+            return command;
         if ('kind' in command && 'id' in command
             && ['key', 'not-key', 'flag', 'not-flag', 'count', 'gate', 'tile', 'text'].includes(command.kind)) {
             return { ...command, id: validId(namespace(command.id), command.line) };
@@ -790,7 +832,7 @@ export function createMapScriptState(input) {
         return state;
     const restored = record(input, 'State');
     for (const key of Object.keys(restored)) {
-        if (!Object.hasOwn(state, key) && key !== 'ordinal')
+        if (!Object.hasOwn(state, key) && key !== 'ordinal' && key !== 'eventDone')
             fail(1, `Unknown state field: ${key}`);
     }
     for (const field of ['keys', 'flags', 'disabledAxioms', 'done', 'rewards', 'layers', 'removedRewards']) {
@@ -802,6 +844,18 @@ export function createMapScriptState(input) {
     }
     if (state.rewards.some(id => state.removedRewards.includes(id)))
         fail(1, 'Reward cannot also be removed');
+    if (Object.hasOwn(restored, 'eventDone')) {
+        state.eventDone = {};
+        for (const [id, inputEvents] of Object.entries(record(restored.eventDone, 'eventDone'))) {
+            validId(id, 1);
+            if (!Array.isArray(inputEvents) || inputEvents.length > EVENT_NAMES.length)
+                fail(1, 'eventDone events must be an array of at most four unique events');
+            const events = idArray(inputEvents, 'eventDone events');
+            if (events.length !== inputEvents.length)
+                fail(1, 'Duplicate completed event');
+            put(state.eventDone, id, events.map(event => eventName(event, 1)));
+        }
+    }
     if (Object.hasOwn(restored, 'engine')) {
         const engine = record(restored.engine, 'engine');
         for (const key of Object.keys(engine))
@@ -882,7 +936,7 @@ function engineEdit(command) {
 }
 /** Validates all references first, then simulates on an independent state with no side effects.
  * checksOnly is used by once-per-tile gates: branches and requires observe incoming state.
- * The caller owns once-only bookkeeping in state.done and application of returned effects.
+ * The caller owns once-only bookkeeping in state.done/eventDone and application of returned effects.
  */
 export function planMapScript(source, state, env, checksOnly = false) {
     const commands = parseMapScript(source);
@@ -897,6 +951,13 @@ export function planMapScript(source, state, env, checksOnly = false) {
         || (env.nextOrdinal !== undefined && typeof env.nextOrdinal !== 'function')
         || (env.engine !== undefined && (!env.engine || typeof env.engine.validate !== 'function' || typeof env.engine.query !== 'function')))
         fail(1, 'Invalid environment');
+    if (env.event !== undefined)
+        eventName(env.event, 1);
+    const explicit = commands[0]?.op === 'on';
+    const selected = explicit ? commands.find((command) => command.op === 'on' && command.event === env.event) : undefined;
+    const selectedCommands = explicit ? selected?.body ?? [] : commands;
+    const handled = !explicit || selected !== undefined;
+    const selection = { handled, ...(selected === undefined ? {} : { event: selected.event }) };
     const metrics = {};
     if (env.metrics !== undefined) {
         for (const [name, value] of Object.entries(record(env.metrics, 'metrics'))) {
@@ -955,6 +1016,22 @@ export function planMapScript(source, state, env, checksOnly = false) {
             metric(expression.name, line);
     };
     const validateReference = (command) => {
+        const selfReference = 'id' in command && hasTileReference(command) && command.id === '@self';
+        if (selfReference) {
+            if (env.selfId === undefined)
+                fail(command.line, '@self requires env.selfId');
+            if (env.selfId === '@self')
+                fail(command.line, '@self requires a concrete env.selfId');
+            try {
+                validId(env.selfId, command.line);
+            }
+            catch {
+                fail(command.line, '@self requires env.selfId to be a valid tile ID');
+            }
+            // The parsed tree is private to this plan; all later reads/effects use the concrete ID.
+            if ('id' in command)
+                command.id = env.selfId;
+        }
         if ('expression' in command && command.expression)
             validateNumber(command.expression, command.line);
         const query = (!('op' in command) || command.op === 'require') ? engineQuery(command) : undefined;
@@ -998,8 +1075,8 @@ export function planMapScript(source, state, env, checksOnly = false) {
                 fail(command.line, 'Exchange amount must be positive and meet minimum');
         }
         if ('kind' in command && 'id' in command) {
-            if ((['gate', 'tile', 'text'].includes(command.kind) || ('op' in command && command.op === 'reset' && command.kind === 'reward')) && !env.hasTile(command.id)) {
-                fail(command.line, `Unknown tile: ${command.id}`);
+            if (hasTileReference(command) && !env.hasTile(command.id)) {
+                fail(command.line, selfReference ? `@self target is not an available tile: ${command.id}` : `Unknown tile: ${command.id}`);
             }
             if ('op' in command && (command.op === 'enable' || command.op === 'disable')
                 && command.kind === 'axiom' && !env.hasAxiom(command.id))
@@ -1027,7 +1104,11 @@ export function planMapScript(source, state, env, checksOnly = false) {
     };
     const validateStatements = (statements) => {
         for (const statement of statements) {
-            if (statement.op === 'if') {
+            if (statement.op === 'on') {
+                eventPolicy = undefined;
+                validateStatements(statement.body);
+            }
+            else if (statement.op === 'if') {
                 for (const branch of statement.branches) {
                     validateCondition(branch.condition);
                     validateStatements(branch.body);
@@ -1039,8 +1120,18 @@ export function planMapScript(source, state, env, checksOnly = false) {
                 validateReference(statement);
         }
     };
-    validateStatements(commands);
-    repeat = eventPolicy === undefined ? undefined : eventPolicy === 'repeat';
+    if (explicit) {
+        for (const command of commands) {
+            eventPolicy = undefined;
+            validateStatements([command]);
+            if (command === selected)
+                repeat = eventPolicy === 'repeat';
+        }
+    }
+    else {
+        validateStatements(commands);
+        repeat = eventPolicy === undefined ? undefined : eventPolicy === 'repeat';
+    }
     checksOnly = checksOnly || (env.completed === true && repeat !== true);
     const count = (id) => Object.hasOwn(next.counts, id) ? next.counts[id] : 0;
     const tileEdit = (id) => {
@@ -1125,6 +1216,8 @@ export function planMapScript(source, state, env, checksOnly = false) {
         for (const command of statements) {
             if (stopped)
                 return;
+            if (command.op === 'on')
+                continue; // Only the selected handler body is executable.
             const { line, op } = command;
             if (command.op === 'if') {
                 const branch = command.branches.find(branch => evaluateCondition(branch.condition));
@@ -1315,12 +1408,12 @@ export function planMapScript(source, state, env, checksOnly = false) {
             }
         }
     };
-    execute(commands);
+    execute(selectedCommands);
     if (status === 'blocked') {
-        return { state: incoming, money, spent: 0, typeMoney, typeSpent: 0, balances: incomingBalances, effects: [], status: 'blocked',
+        return { ...selection, state: incoming, money, spent: 0, typeMoney, typeSpent: 0, balances: incomingBalances, effects: [], status: 'blocked',
             ...(repeat === undefined ? {} : { repeat }), ...(consumeReward === undefined ? {} : { consumeReward }), attemptEffects };
     }
-    return { state: next, money: balances.reasoning, spent, typeMoney: balances.type, typeSpent, balances, effects, status,
+    return { ...selection, state: next, money: balances.reasoning, spent, typeMoney: balances.type, typeSpent, balances, effects, status,
         ...(confirmation === undefined ? {} : { confirmation }), ...(repeat === undefined ? {} : { repeat }),
         ...(consumeReward === undefined ? {} : { consumeReward }), attemptEffects };
 }

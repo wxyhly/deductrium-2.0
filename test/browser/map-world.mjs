@@ -23,7 +23,7 @@ const browser = await chromium.launch({headless:true, channel:'chrome'});
 const origin = `http://127.0.0.1:${server.address().port}`;
 const screenshots = await mkdtemp(join(tmpdir(), 'deductrium-map-world-'));
 const manifest = {
-    format:'deductrium-world-v1', id:'workshop',title:'工坊世界',revision:1,mode:'standalone',spawn:{tileId:'start',rotation:0},
+    format:'deductrium-world-v1', id:'workshop',title:'工坊世界',revision:1,mode:'standalone',spawn:{tileId:'start',rotation:0},region:{hash:'3,3,3,3',edge:1,side:1},
     currency:{id:'mod:workshop',name:'工坊币',symbol:'W'},
     banks:{central:{rules:[{from:'reasoning',to:'mod:workshop',rate:2,feeRate:.1,feeFixed:1,minimum:1,rounding:'floor',precision:0},
         {from:'mod:workshop',to:'type',rate:.5,feeRate:0,feeFixed:0,minimum:2,rounding:'floor',precision:0}]}},migrations:[],

@@ -11,6 +11,7 @@ function example() {
     project.setInfo('workshop','工坊');
     project.put('',{type:0,text:'入口',data:{}});
     project.put('1',{type:3,text:'奖励',data:{script:'give currency mod:workshop 5'}});
+    project.setRegion({hash:'3,3,3,3',edge:1,side:1});
     project.setWorld({revision:1,mode:'standalone',spawn:{tileId:project.tiles.get('').id,rotation:2},
         banks:{},migrations:[],currency:{id:'mod:workshop',name:'工坊币'}});
     return project;
@@ -43,8 +44,8 @@ test('extension collision validation always restores the live editor map registr
     try {
         console.log=()=>{};
         blockMap.clear();nameMap.clear();blockMap.set('sentinel',marker);nameMap.set('sentinel','sentinel');
-        const project=example();project.setWorld({...project.world,mode:'extension'});
-        assert.throws(()=>buildWorld(project),/主世界重叠/);
+        const project=example();project.setWorld({...project.world,mode:'extension',entry:{mainHash:'',edge:1,tileId:project.tiles.get('1').id}});
+        assert.throws(()=>buildWorld(project),/intersects|overlaps/);
         assert.equal(blockMap.size,1);assert.equal(blockMap.get('sentinel'),marker);
         assert.deepEqual([...nameMap],[['sentinel','sentinel']]);
     } finally {

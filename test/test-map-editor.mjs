@@ -245,11 +245,15 @@ check('512-step geometry retains exact boundary contact and rejects the far forb
 check('world plain JSON, empty migrations and project version survive copies and history',()=>{
     const project=new EditorProject(polygon);assert.equal(project.world,null);
     const config={revision:1,mode:'standalone',spawn:{tileId:'t1',rotation:0},banks:{},migrations:[]};
+    rejectsAtomically(project,()=>project.setWorld(config),/半平面/);
+    project.setRegion({hash:'',edge:0,side:1});
     project.setWorld(config);config.spawn.rotation=5;assert.equal(project.world.spawn.rotation,0);
     const copy=project.world;copy.migrations.push({});assert.deepEqual(project.world.migrations,[]);
     project.setInfo('world-map','World',{version:3});project.setInfo('world-map','Renamed');assert.equal(project.version,3);
     const saved=project.toJSON(),restored=EditorProject.fromJSON(JSON.parse(JSON.stringify(saved)),polygon);assert.deepEqual(restored.toJSON(),saved);
-    project.setWorld(null);assert.equal(project.world,null);project.undo();assert.deepEqual(project.toJSON(),saved);project.redo();assert.equal(project.world,null);
+    rejectsAtomically(project,()=>project.setWorld(null),/不能取消/);
+    rejectsAtomically(project,()=>project.setRegion(null),/不能取消/);
+    project.setWorld({...project.world,revision:2});assert.equal(project.world.revision,2);project.undo();assert.deepEqual(project.toJSON(),saved);project.redo();assert.equal(project.world.revision,2);
     for(const bad of [[],1,'world',{value:undefined},{value:Infinity},{value:()=>{}},new Date(),JSON.parse('{"__proto__":1}')]) rejectsAtomically(project,()=>project.setWorld(bad));
     const cyclic={};cyclic.self=cyclic;rejectsAtomically(project,()=>project.setWorld(cyclic));
     for(const version of [0,-1,1.5,'1',null]) rejectsAtomically(project,()=>project.setInfo('ok','Title',{version}));

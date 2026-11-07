@@ -1,9 +1,12 @@
 // One catalogue supplies both the insertion menu and the reference panel.
 export const SCRIPT_TRIGGER_TIMINGS = [
-    ['道路', '玩家尝试走入时'],
-    ['奖励', '玩家尝试领取时'],
-    ['门', '检查脚本条件，并满足原有过门条件后执行效果'],
-    ['起点', '新试玩存档首次启动时'],
+    ['道路 · on touch', '尝试走入时，在道路条件之前触发；重复计数需 event repeat。'],
+    ['门 / 序数门 · on touch', '尝试过门时，在 pass 和原有门条件之前独立触发；即使随后过门失败，已提交的 touch 效果仍保留。'],
+    ['门 / 序数门 · on pass', '尝试过门时检查；仅脚本与原有门条件均满足后提交效果，失败不提交 pass 效果。'],
+    ['奖励 · on touch', '尝试领取时，在 collect 和原有领取条件之前独立触发。'],
+    ['奖励 · on collect', '尝试领取时检查；成功领取才提交效果，读取存档恢复奖励时不触发。'],
+    ['起点 · on start', '新试玩存档首次启动时，在出生格执行初始化。'],
+    ['旧式 flat 脚本', '道路尝试走入、奖励尝试领取、门满足通行条件后提交效果；起点首次启动。不与 on 块混写。'],
     ['墙', '不触发']
 ];
 
@@ -20,8 +23,8 @@ export const SCRIPT_GROUPS = [
         entry('require-tile', '格子类型条件', 'require tile door == gate', '格子类型仅支持 == 和 !=。', 'door')
     ]},
     {label: '证明、规则与类型查询', entries: [
-        entry('require-proof', '命题证明条件', 'require proof "p→p"', '检查玩家已有的命题证明；目标用 JSON 双引号。', 'p→p'),
-        entry('require-rule', '完整规则证明条件', 'require rule "p,p→q⊢q"', '检查玩家已有的完整规则证明。', 'p,p→q⊢q'),
+        entry('require-proof', '命题证明条件', 'require proof "$p→$p"', '检查玩家已有的命题证明；目标用 JSON 双引号。', '$p→$p'),
+        entry('require-rule', '完整规则证明条件', 'require rule "$p,$p→$q⊢$q"', '检查玩家已有的完整规则证明。', '$p,$p→$q⊢$q'),
         entry('require-type', '类型证明条件', 'require type "True"', '检查玩家已有的、无空洞的闭合类型证明。', 'True'),
         entry('require-rule-name', '规则名通配条件', 'require rule-name "a*"', '使用 * 匹配规则名；模式用 JSON 双引号。', 'a*'),
         entry('require-rule-present', '规则存在条件', 'require rule-present a3', '规则 ID 使用裸标识符。', 'a3'),
@@ -60,8 +63,8 @@ export const SCRIPT_GROUPS = [
     {label: '公理与解锁', entries: [
         entry('disable-axiom', '禁用公理', 'disable axiom a3', '也禁止依赖它的宏和过门证明。', 'a3'),
         entry('enable-axiom', '启用公理', 'enable axiom a3', '恢复公理可用性。', 'a3'),
-        entry('add-axiom', '添加地图公理', 'add axiom customax "⊢p"', '使用未占用的原子规则名和带 ⊢ 的完整规则。', 'customax'),
-        entry('remove-axiom', '移除地图公理', 'remove axiom customax', '移除通过地图脚本添加的公理。', 'customax'),
+        entry('add-axiom', '添加地图公理', 'add axiom zMapAxiom "⊢$p"', '使用未占用的原子规则名和带 ⊢ 的完整规则。', 'zMapAxiom'),
+        entry('remove-axiom', '移除地图公理', 'remove axiom zMapAxiom', '移除通过地图脚本添加的公理。', 'zMapAxiom'),
         entry('disable-type', '禁用类型', 'disable type Bool', '使用有效的类型组或系统名称。', 'Bool'),
         entry('enable-type', '启用类型', 'enable type Bool', '恢复指定类型组或系统名称。', 'Bool'),
         ...[['reward', 'prize', '奖励'], ['layer', 'T-layer', '层'], ['achievement', 'first-step', '成就'], ['info', 'hint', '信息'],
@@ -86,8 +89,8 @@ export const SCRIPT_GROUPS = [
         entry('allow', '允许通行', 'allow', '允许本次通行。'),
         entry('block', '阻止通行', 'block', '阻止本次通行。'),
         entry('confirm', '通行前确认', 'confirm "继续？"', '确认文字使用 JSON 双引号。', '继续？'),
-        entry('remember-proof', '记住命题目标', 'remember proof "p→p"', '将命题目标加入逻辑层的门目标记录。', 'p→p'),
-        entry('remember-rule', '记住规则目标', 'remember rule "p,p→q⊢q"', '将完整规则目标加入逻辑层的门目标记录。', 'p,p→q⊢q'),
+        entry('remember-proof', '记住命题目标', 'remember proof "$p→$p"', '将命题目标加入逻辑层的门目标记录。', '$p→$p'),
+        entry('remember-rule', '记住规则目标', 'remember rule "$p,$p→$q⊢$q"', '将完整规则目标加入逻辑层的门目标记录。', '$p,$p→$q⊢$q'),
         entry('remember-type', '记住类型目标', 'remember type "True"', '在类型层显示目标提示；目标使用 JSON 双引号。', 'True'),
         entry('clear-reward', '清除奖励记录', 'clear reward prize', '使用奖励 ID。', 'prize'),
         entry('reset-reward', '重置奖励', 'reset reward prize', '使用奖励 ID。', 'prize')
@@ -105,8 +108,18 @@ export const SCRIPT_GROUPS = [
     {label: '分支与逻辑', entries: [
         entry('if-else', 'if / elif / else / end', 'if key red\n  open gate door\nelif flag ready\n  message "准备好了"\nelse\n  message "需要钥匙"\nend', '条件复用 require 谓词；分支可嵌套，必须用 end 闭合。', 'red'),
         entry('if-logic', 'and / or / not 与括号', 'if (key red or flag ready) and not reward prize\n  give money 10\nend', '优先级：not > and > or；用括号分组。', 'red'),
-        entry('if-engine', '证明与类型分支', 'if proof "p→p" and rule-present a3\n  message "命题条件满足"\nelif type "True" and type-present Bool\n  message "类型条件满足"\nelse\n  block\nend', '引擎查询也可用作 if / elif 条件。', 'p→p'),
+        entry('if-engine', '证明与类型分支', 'if proof "$p→$p" and rule-present a3\n  message "命题条件满足"\nelif type "True" and type-present Bool\n  message "类型条件满足"\nelse\n  block\nend', '引擎查询也可用作 if / elif 条件。', '$p→$p'),
         entry('if-number-ordinal', '数值表达式与序数分支', 'if metric steps >= (count(visits) + 1) * 2 and ordinal current < "[1,2]"\n  message "满足进度条件"\nend', '数值括号与逻辑条件可以组合。', 'visits')
+    ]},
+    {label: '显式事件与纯脚本门', entries: [
+        entry('on-proof-gate', '#p 证明门：提示、检查与拆门', 'on touch\n  event repeat\n  remember proof "$p→$p"\nend\non pass\n  event repeat\n  require proof "$p→$p"\n  if reward dG\n    demolish gate @self\n  end\n  allow\nend', '用于纯脚本门。touch 记录目标，pass 检查证明；两者均 repeat，先无拆门通行、后来获得 dG 后仍可拆门。拆门文字由系统本地化显示，无需 set text。', '$p→$p'),
+        entry('on-rule-gate', '#d 规则门：提示、检查与拆门', 'on touch\n  event repeat\n  remember rule "$p,$p→$q⊢$q"\nend\non pass\n  event repeat\n  require rule "$p,$p→$q⊢$q"\n  if reward dG\n    demolish gate @self\n  end\n  allow\nend', '用于纯脚本规则门。touch/pass 均 repeat，后续获得 dG 后再次通行可拆门；@self 引用本次触发的格子。', '$p,$p→$q⊢$q'),
+        entry('on-proof-gate-keep', '简单证明门', 'on touch\n  event repeat\n  remember proof "$p→$p"\nend\non pass\n  event repeat\n  require proof "$p→$p"\n  allow\nend', '每次通行都检查证明；未获得 dG 时保留门格，获得后沿用系统自动拆门行为。', '$p→$p'),
+        entry('on-rule-gate-keep', '简单规则门', 'on touch\n  event repeat\n  remember rule "$p,$p→$q⊢$q"\nend\non pass\n  event repeat\n  require rule "$p,$p→$q⊢$q"\n  allow\nend', '每次通行都检查规则；未获得 dG 时保留门格，获得后沿用系统自动拆门行为。', '$p,$p→$q⊢$q'),
+        entry('on-collect-open', '#<> 钥匙：领取后开门', 'on collect\n  open gate door\nend', '用于奖励格，door 替换成目标门的格子名称；默认领取一次。', 'door'),
+        entry('on-collect-demolish', '#<> 钥匙：开门并按技能拆门', 'on collect\n  if reward dG\n    demolish gate door\n  else\n    open gate door\n  end\nend', '用于奖励格；有 dG 时拆门，否则开门。拆门后自动显示本地化文字。需要无条件拆门时，可将整个 if / else 段替换成 demolish gate door。', 'door'),
+        entry('on-start', '起点初始化', 'on start\n  set count visits 0\n  set flag ready\nend', '放在出生格；新试玩存档首次启动时初始化，事件默认 once。', 'visits'),
+        entry('on-touch-visits', '道路触碰：重复计数', 'on touch\n  event repeat\n  add count visits 1\nend', '用于道路；每次尝试走入都增加计数，记录触碰次数。', 'visits')
     ]},
     {label: '完整示例', entries: [
         entry('example-reward', '奖励给钥匙', 'give key red\nmessage "获得红钥匙"', '用于奖励格。', 'red'),
@@ -115,11 +128,11 @@ export const SCRIPT_GROUPS = [
         entry('example-bank', '银行兑换', 'require currency reasoning >= 10\nexchange central reasoning 10 type', '需先配置银行规则。', 'central'),
         entry('example-repeat-reward', '保留并重复领取奖励', 'event repeat\nreward keep\nadd count visits 1\ngive money 1\nmessage "欢迎回来"', '用于可重复领取的奖励格。', 'visits'),
         entry('example-min-max', '嵌套数值函数与条件', 'if currency type >= min(10, max(0, count(visits) - 1))\n  give money min(10, max(0, currency(type) - 1))\nend', 'min / max 均接收两个数值表达式，可用于数值条件和金额。', '10'),
-        entry('example-attempt', '通行失败时记录与生成', 'event repeat\nremember proof "p→p"\nremember rule "p,p→q⊢q"\ngenerate ordinal "[1,2]"\nblock', '已执行的 remember / generate 属于本次尝试；随后阻止通行时仍保留这些尝试效果。', '[1,2]')
+        entry('example-attempt', '通行失败时记录与生成', 'event repeat\nremember proof "$p→$p"\nremember rule "$p,$p→$q⊢$q"\ngenerate ordinal "[1,2]"\nblock', '已执行的 remember / generate 属于本次尝试；随后阻止通行时仍保留这些尝试效果。', '[1,2]')
     ]}
 ];
 
-export const SCRIPT_RULES = '每行一条命令，也可用分号分隔；// 开头的整行是注释。文字、证明目标和规则名通配模式用 JSON 双引号，ID 不含空格。比较符：>=、<=、==、!=、>、<。层：D-layer / T-layer / P-layer / G-layer。数值支持 +、-、*、括号、min(a, b)、max(a, b)，以及 currency(ID)、count(ID)、metric(steps / demolished / spent / ordinal-base)。序数写作 "[1,2]" 或 "[]"。门的 require 每次进入都检查；效果默认每个具名格执行一次，可用 event once / event repeat 指定策略，也可在 data 中设置 "scriptRepeat": true。检查验证脚本语法；目标表达式和引用还需满足当前游戏与地图的规则。';
+export const SCRIPT_RULES = '可选旧式 flat 命令或显式 on touch / on pass / on collect / on start 块，两者不能混写；on 块只能位于顶层，同一事件不能重复定义，以 end 闭合，块内可嵌套 if。每个事件独立记录完成状态，默认 once；需要每次触发时在块内写 event repeat。失败的 pass 不提交效果，先前独立成功的 touch 效果仍保留。@self 是当前触发格子的保留引用，可用于格子条件与开门、拆门等操作。插入 on 模板前先移除原有 flat 命令；单条命令模板应插入已有 on 块内部。每行一条命令，也可用分号分隔；// 开头的整行是注释。文字、证明目标和规则名通配模式用 JSON 双引号，ID 不含空格。比较符：>=、<=、==、!=、>、<。层：D-layer / T-layer / P-layer / G-layer。数值支持 +、-、*、括号、min(a, b)、max(a, b)，以及 currency(ID)、count(ID)、metric(steps / demolished / spent / ordinal-base)。序数写作 "[1,2]" 或 "[]"。门的 require 每次进入都检查；旧式 flat 脚本的效果默认每个具名格执行一次，可用 event once / event repeat 指定策略，也可在 data 中设置 "scriptRepeat": true；显式 on 事件的 repeat 策略在各自块内指定。检查验证脚本语法；目标表达式和引用还需满足当前游戏与地图的规则。';
 
 export function supportedScriptGroups(parse) {
     return SCRIPT_GROUPS.map(group => ({...group, entries: group.entries.filter(item => {

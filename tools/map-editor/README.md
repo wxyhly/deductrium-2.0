@@ -32,6 +32,8 @@ DSL 支持钥匙、旗标、奖励、金额、计数及已接入引擎的证明 
 
 命令按行或分号分隔；整行 `//` 注释可用。计数 / 金额比较符为 `>= <= == != > <`。例如 `require money >= 10`、`require count visits >= 2`、`set tile door road`、`set text door "新的文字"`、`message "你好"`。格子类型为 `road / wall / gate / reward / ordinal`；层名为 `D-layer / T-layer / P-layer / G-layer`。完整示例可展开编辑器的“脚本命令参考”。
 
+“显式事件与纯脚本门”模板组提供 #p / #d 证明门、按 dG 拆门、#<> 钥匙开门、起点初始化和触碰计数。`on touch/pass/collect/start` 块分别处理尝试碰格、过门、领取和新存档启动，以 `end` 闭合，不能与旧式平铺命令混写。各事件独立 once，需要重复时在块内写 `event repeat`。`@self` 在格子引用位置代表当前格。拆门模板沿用现有本地化提示；默认地图整体迁移为 built-in mod 属于后续工作。
+
 数值可读取 `currency(type)`、`count(visits)`、`metric(steps)`，并使用 `+ - *`、括号和 `min/max`。序数采用 `"[1,2]"` 形式的 JSON 字符串。完整命令、事务与 1.0 引擎边界见 [地图脚本说明](../../doc/map-mod-design.md#地图脚本)。
 
 游戏侧预览存档应使用内容 hash 对应的独立 SaveMode，与正常 `game` 存档隔离；编辑器只写入预览输入 key，不直接操作这些游戏存档。
@@ -57,6 +59,8 @@ DSL 支持钥匙、旗标、奖励、金额、计数及已接入引擎的证明 
 
 高级设置还包括整块多边形的半平面范围、模块库 revision 更新和世界版本迁移。未应用的设置阻止导出；应用一组会保留其他组未确认的内容。模块更新先验证全部实例；改动题目的世界升级必须声明 remap/reset，加载失败会保留原存档并提供恢复导出。
 
-“导出世界 JSON”生成 `deductrium-world-v1`，可再次导入编辑器。世界试玩采用 `?mod-world` 和按世界 ID 隔离的存档；它与旧的按内容 hash 隔离的“试玩地图”用途不同。配置和迁移规则见 [地图模块说明](../../doc/map-mod-design.md)。
+“导出世界 JSON”生成 `deductrium-world-v2`，必须选择半平面；所有 mod 格须完整位于允许侧，入口没有豁免。扩展模式保留只读官方地图，所有官方格须在另一侧，`entry` 指定官方可通行格的边及真实相邻的 mod 格。发布与运行时都校验范围、重叠和入口。旧 v1 世界仍能游玩和读档，但缺少范围时导入编辑器会锁定编辑，设置范围后可继续修改。
 
-运行 `node test/browser/map-world.mjs` 验证世界导入、设置、发布、银行、账本、迁移与恢复，同样支持 `PLAYWRIGHT_MODULE`。
+世界试玩采用 `?mod-world` 和按世界 ID 隔离的存档；它与旧的按内容 hash 隔离的“试玩地图”用途不同。更新保留稳定 ID 和事件完成记录，避免重复领奖；模式不能在原存档中悄悄切换。配置和迁移规则见 [地图模块说明](../../doc/map-mod-design.md)。
+
+运行 `node test/browser/map-world.mjs` 验证世界导入、设置、发布、银行、账本、迁移与恢复；`node test/browser/map-half-plane.mjs` 验证半平面限制、主世界入口与只读底图；`node test/browser/map-script-events.mjs` 验证显式事件、证明门、钥匙模板与拆门读档。这些脚本同样支持 `PLAYWRIGHT_MODULE`。

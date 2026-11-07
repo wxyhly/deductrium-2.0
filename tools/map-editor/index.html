@@ -19,31 +19,43 @@
   </header>
   <main class="workspace" id="workspace">
     <nav class="task-nav" aria-label="编辑任务">
-      <button id="open-tiles" data-open-panel="tiles" aria-controls="tiles-panel" aria-expanded="false">格子</button>
-      <button id="open-modules" data-open-panel="modules" aria-controls="modules-panel" aria-expanded="false">模块</button>
-      <button id="open-project" data-open-panel="project" aria-controls="project-panel" aria-expanded="false">项目</button>
+      <button id="open-tiles" data-open-panel="tiles" aria-controls="tiles-panel" aria-expanded="false"><span class="nav-glyph" aria-hidden="true">⬡</span><span class="nav-label">格子</span></button>
+      <button id="open-modules" data-open-panel="modules" aria-controls="modules-panel" aria-expanded="false"><span class="nav-glyph" aria-hidden="true">▦</span><span class="nav-label">模块</span></button>
+      <button id="open-project" data-open-panel="project" aria-controls="project-panel" aria-expanded="false"><span class="nav-glyph" aria-hidden="true">◈</span><span class="nav-label">项目</span></button>
     </nav>
     <aside id="task-panel" class="task-panel panel" aria-label="任务面板" hidden>
-      <div class="pane-heading"><h2 id="task-title">任务</h2><button id="close-panel" aria-label="关闭任务面板">关闭</button></div>
+      <div class="pane-heading task-heading"><h2 id="task-title">任务</h2><button id="close-panel" class="icon-button" aria-label="关闭任务面板" title="关闭（Esc）">×</button></div>
       <div class="task-content">
-        <section id="tiles-panel" aria-label="格子" hidden><div class="list-tools"><label for="search">查找格子</label><input id="search" type="search" placeholder="名称、文字、坐标、实例"><label>类型<select id="filter"><option value="all">全部</option><option value="0">道路</option><option value="1">墙</option><option value="2">门</option><option value="3">奖励</option><option value="4">序数</option><option value="mounted">模块实例格</option><option value="group">仅选区</option></select></label><div class="actions"><button id="select-filtered">选择筛选结果</button></div><p id="count" class="hint"></p></div>
-      <div id="tiles" aria-label="地图格子列表"></div><button id="more-tiles" hidden>显示更多</button>
-</section>
-        <section id="modules-panel" aria-label="模块" hidden>      <section id="module-panel"><h3>模块库与挂载</h3><details id="module-export"><summary>导出选区模块</summary>
-        <div class="field-pair"><label>导出模块 ID<input id="module-export-id" value="my-module"></label><label>模块标题<input id="module-export-title" value="我的模块"></label></div>
-        <p class="hint">以当前格为原点；默认导出选区，选区为空时导出当前单格。</p><button id="export-module">导出选区模块 JSON</button></details><button id="import-module">导入模块到库</button>
-        <label>模块库<select id="module-library" aria-label="模块库"></select></label>
-        <form id="mount-form"><label>实例 ID<input id="instance-id" value="instance-1" required></label><label>锚点坐标<input id="mount-at" value="[]" placeholder="[] 或 0,1,3"></label>
-          <div class="actions"><label>当前格的边<select id="mount-edge"><option value="here">原位</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><button id="anchor-selected" type="button">取当前格锚点</button></div>
-          <label>旋转<select id="mount-rotation"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
-          <div class="actions"><button id="preview-mount" type="button">预览挂载</button><button id="confirm-mount" class="primary" type="submit" disabled>确认挂载</button><button id="clear-preview" type="button">清除预览</button></div>
-        </form>
-        <output id="mount-preview" class="preview-output">先选择模块并预览。</output>
-      </section>
-      <details open><summary>模块实例</summary><div id="instances"></div></details>
-</section>
-        <section id="project-panel" aria-label="项目" hidden><h3>项目信息</h3><form id="project-form"><label>项目 ID<input id="project-id" required></label><label>标题<input id="project-title"></label><button id="apply-project" type="submit">应用项目信息</button></form>
-          <details id="publish-settings"><summary>世界设置与发布 mod JSON</summary><div id="world-settings"></div><div class="actions"><button id="export-world" type="button">发布 mod JSON</button><button id="play-world" type="button">▶ 试玩世界</button></div></details>
+        <section id="tiles-panel" class="task-section tiles-section" aria-label="格子" hidden>
+          <div class="list-tools">
+            <label for="search" class="sr-only">查找格子</label><input id="search" type="search" placeholder="搜索名称、文字、坐标、实例">
+            <div class="list-filter"><label class="inline-field">类型<select id="filter"><option value="all">全部</option><option value="0">道路</option><option value="1">墙</option><option value="2">门</option><option value="3">奖励</option><option value="4">序数</option><option value="mounted">模块实例格</option><option value="group">仅选区</option></select></label><button id="select-filtered" type="button" title="把当前筛选结果设为选区">全选结果</button></div>
+            <p id="count" class="hint"></p>
+          </div>
+          <div id="tiles" class="tile-list" aria-label="地图格子列表"></div><button id="more-tiles" class="more-button" hidden>显示更多</button>
+        </section>
+        <section id="modules-panel" class="task-section" aria-label="模块" hidden>
+          <section id="module-panel" class="panel-group" aria-labelledby="module-place-title">
+            <div class="group-head"><h3 id="module-place-title">放置模块</h3><button id="import-module" type="button" class="small" title="从 JSON 文件导入模块到库">导入…</button></div>
+            <label>模块库<select id="module-library" aria-label="模块库"></select></label>
+            <form id="mount-form" class="mount-form">
+              <div class="field-pair"><label>实例 ID<input id="instance-id" value="instance-1" required></label><label>旋转<select id="mount-rotation"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label></div>
+              <label>锚点坐标<input id="mount-at" value="[]" placeholder="[] 或 0,1,3"></label>
+              <div class="anchor-row"><label class="inline-field">当前格的边<select id="mount-edge"><option value="here">原位</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><button id="anchor-selected" type="button">取当前格锚点</button></div>
+              <div class="actions mount-actions"><button id="preview-mount" type="button">预览</button><button id="confirm-mount" class="primary" type="submit" disabled>确认挂载</button><button id="clear-preview" type="button">清除预览</button></div>
+            </form>
+            <output id="mount-preview" class="preview-output">先选择模块并预览。</output>
+          </section>
+          <details class="panel-group" open><summary>已挂载实例</summary><div id="instances" class="instance-list"></div></details>
+          <details id="module-export" class="panel-group"><summary>导出选区为模块</summary>
+            <div class="field-pair"><label>模块 ID<input id="module-export-id" value="my-module"></label><label>标题<input id="module-export-title" value="我的模块"></label></div>
+            <p class="hint">以当前格为原点；选区为空时导出当前单格。</p><button id="export-module">导出模块 JSON</button>
+          </details>
+        </section>
+        <section id="project-panel" class="task-section project-section" aria-label="项目" hidden>
+          <form id="project-form" class="panel-group" aria-labelledby="project-info-title"><h3 id="project-info-title">项目信息</h3><div class="field-pair"><label>项目 ID<input id="project-id" required></label><label>标题<input id="project-title"></label></div><button id="apply-project" type="submit">应用项目信息</button></form>
+          <details id="publish-settings" class="panel-group" open><summary>世界设置</summary><div id="world-settings" class="world-settings"></div></details>
+          <div class="publish-bar" role="group" aria-label="发布世界"><button id="export-world" class="primary" type="button">发布 mod JSON</button><button id="play-world" type="button">▶ 试玩世界</button></div>
         </section>
       </div>
     </aside>

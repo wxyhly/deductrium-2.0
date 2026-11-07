@@ -131,7 +131,7 @@ elif key old and count n == 2 and money == 20 and currency type == 0 and tile do
 else; require key impossible; end`;
     const checked = planMapScript(script, initial, environment(), true);
     assert.deepEqual(checked, { state: initial, money: 20, typeMoney: 0, spent: 0, typeSpent: 0,
-        balances: { reasoning: 20, type: 0 }, effects: [], status: 'pass', attemptEffects: [] });
+        balances: { reasoning: 20, type: 0 }, effects: [], status: 'pass', handled: true, attemptEffects: [] });
     assert.notEqual(checked.state, initial); assert.notEqual(checked.state.tileEdits.door, initial.tileEdits.door);
     assert.deepEqual(messages(planMapScript(script, initial, environment())), ['changed']);
     const blocked = planMapScript('if key old; require key absent; else; give key absent; end', initial, environment(), true);

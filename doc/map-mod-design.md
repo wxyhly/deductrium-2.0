@@ -56,7 +56,11 @@
 
 数值表达式支持 `+ - *`、括号、双参数 `min/max`，以及 `currency(...)`、`count(...)`、`metric(...)` 读取。money 始终为 reasoning，金额限制为有限的 0–1e12。序数用 JSON 字符串中的数组表示；空数组代表 0，非空从 1 开始，长度最多 64，分量 1–64，相邻分量至多上升 1，基底为 1–15。
 
-默认每格效果执行一次，门条件在每次进入时重查。`event repeat` 显式允许再次执行，`reward keep` 保留奖励格；两者组合可写反复补助。`clear reward` 清除逻辑奖励所有权，`reset reward` 还恢复对应奖励格及其执行记录。局部格子、钥匙、旗标和计数随模块实例改名；引擎名称、全局奖励、币种及目标表达式保持原义。
+旧式平铺脚本默认每格效果执行一次，门条件在每次进入时重查。也可改用顶层 `on touch / on pass / on collect / on start` 块，以 `end` 结束，不能与平铺命令混写。touch 在尝试进入非墙格时触发，pass 在门原有条件也满足后提交，collect 在尝试领取奖励时触发，start 仅在新存档出生时触发。每个事件独立记录 once；`event repeat` 在当前块内允许重复。touch 与 pass 是独立事务，成功的 touch 不因后续通行失败回滚；取消通行确认仍不提交 pass 效果。墙不触发事件，读档不重跑事件。
+
+`reward keep` 保留奖励格，与 repeat 组合可写反复补助。`clear reward` 清除逻辑奖励所有权，`reset reward` 还恢复对应奖励格及旧式平铺执行记录；显式事件完成记录保留，防止重置或更新时重复派奖。局部格子、钥匙、旗标和计数随模块实例改名；引擎名称、全局奖励、币种及目标表达式保持原义。
+
+脚本参考提供可直接插入的 #p / #d 证明门、钥匙开门、初始化和触碰计数模板。纯脚本门使用 `require proof "目标"` 或 `require rule "条件⊢结论"`，不需要 data.p/data.d。`@self` 仅在格子引用位置代表当前格，挂载或移动模块后仍有效；其他位置照常作为局部 ID。证明门的 pass 块使用 repeat，每次检查目标，再按 `if reward dG` 选择 `demolish gate @self`，否则允许通过并保留门。钥匙奖励的 collect 块可打开指定门；需要按技能拆门时选择拆门或开门分支。拆门复用现有双语“此门已拆除”文案，不改写原格子文字。默认地图整体转换为 built-in mod 留待后续迁移。
 
 所有条件、费用和引擎修改先在独立状态中验证。失败或取消确认不会扣款、领取奖励或留下普通效果；`remember` 与 `generate ordinal` 是显式的尝试效果，允许在拒绝通行时显示目标、展开地图。`allow/block` 终止当前选中执行路径。读档只恢复状态，不重新执行给钱、提示或兑换。
 
@@ -66,7 +70,7 @@
 
 项目面板展开发布设置，选中可通行砖块设为入口，选择朝向和模式，应用后导出世界 JSON 或试玩：
 
-- **扩展主世界**：保留主世界，通过指定入口连接；实例 ID 用于隔离局部砖块和进度。
+- **扩展主世界**：保留只读主世界，通过 `entry: {mainHash, edge, tileId}` 指定相邻 mod 入口；官方格须可通行，入口必须是它指定边的真实邻居。
 - **独立世界**：从空地图开始，指定出生点和独立存档，不继承主世界的隐式奖励或货币。
 
 扩展砖块与主世界重叠会整体拒绝。试玩从同源 `deductrium2_world_manifest` 读取已验证的文件，入口为 `index.html?mod-world`；本地一次选择一个发布世界。不同世界、普通游戏与按内容 hash 保存的旧地图预览彼此隔离。
@@ -75,7 +79,9 @@
 
 由作者在双曲空间中指定一条测地线并选择允许的一侧；入口位于边界或连接位置。编辑、导入、旋转和挂载都应检查同一个范围约束，不能只在画布上遮住另一侧。
 
-设置边界砖块、边号 0–5、允许侧 ±1，可豁免一块明确的入口。使用实际 `{6,4}` 六顶点及 BigInt 齐次 Lorentz 坐标判定整个多边形，边界相等允许。新增、导入、挂载、移动、旋转和更新统一检查，失败保留项目和历史。
+新发布的 `deductrium-world-v2` 必须设置边界砖块、边号 0–5、允许侧 ±1，不允许入口豁免。使用实际 `{6,4}` 六顶点及 BigInt 齐次 Lorentz 坐标判定整个多边形，边界相等允许。所有 mod 格须在允许侧；扩展模式的所有官方格须完整位于另一侧，不能覆盖或修改。新增、导入、挂载、移动、旋转和更新统一检查，失败保留项目和历史。发布和游戏加载都重新验证范围及入口。
+
+旧 `deductrium-world-v1` 仍可读取和继续原存档；没有范围的旧世界导入编辑器后先锁定编辑，设置合法范围后才可修改或重新发布。原始地图源码编辑保持原有用途，不自动成为已发布 mod。
 
 更新模块要求提高 revision、保留局部砖块 ID，并明确列出删除 ID。全部实例一次检查碰撞、引用与范围，成功才替换。实例砖块身份为 `实例ID::局部砖块ID`，移动不改变身份。模块库更新与发布世界升级分别管理。
 
@@ -87,12 +93,12 @@
 
 世界存档键为 `deductrium2_world-<ID>`，槽位追加 `:slotN`；砖块运行时身份为 `mod:<世界ID>::<局部砖块ID>`。当前位置记录局部 ID，移动或改文案不会变成新奖励。
 
-同 revision 允许文案和位置变化，目标或身份变化拒绝。升级提供连续步骤，例如 `[{"from":1,"to":2,"remap":{"old-door":"new-door"},"reset":["changed-puzzle"]}]`。只移动可用空 remap/reset；删除或改题必须明确处理，缺迁移、不同世界、未来版本均拒绝。reset 清除旧领取、开门和格子修改；当前位置失效时返回入口。脚本 once 状态保留以免重复派奖，需要新奖励时使用新砖块 ID。
+同 revision 允许文案和位置变化，目标或身份变化拒绝。升级提供连续步骤，例如 `[{"from":1,"to":2,"remap":{"old-door":"new-door"},"reset":["changed-puzzle"]}]`。只移动可用空 remap/reset；删除或改题必须明确处理，缺迁移、不同世界、未来版本、独立/扩展模式改变均拒绝。reset 清除旧领取、开门和格子修改；当前位置失效时返回入口。脚本 once 和显式事件完成状态按稳定 ID 迁移并保留以免重复派奖，需要新奖励时使用新砖块 ID。
 
 加载先验证并生成独立数据，再应用。失败保留原始压缩存档并阻止后台覆盖，错误面板可导出原档；导入失败保留当前游戏，存储写入失败会回滚。修正世界或迁移后可重试。
 
 ## 验证与边界
 
-`test/test-map-editor.mjs`、`test/test-map-module-update.mjs`、`test/test-map-economy.mjs`、`test/test-map-world.mjs`、`test/test-world-save-load.mjs` 验证模型、几何、账本和迁移；`test/browser/map-editor.mjs`、`test/browser/map-world.mjs` 验证桌面和手机的实际编辑、发布、地图银行、保存重载、升级恢复和跨世界隔离。
+`test/test-map-editor.mjs`、`test/test-map-module-update.mjs`、`test/test-map-economy.mjs`、`test/test-map-world.mjs`、`test/test-world-save-load.mjs`、`test/test-map-half-plane.mjs`、`test/test-map-script-events.mjs` 验证模型、几何、账本、事件与迁移；`test/browser/map-editor.mjs`、`test/browser/map-world.mjs`、`test/browser/map-half-plane.mjs`、`test/browser/map-script-events.mjs` 验证桌面和手机的实际编辑、发布、地图银行、半平面入口、脚本模板、保存重载、升级恢复和跨世界隔离。
 
 自定义 data 字段不会自动成为新 action；旧硬编码奖励名不会因模块前缀而产生新行为。未移植的类型论关卡与新公理来源体系不在本次范围内。

@@ -27,6 +27,8 @@ export class HWorld {
     onPassGate: (name: string, tile: TileBlock, hash: string) => boolean = () => false;
     onGetReward: (hash: string, tile: TileBlock, isLoading?: boolean) => boolean | void = () => { };
     onEnterRoad: (hash: string, tile: TileBlock) => boolean = () => true;
+    /** An interaction attempt, before road/reward/gate conditions; never called during save replay. */
+    onTouchTile: (hash: string, tile: TileBlock) => boolean = () => true;
     onStateChange = () => { };
     // 换格成功回调：hash = 新到达的方块 hash（供 game.ts 检查该方块成就等）
     onStepToAnotherTile = (hash: string) => { };
@@ -106,6 +108,7 @@ export class HWorld {
         // return true;
         const b = this.getBlock(t.join(','));
         if (!b || b.type === TileBlockType.Wall) return false;
+        if (!this.onTouchTile(t.join(','), b)) return false;
         if (b.type === TileBlockType.Road) return this.onEnterRoad(t.join(","), b);
         if (b.type === TileBlockType.Reward) {
             return this.hitReward(b, t.join(","));

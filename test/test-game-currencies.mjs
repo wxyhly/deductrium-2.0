@@ -18,7 +18,7 @@ const { tileColor, tileTextColor, tileDisplayText } = await import('../js/hy/app
 const { stringifyDeductriumAmout } = await import('../js/format.js');
 const {createCurrencyBalances} = await import('../js/hy/economy.js');
 const {lobbyBank,redeemMapBankOffer} = await import('../js/hy/bank.js');
-const {createMapScriptState, planMapScript} = await import('../js/hy/script.js');
+const {createMapScriptState, parseMapScript, planMapScript} = await import('../js/hy/script.js');
 const {createMapScriptEngine} = await import('../js/hy/script-engine.js');
 
 const quiet = fn => {
@@ -97,14 +97,14 @@ function makeGame(data, mode = 'survival', tiles = []) {
         'HSLayer', 'TTLayer', 'HyLayer', 'blockMap', 'nameMap', 'TileBlockType', 'LangMgr',
         'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd',
         'tileColor', 'tileTextColor', 'tileDisplayText', 'stringifyDeductriumAmout',
-        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'planMapScript', 'createMapScriptEngine',
+        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'parseMapScript', 'planMapScript', 'createMapScriptEngine',
         'activeWorld','activeWorldSaveMode','createCurrencyBalances','lobbyBank','redeemMapBankOffer',gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
         ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd,
         tileColor, tileTextColor, tileDisplayText, stringifyDeductriumAmout,
-        false, ()=>'unused', createMapScriptState, planMapScript, createMapScriptEngine, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer);
+        false, ()=>'unused', createMapScriptState, parseMapScript, planMapScript, createMapScriptEngine, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;

@@ -17,7 +17,7 @@ const { tileColor, tileTextColor, tileDisplayText } = await import('../js/hy/app
 const { stringifyDeductriumAmout } = await import('../js/format.js');
 const {createCurrencyBalances} = await import('../js/hy/economy.js');
 const {lobbyBank,redeemMapBankOffer} = await import('../js/hy/bank.js');
-const {createMapScriptState, planMapScript} = await import('../js/hy/script.js');
+const {createMapScriptState, parseMapScript, planMapScript} = await import('../js/hy/script.js');
 const {createMapScriptEngine} = await import('../js/hy/script-engine.js');
 
 const quiet = fn => {
@@ -96,14 +96,14 @@ function makeGame(data, mode = 'survival', tiles = []) {
         'HSLayer', 'TTLayer', 'HyLayer', 'blockMap', 'nameMap', 'TileBlockType', 'LangMgr',
         'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd',
         'tileColor', 'tileTextColor', 'tileDisplayText', 'stringifyDeductriumAmout',
-        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'planMapScript',
+        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'parseMapScript', 'planMapScript',
         'activeWorld','activeWorldSaveMode','createCurrencyBalances','lobbyBank','redeemMapBankOffer','createMapScriptEngine',gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
         ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd,
         tileColor, tileTextColor, tileDisplayText, stringifyDeductriumAmout,
-        false, ()=>'unused', createMapScriptState, planMapScript, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer,createMapScriptEngine);
+        false, ()=>'unused', createMapScriptState, parseMapScript, planMapScript, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer,createMapScriptEngine);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;
@@ -157,6 +157,21 @@ test('failed script requirements or combined tolls preserve all gameplay state',
     assert.equal(game.deductrium,10); assert.equal(JSON.stringify(game.mapScript),before);
     assert.equal(hit(game,'repeat'),true); assert.equal(hit(game,'repeat'),true);
     assert.equal(game.deductrium,14); assert.equal(game.mapScript.counts.visits,2);
+});
+
+test('script demolition restores the localized marker after its staged Road edit is replayed',()=>{
+    const tiles=[
+        ['0',{type:Type.Reward,name:'demolisher',text:'',data:{script:'demolish gate door'}}],
+        ['1',{type:Type.Gate,name:'door',text:'Original',data:{}}],
+    ];
+    let game=makeGame(undefined,'survival',tiles);
+    assert.equal(hit(game,'demolisher'),true);
+    assert.equal(block('door').data.del,true);
+    assert.equal(game.mapScript.tileEdits.door.type,Type.Road);
+    game=makeGame(structuredClone(game.saveload.serialize()),'survival',tiles);
+    assert.equal(block('door').type,Type.Road);
+    assert.equal(block('door').data.del,true);
+    assert.equal(block('door').text,'Original');
 });
 
 test('script close operations override demolished gates and survive save replay',()=>{

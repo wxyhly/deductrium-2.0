@@ -68,7 +68,7 @@ function installInspectorResize(preferences, savePreference) {
 
 // Disclosure state is independent of project data and unapplied forms.
 export function installUI() {
-    let panel = null, returnFocus = null;
+    let panel = null, returnFocus = null, regionShown = false;
     let preferences = {};
     try {
         const saved = JSON.parse(localStorage.getItem(UI_KEY) || '{}');
@@ -88,7 +88,10 @@ export function installUI() {
         for (const name of ['tiles', 'modules', 'project']) $(name + '-panel').hidden = name !== next;
         for (const button of buttons) button.setAttribute('aria-expanded', String(button.dataset.openPanel === next));
         if (next) {
-            $('task-title').textContent = {tiles: '格子', modules: '模块', project: '项目'}[next];
+            $('task-title').textContent = {tiles: '格子', modules: '模块', project: '项目与发布'}[next];
+            // The editable half-plane is chosen before authoring; reveal it the first time the project panel opens.
+            const region = $('region-settings');
+            if (next === 'project' && region && !regionShown) region.open = regionShown = true;
             if (focus) $('close-panel').focus();
         } else if (focus) returnFocus?.focus();
         syncInspector();
@@ -96,6 +99,16 @@ export function installUI() {
     for (const button of buttons) button.addEventListener('click', () => {
         returnFocus = button;
         openPanel(panel === button.dataset.openPanel ? null : button.dataset.openPanel);
+    });
+    // Arrow keys move between the task tabs; Enter/Space still toggle via click.
+    const navButtons = [...document.querySelectorAll('.task-nav [data-open-panel]')];
+    document.querySelector('.task-nav').addEventListener('keydown', event => {
+        const index = navButtons.indexOf(event.target);
+        const step = {ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1}[event.key];
+        if (index < 0 || (!step && event.key !== 'Home' && event.key !== 'End')) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? navButtons.length - 1 : (index + step + navButtons.length) % navButtons.length;
+        navButtons[next].focus();
     });
     $('close-panel').onclick = () => openPanel(null);
     $('toggle-inspector').onclick = () => {

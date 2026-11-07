@@ -1,5 +1,5 @@
 import { activeWorld } from "./world-runtime.js";
-import { worldRuntimeTiles } from "./world.js";
+import { worldRuntimeTiles, validateWorldBase } from "./world.js";
 import { mapData } from "./map.js";
 import { genOrdTiles } from "./ordinal.js";
 export var TileBlockType;
@@ -412,6 +412,7 @@ export function initMap(p) {
     });
     if (customTiles) {
         // Validate the whole overlay before installing any tile.
+        validateWorldBase(activeWorld, blockMap);
         for (const [hash] of customTiles)
             if (blockMap.has(hash))
                 throw new Error(`世界扩展与主世界重叠：${hash || '[]'}`);

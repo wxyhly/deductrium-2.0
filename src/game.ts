@@ -16,7 +16,7 @@ import { SaveLoad } from "./saveload.js";
 import { calcMaxReachOrd, cmp, printOrd } from "./hy/ordinal.js";
 import { tileColor, tileTextColor, tileDisplayText } from "./hy/appearance.js";
 import { stringifyDeductriumAmout } from "./format.js";
-import { createMapScriptState, planMapScript, MapScriptPlan } from "./hy/script.js";
+import { createMapScriptState, parseMapScript, planMapScript, MapScriptPlan, MapScriptEventName } from "./hy/script.js";
 import { createMapScriptEngine } from "./hy/script-engine.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
@@ -187,7 +187,7 @@ class Game {
             if (firstLoad) {
                 const hash = this.hyLayer.world.currentTile.join(",");
                 const block = blockMap.get(hash);
-                if (block) this.runMapScript(block, hash);
+                if (block) this.runMapScript(block, hash, "start");
             }
         }
     }
@@ -246,16 +246,19 @@ class Game {
             this.ordBase = ordinal.base; this.hyLayer.world.currentOrd = ordinal.current.slice();
         }
     }
-    private prepareMapScript(block: TileBlock, hash: string): { plan: MapScriptPlan; money: number; id: string } | false | undefined {
+    private prepareMapScript(block: TileBlock, hash: string, event?: MapScriptEventName): { plan: MapScriptPlan; money: number; id: string; event?: MapScriptEventName } | false | undefined {
         if (typeof block.data?.script !== "string" || !block.data.script.trim()) return;
         const id = block.name || hash;
         // Reserve the legacy toll before planning, so combined costs cannot overdraw.
-        const money = this.deductrium - (block.type === TileBlockType.Gate ? block.data.payD ?? 0 : 0);
+        const money = this.deductrium - (event !== "touch" && block.type === TileBlockType.Gate ? block.data.payD ?? 0 : 0);
         try {
+            const explicit = parseMapScript(block.data.script).some(statement => statement.op === "on");
+            // Touch is opt-in; legacy scripts still run only at their original tile lifecycle boundary.
+            if (event === "touch" && !explicit) return;
             const engine = createMapScriptEngine(this.hsLayer, this.ttLayer);
             const plan = planMapScript(block.data.script, this.mapScript, {
                 money, typeMoney: this.typeDeductrium, balances: {...this.currencyBalances(), reasoning: money},
-                banks: this.mapBanks(), rewards: this.gotRewards,
+                banks: this.mapBanks(), rewards: this.gotRewards, selfId: id,
                 hasTile: target => blockMap.has(nameMap.get(target) ?? target),
                 hasAxiom: name => this.hsLayer.hasMapAxiom(name),
                 getTileType: target => blockMap.get(nameMap.get(target) ?? target)?.type,
@@ -265,11 +268,14 @@ class Game {
                 ordinal: {current: [...(this.hyLayer.world.currentOrd ?? [])], max: [...this.maxOrd], next: [...this.nextOrd], base: this.ordBase},
                 compareOrdinals: (a, b) => cmp([...a], [...b]),
                 nextOrdinal: (max, base, stepw) => calcMaxReachOrd([...max], base, stepw),
-                completed: !block.data.scriptRepeat && this.mapScript.done.includes(id),
+                event,
+                completed: explicit ? !!event && (this.mapScript.eventDone?.[id] ?? []).includes(event)
+                    : !block.data.scriptRepeat && this.mapScript.done.includes(id),
                 hasLayer: layer => gameMode === "creative" || layer === "G-layer"
                     || this.mapScript.layers.includes(layer)
                     || [...this.gotRewards].some(reward => blockMap.get(nameMap.get(reward) ?? reward)?.data?.unl?.layer === layer),
             });
+            if (!plan.handled) return;
             engine.validateState(plan.state);
             for (const effect of plan.attemptEffects) {
                 if (effect.op === "remember") {
@@ -282,7 +288,7 @@ class Game {
             }
             if (plan.status === "blocked" || plan.confirmation && !confirm(plan.confirmation)) return false;
             this.lastScriptError = "";
-            return { plan, money, id };
+            return { plan, money, id, ...(plan.event ? {event: plan.event} : {}) };
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             if (this.lastScriptError !== id + message) this.showToast(message);
@@ -292,8 +298,13 @@ class Game {
     }
     private commitMapScript(prepared: ReturnType<Game["prepareMapScript"]>) {
         if (!prepared) return;
-        const { plan, money, id } = prepared;
-        if (!plan.repeat && !plan.state.done.includes(id)) plan.state.done.push(id);
+        const { plan, money, id, event } = prepared;
+        if (!plan.repeat) {
+            if (event) {
+                const events = (plan.state.eventDone ??= {})[id] ??= [];
+                if (!events.includes(event)) events.push(event);
+            } else if (!plan.state.done.includes(id)) plan.state.done.push(id);
+        }
         if (plan.consumeReward === false) {
             plan.state.tileEdits[id] = {...plan.state.tileEdits[id], type: TileBlockType.Reward};
         } else if (plan.consumeReward === true && plan.state.tileEdits[id]?.type === TileBlockType.Reward) {
@@ -346,8 +357,8 @@ class Game {
         this.updateStats();
         this.saveload.notifySave();
     }
-    private runMapScript(block: TileBlock, hash: string): boolean {
-        const prepared = this.prepareMapScript(block, hash);
+    private runMapScript(block: TileBlock, hash: string, event?: MapScriptEventName): boolean {
+        const prepared = this.prepareMapScript(block, hash, event);
         if (prepared === false) return false;
         this.commitMapScript(prepared);
         return true;
@@ -514,12 +525,13 @@ class Game {
             }
             this.applyUnlockEffect(block);
         }
-        for (const key of this.destructedGates) this.destructGate(key);
+        for (const key of this.destructedGates) this.destructGate(key, undefined, true);
         this.updateOrdinalProgress();
         this.hyLayer.needUpdate = true;
     }
-    private destructGate(key: string, block = blockMap.get(nameMap.get(key) ?? key)) {
-        if (!block || (block.type !== TileBlockType.Gate && block.type !== TileBlockType.Ordinal && !block.data?.del)) return;
+    private destructGate(key: string, block = blockMap.get(nameMap.get(key) ?? key), restoring = false) {
+        if (!block || (block.type !== TileBlockType.Gate && block.type !== TileBlockType.Ordinal
+            && !block.data?.del && !(restoring && block.type === TileBlockType.Road))) return;
         block.data ??= {};
         block.data.del = true;
         block.type = TileBlockType.Road;
@@ -575,6 +587,7 @@ class Game {
         this.hyLayer.world.onTileColor = (block, highLight) => tileColor(block, highLight, this.gotRewards.has("highlightd"));
         this.hyLayer.world.onTextColor = tileTextColor;
         this.hyLayer.world.onTileText = tileDisplayText;
+        this.hyLayer.world.onTouchTile = (hash, block) => this.runMapScript(block, hash, "touch");
         this.hyLayer.world.onEnterRoad = (hash, block) => {
             const original = this.initialMapState.get(hash)?.type;
             return original === TileBlockType.Gate || original === TileBlockType.Reward || this.runMapScript(block, hash);
@@ -588,7 +601,7 @@ class Game {
             const alreadyGot = this.gotRewards.has(block.name || hash);
             let keepReward = this.mapScript.tileEdits[block.name || hash]?.type === TileBlockType.Reward;
             if (!isLoading) {
-                const script = this.prepareMapScript(block, hash);
+                const script = this.prepareMapScript(block, hash, "collect");
                 if (script === false) return false;
                 if (script?.plan.consumeReward !== undefined) keepReward = !script.plan.consumeReward;
                 // Validate legacy and scripted payouts together before claiming or committing either.
@@ -626,7 +639,7 @@ class Game {
         };
         // 闸门通过判定：payD 扣费（移植旧版逻辑）+ dG 拆门技能
         this.hyLayer.world.onPassGate = (name, tile, hash) => {
-            const script = this.prepareMapScript(tile, hash);
+            const script = this.prepareMapScript(tile, hash, "pass");
             if (script === false) return false;
             const automaticExit = Object.values(typeof tile.text === "string" ? { text: tile.text } : tile.text)
                 .some(text => text.endsWith("#imm"));
@@ -691,7 +704,8 @@ class Game {
                     try { return createMapScriptEngine(this.hsLayer, this.ttLayer).query({kind: "type", text}, this.mapScript); }
                     catch { return false; }
                 }
-                return typeof data.script === "string" && !!data.script.trim();
+                // An explicit touch handler alone never grants permission to pass a gate.
+                return !!script;
             };
             if (!gateTest()) return false;
             this.commitMapScript(script);

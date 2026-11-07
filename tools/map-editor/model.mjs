@@ -1,7 +1,8 @@
 import {MapDocument, writeText} from './source-text.mjs';
 import {parseTileContent} from '../../js/hy/maploader.js';
 import {parseMapScript, rewriteMapScript} from '../../js/hy/script.js';
-import {halfPlaneContains} from './geometry.mjs';
+import {halfPlaneContains, canonicalPath, transport, relativePath} from './geometry.mjs';
+export {canonicalPath, transport, relativePath} from './geometry.mjs';
 
 const clone = value => structuredClone(value);
 const key = path => path.join(',');
@@ -52,35 +53,6 @@ function tileValue(value) {
 }
 
 // Addresses and rotations use exactly the survival Polygon(6,4) edge transport.
-export function canonicalPath(value, polygon) {
-    if (typeof value === 'string' && value.trim() && !/^\s*[0-5](\s*,\s*[0-5])*\s*$/.test(value)) throw Error('坐标须为 0～5 组成的逗号分隔路径');
-    const path = typeof value === 'string' ? (value.trim() ? value.split(',').map(s=>Number(s.trim())) : []) : value;
-    if (!Array.isArray(path) || path.length > 512 || path.some(n=>!Number.isInteger(n) || n < 0 || n > 5)) throw Error('坐标须为 0～5 组成的逗号分隔路径，最多 512 步；空白表示原点');
-    const result = [];
-    for (const direction of path) polygon.getNeighborAndDir(result, direction, false);
-    return result;
-}
-export function transport(path, at, rotation, polygon) {
-    let local = [], global = canonicalPath(at, polygon), offset = mod(rotation);
-    for (const direction of canonicalPath(path, polygon)) {
-        const [nextL, backL] = polygon.getNeighborAndDir(local, direction, true);
-        const [nextG, backG] = polygon.getNeighborAndDir(global, mod(direction + offset), true);
-        local = nextL; global = nextG; offset = mod(backG - backL);
-    }
-    return {at:global, rotation:offset};
-}
-export function relativePath(path, origin, polygon) {
-    let global = canonicalPath(origin, polygon), local = [], offset = 0;
-    const walk = direction => {
-        const [nextG, backG] = polygon.getNeighborAndDir(global, direction, true);
-        const [nextL, backL] = polygon.getNeighborAndDir(local, mod(direction - offset), true);
-        global = nextG; local = nextL; offset = mod(backG - backL);
-    };
-    const parents = global.length;
-    for (let i = 0; i < parents; i++) walk(0);
-    for (const direction of canonicalPath(path, polygon)) walk(direction);
-    return local;
-}
 function moduleValue(input, polygon) {
     if (!object(input) || input.format !== 'deductrium-map-module-v1' || input.tiling?.p !== 6 || input.tiling?.q !== 4 || !Array.isArray(input.tiles) || input.tiles.length > MAX_TILES) throw Error('请选择有效的 (6,4) 地图模块');
     const result = {format:input.format, id:identifier(input.id,'模块 ID'), title:String(input.title || input.id),
@@ -128,6 +100,7 @@ export class EditorProject {
         if (polygon.p !== 6 || polygon.q !== 4) throw Error('编辑器使用生存模式的 (6,4) 地图');
         this.polygon = polygon; this.id = 'my-map'; this.title = '未命名地图';
         this.version = 1; this._region = null; this._world = null;
+        this._readonlyBase = new Set();
         this.tiles = new Map(); this.modules = new Map(); this.instances = [];
         this._undo = []; this._redo = []; this._nextId = 1; this._source = undefined;
     }
@@ -162,7 +135,7 @@ export class EditorProject {
             project.modules.set(module.id,module);
         }
         for (const instance of data.instances) {
-            const preview = project.previewMount(instance.moduleId,instance);
+            const preview = project.previewMount(instance.moduleId,instance,undefined,true);
             if (preview.errors.length) throw Error(preview.errors.join('；'));
             for (const [hash,tile] of preview.tiles) project.tiles.set(hash,tile);
             project.instances.push({...placementValue(instance,polygon),moduleId:instance.moduleId});
@@ -180,12 +153,14 @@ export class EditorProject {
     _snapshot() { return {...this.toJSON(),source:this._source,nextId:this._nextId,tileOrder:[...this.tiles.keys()]}; }
     _restore(snapshot) {
         const next = EditorProject.fromJSON(snapshot,this.polygon);
+        next.setReadonlyBase(this._readonlyBase);
         this.id=next.id; this.title=next.title; this.tiles=next.tiles; this.modules=next.modules; this.instances=next.instances;
         this.version=next.version; this._region=next._region; this._world=next._world;
         this.tiles=new Map(snapshot.tileOrder.map(hash=>[hash,next.tiles.get(hash)]));
         this._source=snapshot.source; this._nextId=snapshot.nextId;
     }
-    _change(action) {
+    _change(action, setup = false) {
+        if (!setup && this._world && !this._region) throw Error('请先设置 mod 半平面范围再编辑');
         const before = this._snapshot();
         try {
             action();
@@ -198,26 +173,47 @@ export class EditorProject {
     }
     get canUndo() { return this._undo.length > 0; }
     get canRedo() { return this._redo.length > 0; }
-    undo() { if (!this.canUndo) return; const before=this._snapshot(); this._restore(this._undo.pop()); this._redo.push(before); }
-    redo() { if (!this.canRedo) return; const before=this._snapshot(); this._restore(this._redo.pop()); this._undo.push(before); }
+    undo() { if (!this.canUndo) return; const before=this._snapshot(); this._restore(this._undo[this._undo.length-1]); this._undo.pop(); this._redo.push(before); }
+    redo() { if (!this.canRedo) return; const before=this._snapshot(); this._restore(this._redo[this._redo.length-1]); this._redo.pop(); this._undo.push(before); }
     get region() { return clone(this._region); }
     get world() { return clone(this._world); }
+    setReadonlyBase(hashes) {
+        const next = new Set([...hashes].map(hash=>key(canonicalPath(hash,this.polygon))));
+        if (this._world?.mode === 'extension') {
+            for (const hash of this.tiles.keys()) if (next.has(hash)) throw Error(`砖块 ${hash || '原点'} 与只读官方底图重叠`);
+        }
+        this._readonlyBase = next;
+    }
     _regionError(hash) {
+        if (this._world?.mode === 'extension' && this._readonlyBase.has(hash)) return `砖块 ${hash || '原点'} 属于只读官方底图`;
         const region=this._region;
-        if (!region || hash===region.entrance || halfPlaneContains(relativePath(hash,region.hash,this.polygon),region.edge,region.side,this.polygon)) return;
+        if (!region && !this._world) return;
+        if (!region) return '请先设置 mod 半平面范围再编辑';
+        if ((!this._world && hash===region.entrance) || halfPlaneContains(relativePath(hash,region.hash,this.polygon),region.edge,region.side,this.polygon)) return;
         return `砖块 ${hash || '原点'} 超出半平面编辑范围`;
     }
     _validateRegion() {
+        if (!this._region) return; // Legacy manifests load as locked authoring projects.
+        if (this._world && this._region.entrance !== undefined) throw Error('mod 半平面不允许入口豁免');
         for (const hash of this.tiles.keys()) { const error=this._regionError(hash); if (error) throw Error(error); }
     }
     // {hash: string|number[], edge: 0..5, side: 1|-1, entrance?: string|number[]}
     // +1 contains the boundary tile's center; entrance exempts one fixed hash.
+    canEdit(hash) {
+        try {return !this._regionError(key(canonicalPath(hash,this.polygon)));} catch {return false;}
+    }
+    isEditable(hash) { return this.canEdit(hash); }
     setRegion(input) {
-        const region=regionValue(input,this.polygon); this._change(()=>{this._region=region;});
+        const region=regionValue(input,this.polygon);
+        if (!region && this._world) throw Error('已配置世界不能取消半平面范围');
+        this._change(()=>{this._region=region;},true);
     }
     // Authoring metadata only. The world publisher validates its manifest.
     setWorld(input) {
-        const world=worldValue(input); this._change(()=>{this._world=world;});
+        const world=worldValue(input);
+        if (this._world && !world) throw Error('已配置世界不能取消 mod 编辑保护');
+        if (world && !this._region) throw Error('请先设置 mod 半平面范围');
+        this._change(()=>{this._world=world;},true);
     }
     setInfo(id, title, options = {}) {
         identifier(id,'地图 ID'); if (typeof title !== 'string' || title.length > 240) throw Error('地图标题最多 240 字');
@@ -227,6 +223,7 @@ export class EditorProject {
     }
     put(path, input) {
         const hash = key(canonicalPath(path,this.polygon)), value = tileValue(input), old = this.tiles.get(hash);
+        const error=this._regionError(hash); if (error) throw Error(error);
         if (old?.instanceId) throw Error('请先分离模块实例再编辑砖块');
         if (value.name && [...this.tiles.values()].some(t=>t.hash !== hash && t.name === value.name)) throw Error('砖块名称已存在');
         this._change(()=>{ let id=old?.id; if (!id) { do { id=`t${this._nextId++}`; } while ([...this.tiles.values()].some(t=>t.id===id)); } this.tiles.set(hash,{id,hash,...value}); });
@@ -234,6 +231,7 @@ export class EditorProject {
     }
     remove(path) {
         const hash=key(canonicalPath(path,this.polygon));
+        const error=this._regionError(hash); if (error) throw Error(error);
         if (this.tiles.get(hash)?.instanceId) throw Error('请先分离模块实例再删除砖块');
         if (!this.tiles.has(hash)) return;
         this._change(()=>this.tiles.delete(hash));
@@ -283,7 +281,7 @@ export class EditorProject {
         });
         return diff;
     }
-    previewMount(moduleId, input, ignoreInstanceId) {
+    previewMount(moduleId, input, ignoreInstanceId, loading = false) {
         const tiles=new Map(), errors=[];
         try {
             const module=this.modules.get(moduleId); if (!module) throw Error('模块不存在');
@@ -303,7 +301,7 @@ export class EditorProject {
                 if (value.name && names.has(value.name)) errors.push(`名称 ${value.name} 已存在`);
                 if (tiles.has(hash)) errors.push('模块几何位置重叠');
                 if (ids.has(`${placement.id}::${item.id}`)) errors.push('砖块 ID 已存在');
-                const regionError=this._regionError(hash); if (regionError) errors.push(regionError);
+                const regionError=loading && !this._region ? undefined : this._regionError(hash); if (regionError) errors.push(regionError);
                 tiles.set(hash,{id:`${placement.id}::${item.id}`,hash,...value,instanceId:placement.id,localId:item.id});
             }
             if (this.tiles.size - [...this.tiles.values()].filter(ignored).length + tiles.size > MAX_TILES) errors.push('地图超过 20000 格');
