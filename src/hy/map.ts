@@ -470,14 +470,14 @@ export const mapData = `
 :%*,3#[[port-rp]][zh]未解锁的闸门无法通过[n]请寻找线索解开闸门[n]#rp[en]Unlocked gates cannot be passed[n]Find clues to unlock it[n]#rp
 :%,2#[d]∀$x:($1 ↔ $2) ⊢(∃!$x: $1) ↔ (∃!$x: $2)
 :port-rp,1;2;1@
-:%,1#[d]∀$x:($1 ↔ $2) ⊢ #rp($1,$x,$y)↔#rp($2,$x,$y)
+:%,1#[d]∀$x:($1 ↔ $2) ⊢ #sb($1,$x,$y)↔#sb($2,$x,$y)
 :%,1@
 :%,1#[=payD:4e3]
 :%,1$[[ifft-EU]][=unl:true][zh]替换元定理中[n]可跨越量词E!进行替换[en]Replacement across the quantifier E![n]In the IFF Metatheorem
 :port-rp,1@[zh]后方解锁替换元定理中[n]可跨越量词E!进行替换[en]Go forward to unlock Replacement [n]across the quantifier E! in IFF Metatheorem
 :port-rp,3@[zh]特称元定理可给[n]任何带一个条件的规则[n]的条件和结论都加上[n]相同的存在量词[en]The Existential Metatheorem adds[n]the same existential quantifier[n]to both the condition and conclusion[n]of any rule with one condition
 :port-rp,2@[zh]尝试执行规则">veve.Vcn"[n]试试一键证明[n]“解锁特称元定理”方块[n]旁边的定理[en]Try executing the rule ">veve.Vcn"[n]to proof the theorem next to the[n]"Unlock Particularization Metatheorem" block
-:port-rp,5#[d]#nf($1,$z) ⊢ ∀$4:∃$3:∀$2:∃$0:∀$x:$1 →∀$4:∃$3:∀$2:∃$0:∀$z:#rp($1,$x,$z)
+:port-rp,5#[d]#nf($1,$z) ⊢ ∀$4:∃$3:∀$2:∃$0:∀$x:$1 →∀$4:∃$3:∀$2:∃$0:∀$z:#sb($1,$x,$z)
 :port-rp,4#[=payD:1e4]
 :%,5$[[met]][=unl:true][zh]特称元定理[en]Existential Metatheorem
 :d<,4@[zh]向前走，有更多关于证明[n]空集存在性的提示[en]Go forward for more hints on proving[n]the existence of the empty set.
@@ -616,7 +616,7 @@ export const mapData = `
 :%,1@[zh]旁边付费看提示[en]Pay nearby to see the hint.
 :%,1#[[.pn4]][p]∀x:∀y:(x∪{x}=y∪{y}→x=y)
 :%,2;1;1;1;1;1;1@...............
-:%,1#[[.pn5]][d]#nf($0,x) ⊢ #rp($0,$1,{})→(∀x:(x∈ω→(#rp($0,$1,x)→#rp($0,$1,x∪{x})))→∀x:(x∈ω→#rp($0,$1,x)))
+:%,1#[[.pn5]][d]#nf($0,x) ⊢ #sb($0,$1,{})→(∀x:(x∈ω→(#sb($0,$1,x)→#sb($0,$1,x∪{x})))→∀x:(x∈ω→#sb($0,$1,x)))
 :%,2;1;1;1@................
 :%,1$[[del-pn]][=dstrTarget:".pn"][=dstr:"#pn"]
 :%,1#[[.pn]][zh]未解锁的闸门无法通过[n]请寻找线索解开闸门[n]#pn[en]Locked gate cannot be passed.[n]Find clues to unlock it[n]#pn.
