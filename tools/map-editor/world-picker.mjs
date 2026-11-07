@@ -13,7 +13,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
     const toolbar = document.createElement('section');
     toolbar.id = 'world-picker-toolbar'; toolbar.className = 'world-picker-toolbar'; toolbar.hidden = true;
     toolbar.setAttribute('aria-label', '地图范围与入口选取');
-    toolbar.innerHTML = '<strong id="world-picker-title"></strong><p id="world-picker-status" role="status" aria-live="polite"></p><div class="world-picker-actions"><button type="button" id="world-picker-flip">翻转允许侧</button><button type="button" id="world-picker-cancel">取消</button><button type="button" id="world-picker-confirm" class="primary">确认选择</button></div><small>拖动地图平移 · 绿色可编辑 · 灰色只读 · Esc 取消</small>';
+    toolbar.innerHTML = '<strong id="world-picker-title"></strong><p id="world-picker-status" role="status" aria-live="polite"></p><div class="world-picker-actions"><button type="button" id="world-picker-flip">翻转 mod 范围</button><button type="button" id="world-picker-cancel">取消</button><button type="button" id="world-picker-confirm" class="primary">确认选择</button></div><small>拖动地图平移 · 绿色涂色为 mod 范围 · 范围外只读 · Esc 取消</small>';
     const edges = document.createElement('div');
     edges.className = 'world-picker-edges'; edges.hidden = true;
     edges.setAttribute('role', 'group'); edges.setAttribute('aria-label', '选择边界格的一条边');
@@ -49,7 +49,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         if (!draftRegion) return;
         try {
             for (const hash of project.tiles.keys()) if (!regionContains(hash, draftRegion, polygon())) {
-                regionError = '当前 mod 格超出此范围；可换边或翻转允许侧。'; return;
+                regionError = '当前 mod 格超出涂色范围；可换边或翻转 mod 范围。'; return;
             }
             if (extensionMode()) {
                 const opposite = {...draftRegion, side: -draftRegion.side};
@@ -68,7 +68,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         if (kind === 'region') {
             checkRegion();
             status.textContent = message || (draftRegion
-                ? `边界 [${draftRegion.hash || '原点'}] · 边 ${draftRegion.edge} · ${draftRegion.side === 1 ? '包含边界格' : '另一侧'}。${regionError || '可点边号或翻转，再确认。'}`
+                ? `边界 [${draftRegion.hash || '原点'}] · 边 ${draftRegion.edge} · ${draftRegion.side === 1 ? 'mod 范围包含边界格' : 'mod 范围在边界格另一侧'}。${regionError || '涂色区域为 mod 范围，可点边号或翻转，再确认。'}`
                 : '第 1 步：点选地图上的边界格；再从六条边中选择。');
             confirm.disabled = !draftRegion || !!regionError;
         } else if (kind === 'entry') {
@@ -254,8 +254,9 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
             }
             path.closePath(); return path;
         }
-        function mark(hash, color) {
-            const path = tilePath(hash); ctx.fillStyle = color; ctx.fill(path);
+        function mark(hash, color, filled = true) {
+            const path = tilePath(hash);
+            if (filled) { ctx.fillStyle = color; ctx.fill(path); }
             ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.stroke(path);
         }
         try {
@@ -266,7 +267,6 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
                 try {
                     ctx.translate(width / 2, height / 2); ctx.scale(scale, scale);
                     const disk = new Path2D(); disk.arc(0,0,1,0,2*Math.PI); ctx.clip(disk);
-                    ctx.fillStyle = 'rgba(100,110,117,.14)'; ctx.fill(disk);
                     const plane = new Path2D();
                     if (Math.abs(normal.z) < 1e-12) {
                         const length = Math.hypot(normal.x, normal.y), nx = normal.x/length, ny = normal.y/length;
@@ -291,10 +291,10 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
                 for (const hash of api.world.atlasTile.rotors.keys()) {
                     if (!project.tiles.has(hash) && !(showOfficial && official.has(hash))) continue;
                     const allowed = regionContains(hash,region,polygon()) && !(showOfficial && official.has(hash));
-                    ctx.fillStyle = allowed ? 'rgba(29,174,103,.17)' : 'rgba(111,87,87,.12)'; ctx.fill(tilePath(hash));
+                    if (allowed) { ctx.fillStyle = 'rgba(29,174,103,.17)'; ctx.fill(tilePath(hash)); }
                 }
                 if (kind === 'region') {
-                    mark(region.hash,'rgba(231,162,28,.5)');
+                    mark(region.hash,'rgba(231,162,28,.9)',false);
                 }
             }
             const officialHash = kind === 'entry' ? mainHash : entry?.mainHash;

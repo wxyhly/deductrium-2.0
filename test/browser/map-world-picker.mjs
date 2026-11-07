@@ -135,6 +135,35 @@ const overlayImage = async page => {
     await rendered(page);
     return page.locator('canvas.world-picker-overlay').screenshot();
 };
+async function assertModShading(page, region) {
+    await rendered(page);
+    const samples = await page.evaluate(async region => {
+        const {Hvec} = await import('/js/hy/algebra.js');
+        const {regionContains} = await import('/tools/map-editor/geometry.mjs');
+        const world = mapEditor.world, overlay = document.querySelector('.world-picker-overlay');
+        const rect = overlay.getBoundingClientRect(), ctx = overlay.getContext('2d');
+        const scale = world.localDraw.scale * Math.min(rect.width, rect.height) / 2;
+        const opposite = {...region, side:-region.side}, samples = {mod:[], outside:[]};
+        for (const [hash, rotor] of world.atlasTile.rotors) {
+            if (hash === region.hash) continue;
+            const point = world.localCamMat.mul(rotor).apply(new Hvec());
+            const x = rect.width / 2 + point.x / (point.z + 1) * scale;
+            const y = rect.height / 2 + point.y / (point.z + 1) * scale;
+            if (x < 8 || x > rect.width - 8 || y < 8 || y > rect.height - 8
+                || Math.hypot(x - rect.width / 2, y - rect.height / 2) > scale * .85) continue;
+            const group = regionContains(hash, region, world.atlasTile) ? 'mod'
+                : regionContains(hash, opposite, world.atlasTile) ? 'outside' : null;
+            if (group) samples[group].push({hash, rgba:[...ctx.getImageData(
+                Math.round(x * overlay.width / rect.width), Math.round(y * overlay.height / rect.height), 1, 1).data]});
+        }
+        return samples;
+    }, region);
+    assert.ok(samples.mod.length && samples.outside.length, 'sample visible whole tiles on both sides of the boundary');
+    assert.deepEqual(samples.mod.filter(({rgba:[r,g,b,a]}) => !a || g <= r || g <= b), [],
+        'every whole tile in the mod half-plane is shaded green');
+    assert.deepEqual(samples.outside.filter(({rgba:[,,,a]}) => a !== 0), [],
+        'outside the mod half-plane stays unshaded');
+}
 const nonadjacentOfficial = page => page.evaluate(async () => {
     const {Hvec} = await import('/js/hy/algebra.js');
     const w = mapEditor.world, canvas = document.getElementById('map'), rect = canvas.getBoundingClientRect();
@@ -318,6 +347,7 @@ async function testEdgeButtonHitTargets(page, viewport, screenshots) {
     const point = viewport.width <= 700 ? {x:262, y:448}
         : {x:rect.x + rect.width * .68, y:rect.y + rect.height * .65};
     assert.equal(await page.evaluate(({x,y}) => document.elementFromPoint(x,y)?.id, point), 'map', 'empty-world reproduction starts on an unobscured canvas point');
+    const boundaryHash = await page.evaluate(({x,y}) => mapEditor.hashAtPoint(x,y), point);
     await page.mouse.click(point.x, point.y); await rendered(page);
     await page.screenshot({path:join(screenshots, `empty-region-edges-${viewport.width}.png`)});
     const buttons = await page.locator('.world-picker-edges button').evaluateAll(buttons => buttons.map(button => {
@@ -328,9 +358,19 @@ async function testEdgeButtonHitTargets(page, viewport, screenshots) {
     assert.equal(buttons.length, 6);
     assert.deepEqual(buttons.filter(button => !button.self || button.width < 44 || button.height < 44), [],
         `every edge has an unobscured 44px hit target: ${JSON.stringify(buttons)}`);
+    await page.evaluate(hash => {
+        // Centre the boundary so both entire neighbouring polygons remain visible for pixel checks.
+        const world = mapEditor.world;
+        world.localCamMat = world.atlasTile.rotors.get(hash).conj();
+        mapEditor.redraw();
+    }, boundaryHash);
     for (let edge = 0; edge < 6; edge++) {
         await page.locator(`#world-picker-edge-${edge}`).click();
         assert.equal(await page.locator(`#world-picker-edge-${edge}`).getAttribute('aria-pressed'), 'true');
+        await assertModShading(page, {hash:boundaryHash, edge, side:1});
+        await page.locator('#world-picker-flip').click();
+        await assertModShading(page, {hash:boundaryHash, edge, side:-1});
+        await page.locator('#world-picker-flip').click();
     }
     await page.keyboard.press('Escape');
     assert.deepEqual(await projectState(page), before, 'empty-world edge selection cannot paint tiles');
