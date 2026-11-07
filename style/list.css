@@ -224,7 +224,7 @@ body {
 
 /* ===== 行 ===== */
 #ruleListWrapper .item-row {
-    --col-extra: 40px;
+    --col-extra: clamp(112px, 22vw, 160px);
     --col-name: 60px;
 }
 
@@ -685,6 +685,21 @@ body {
     gap: 3px;
 }
 .proof-tags { margin-inline-start: 4px; vertical-align: middle; }
+#ruleListWrapper .cell-extra .extra-text {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+}
+#ruleListWrapper .proof-rule-meta {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+}
+#ruleListWrapper .proof-rule-meta > .extra-rule { flex-shrink: 0; }
+#ruleListWrapper .proof-tags {
+    flex: 1;
+    min-width: 0;
+}
 .proof-tag {
     display: inline-block;
     border: 1px solid currentColor;
@@ -694,6 +709,9 @@ body {
     line-height: 1.4;
     color: #526777;
     white-space: normal;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
 }
 .proof-tag[data-proof-tag="classical"] { color: #9d4d27; }
 .proof-tag[data-proof-tag="intuitionistic"] { color: #287558; }
