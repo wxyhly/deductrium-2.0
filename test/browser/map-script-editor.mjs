@@ -183,6 +183,16 @@ async function testCompletion(page,screenshots) {
         ['on touch\n  add axiom zBrowserEvent "⊢$p"; require axiom zBr','zBrowserEvent',
             'on touch\n  add axiom zBrowserEvent "⊢$p"; require axiom zBrowserEvent '],
     ]) {await draft(page,source);await choose(page,label);assert.equal(await field(page).inputValue(),expected);await matchesSource(page);}
+    const longDeclaration='add axiom zBrowserScroll "⊢'+ '$p→'.repeat(60)+'$p"';
+    await draft(page,longDeclaration+'; require axiom zBrowserS');
+    await field(page).evaluate(element=>{
+        element.scrollLeft=element.scrollWidth;
+        element.dispatchEvent(new Event('scroll'));
+    });
+    assert.equal(await menu(page).isVisible(),true,'native caret scrolling keeps valid completion candidates');
+    await choose(page,'zBrowserScroll');
+    assert.equal(await field(page).inputValue(),longDeclaration+'; require axiom zBrowserScroll ');
+    await matchesSource(page);
     const taggedFormula=JSON.stringify('😀 using classical; $p→$p \\"');
     const prefix=`if proof ${taggedFormula} using propositional `;
     const suffix=' classical) and flag ready\nmessage "tail"';

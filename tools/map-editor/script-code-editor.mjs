@@ -127,7 +127,9 @@ export function installScriptCodeEditor(field, {getContext = () => ({})} = {}) {
     });
     field.addEventListener('compositionstart', () => { composing = true; hide(); });
     field.addEventListener('compositionend', () => { composing = false; render(); });
-    field.addEventListener('scroll', () => { syncScroll(); hide(); });
+    // Caret movement can scroll a long line after input/keydown has opened the
+    // menu. Keep those candidates while aligning the decoration and popup.
+    field.addEventListener('scroll', () => { syncScroll(); position(); });
     field.addEventListener('blur', hide);
     document.addEventListener('pointerdown', event => {
         if (event.target !== field && !menu.contains(event.target)) hide();
