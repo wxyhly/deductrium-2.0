@@ -13,9 +13,9 @@ export function tileTextColor(block) {
 export function tileDisplayText(block) {
     const data = block.data ?? {};
     let text = typeof block.text === "string" ? block.text : block.text[LangMgr.lang] ?? Object.values(block.text)[0] ?? "";
-    if (data.p || data.d) {
+    if (data.pi || data.di || data.p || data.d) {
         // 门文本已由地图脚本转为 unicode，直接显示。
-        text += data.p ? "\n#p" : "\n#d";
+        text += data.pi ? '\n#pi' : data.di ? '\n#di' : data.p ? '\n#p' : '\n#d';
     }
     if (data.del)
         text += "\n" + LangMgr.text.delGate;

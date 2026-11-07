@@ -1,5 +1,5 @@
 import { NodeType } from "../asttype.js";
-import { AST, MatchTable } from "./core/ast.js";
+import { AST, type MatchTable } from "./core/ast.js";
 import { HilbertSystem } from "./core/core.js";
 import { Deduction, Proposition } from "./core/deduction.js";
 
@@ -32,6 +32,12 @@ export class MapAxiomPolicy {
     }
 }
 
+// Provenance shares the charged, isolated proof generator, not the policy's
+// deliberately broader traversal of every stored proof row.
+export function createProofResolver(system: HilbertSystem) {
+    return new PolicyCheck(system, new Set(), true).resolver();
+}
+
 class PolicyCheck {
     private remaining = 8192;
     private scratch: HilbertSystem;
@@ -46,7 +52,7 @@ class PolicyCheck {
     private schemas = new WeakMap<Deduction, number>();
     private shapes = new WeakSet<Deduction>();
 
-    constructor(system: HilbertSystem, disabled: ReadonlySet<string>) {
+    constructor(system: HilbertSystem, disabled: ReadonlySet<string>, private selective = false) {
         this.scratch = new HilbertSystem();
         this.scratch.rules = new Map(system.rules);
         this.scratch.renamedSysRule = new Map(system.renamedSysRule);
@@ -62,6 +68,16 @@ class PolicyCheck {
                 this.blocked.add(original); this.blocked.add(alias);
             }
         }
+    }
+
+    resolver() {
+        return {
+            system: this.scratch,
+            charge: this.charge,
+            size: (ast: AST) => this.size(ast),
+            schema: (rule: Deduction) => this.schema(rule),
+            key: (ast: AST) => this.key(ast),
+        };
     }
 
     private charge = (count = 1): void => {
@@ -173,7 +189,27 @@ class PolicyCheck {
             // matching; a substituted formula cannot exceed schema × argument.
             const weight = this.schema(rule);
             let largest = 1;
-            for (const condition of conditions) largest = Math.max(largest, this.size(condition.ast) + 64);
+            for (const condition of conditions) {
+                let overhead = 64;
+                if (this.selective) {
+                    // The provenance collector checks only reachable rows. Charge
+                    // actual capture sizes rather than a worst-case 64-level
+                    // wrapper for every generated application.
+                    const active = this.scratch.saveContext().activeProp;
+                    for (const root of [condition, active]) {
+                        const seen = new Set<Proposition>();
+                        for (let node = root; node; node = node.parent) {
+                            this.charge();
+                            if (seen.has(node) || seen.size > 64) throw Error("Cyclic or oversized proof scope");
+                            seen.add(node);
+                            this.size(node.ast);
+                        }
+                    }
+                    overhead = this.scratch.captureScope(active, condition)
+                        .reduce((size, layer) => size + 1 + this.size(layer.ast), 0);
+                }
+                largest = Math.max(largest, this.size(condition.ast) + overhead);
+            }
             const replacements: MatchTable = {};
             for (const [key, value] of Object.entries(values)) {
                 largest = Math.max(largest, this.size(value));

@@ -1,3 +1,5 @@
+import {PROOF_TAGS} from '../../js/hs/proof-tags.js';
+
 // One catalogue supplies both the insertion menu and the reference panel.
 export const SCRIPT_TRIGGER_TIMINGS = [
     ['道路 · on touch', '尝试走入时，在道路条件之前触发；重复计数需 event repeat。'],
@@ -25,6 +27,8 @@ export const SCRIPT_GROUPS = [
     {label: '证明、规则与类型查询', entries: [
         entry('require-proof', '命题证明条件', 'require proof "$p→$p"', '检查玩家已有的命题证明；目标用 JSON 双引号。', '$p→$p'),
         entry('require-rule', '完整规则证明条件', 'require rule "$p,$p→$q⊢$q"', '检查玩家已有的完整规则证明。', '$p,$p→$q⊢$q'),
+        entry('require-proof-ipc', 'IPC 命题证明条件', 'require proof "$p→$p" using propositional intuitionistic', '证明来源限制对应原生 #pi（data.pi）。按实际依赖检查白名单；依赖 a3 的经典证明不能通过，其他工作表中的独立 IPC 证明可以通过。', '$p→$p'),
+        entry('require-rule-ipc', 'IPC 完整规则条件', 'require rule "$p,$p→$q⊢$q" using propositional intuitionistic', '规则来源限制对应原生 #di（data.di）。按实际依赖检查白名单，不要求证明使用每个列出的标签。', '$p,$p→$q⊢$q'),
         entry('require-type', '类型证明条件', 'require type "True"', '检查玩家已有的、无空洞的闭合类型证明。', 'True'),
         entry('require-rule-name', '规则名通配条件', 'require rule-name "a*"', '使用 * 匹配规则名；模式用 JSON 双引号。', 'a*'),
         entry('require-rule-present', '规则存在条件', 'require rule-present a3', '规则 ID 使用裸标识符。', 'a3'),
@@ -109,9 +113,12 @@ export const SCRIPT_GROUPS = [
         entry('if-else', 'if / elif / else / end', 'if key red\n  open gate door\nelif flag ready\n  message "准备好了"\nelse\n  message "需要钥匙"\nend', '条件复用 require 谓词；分支可嵌套，必须用 end 闭合。', 'red'),
         entry('if-logic', 'and / or / not 与括号', 'if (key red or flag ready) and not reward prize\n  give money 10\nend', '优先级：not > and > or；用括号分组。', 'red'),
         entry('if-engine', '证明与类型分支', 'if proof "$p→$p" and rule-present a3\n  message "命题条件满足"\nelif type "True" and type-present Bool\n  message "类型条件满足"\nelse\n  block\nend', '引擎查询也可用作 if / elif 条件。', '$p→$p'),
+        entry('if-engine-ipc', 'IPC 证明与规则分支', 'if proof "$p→$p" using propositional intuitionistic and rule "$p,$p→$q⊢$q" using propositional intuitionistic\n  message "IPC 来源条件满足"\nelse\n  block\nend', 'if / elif 中 proof 与 rule 也接受 using；每个谓词分别指定白名单，type 不接受 using。', '$p→$p'),
         entry('if-number-ordinal', '数值表达式与序数分支', 'if metric steps >= (count(visits) + 1) * 2 and ordinal current < "[1,2]"\n  message "满足进度条件"\nend', '数值括号与逻辑条件可以组合。', 'visits')
     ]},
     {label: '显式事件与纯脚本门', entries: [
+        ...[['proof', '$p→$p', '证明'], ['rule', '$p,$p→$q⊢$q', '规则']].map(([kind, goal, label]) =>
+            entry(`on-${kind}-gate-ipc`, `IPC 纯脚本${label}门`, `on touch\n  event repeat\n  remember ${kind} "${goal}"\nend\non pass\n  event repeat\n  require ${kind} "${goal}" using propositional intuitionistic\n  if reward dG\n    demolish gate @self\n  end\n  allow\nend`, `来源限制对应原生 ${kind === 'proof' ? '#pi（data.pi）' : '#di（data.di）'}；脚本仍使用 using 标签语法。touch 提示目标，pass 按实际证明依赖限制来源；a3 属于 classical，依赖它的证明不能通过此 IPC 白名单。其他工作表的独立合格证明仍可通过；后续获得 dG 后可再次通行拆门。`, goal)),
         entry('on-proof-gate', '#p 证明门：提示、检查与拆门', 'on touch\n  event repeat\n  remember proof "$p→$p"\nend\non pass\n  event repeat\n  require proof "$p→$p"\n  if reward dG\n    demolish gate @self\n  end\n  allow\nend', '用于纯脚本门。touch 记录目标，pass 检查证明；两者均 repeat，先无拆门通行、后来获得 dG 后仍可拆门。拆门文字由系统本地化显示，无需 set text。', '$p→$p'),
         entry('on-rule-gate', '#d 规则门：提示、检查与拆门', 'on touch\n  event repeat\n  remember rule "$p,$p→$q⊢$q"\nend\non pass\n  event repeat\n  require rule "$p,$p→$q⊢$q"\n  if reward dG\n    demolish gate @self\n  end\n  allow\nend', '用于纯脚本规则门。touch/pass 均 repeat，后续获得 dG 后再次通行可拆门；@self 引用本次触发的格子。', '$p,$p→$q⊢$q'),
         entry('on-proof-gate-keep', '简单证明门', 'on touch\n  event repeat\n  remember proof "$p→$p"\nend\non pass\n  event repeat\n  require proof "$p→$p"\n  allow\nend', '每次通行都检查证明；未获得 dG 时保留门格，获得后沿用系统自动拆门行为。', '$p→$p'),
@@ -132,7 +139,9 @@ export const SCRIPT_GROUPS = [
     ]}
 ];
 
-export const SCRIPT_RULES = '可选旧式 flat 命令或显式 on touch / on pass / on collect / on start 块，两者不能混写；on 块只能位于顶层，同一事件不能重复定义，以 end 闭合，块内可嵌套 if。每个事件独立记录完成状态，默认 once；需要每次触发时在块内写 event repeat。失败的 pass 不提交效果，先前独立成功的 touch 效果仍保留。@self 是当前触发格子的保留引用，可用于格子条件与开门、拆门等操作。插入 on 模板前先移除原有 flat 命令；单条命令模板应插入已有 on 块内部。每行一条命令，也可用分号分隔；// 开头的整行是注释。文字、证明目标和规则名通配模式用 JSON 双引号，ID 不含空格。比较符：>=、<=、==、!=、>、<。层：D-layer / T-layer / P-layer / G-layer。数值支持 +、-、*、括号、min(a, b)、max(a, b)，以及 currency(ID)、count(ID)、metric(steps / demolished / spent / ordinal-base)。序数写作 "[1,2]" 或 "[]"。门的 require 每次进入都检查；旧式 flat 脚本的效果默认每个具名格执行一次，可用 event once / event repeat 指定策略，也可在 data 中设置 "scriptRepeat": true；显式 on 事件的 repeat 策略在各自块内指定。检查验证脚本语法；目标表达式和引用还需满足当前游戏与地图的规则。';
+const GENERAL_RULES = '可选旧式 flat 命令或显式 on touch / on pass / on collect / on start 块，两者不能混写；on 块只能位于顶层，同一事件不能重复定义，以 end 闭合，块内可嵌套 if。每个事件独立记录完成状态，默认 once；需要每次触发时在块内写 event repeat。失败的 pass 不提交效果，先前独立成功的 touch 效果仍保留。@self 是当前触发格子的保留引用，可用于格子条件与开门、拆门等操作。插入 on 模板前先移除原有 flat 命令；单条命令模板应插入已有 on 块内部。每行一条命令，也可用分号分隔；// 开头的整行是注释。文字、证明目标和规则名通配模式用 JSON 双引号，ID 不含空格。比较符：>=、<=、==、!=、>、<。层：D-layer / T-layer / P-layer / G-layer。数值支持 +、-、*、括号、min(a, b)、max(a, b)，以及 currency(ID)、count(ID)、metric(steps / demolished / spent / ordinal-base)。序数写作 "[1,2]" 或 "[]"。门的 require 每次进入都检查；旧式 flat 脚本的效果默认每个具名格执行一次，可用 event once / event repeat 指定策略，也可在 data 中设置 "scriptRepeat": true；显式 on 事件的 repeat 策略在各自块内指定。检查验证脚本语法；目标表达式和引用还需满足当前游戏与地图的规则。';
+
+export const SCRIPT_RULES = GENERAL_RULES + ` proof / rule 可在 JSON 目标字符串后添加 using 标签白名单，也适用于 if / elif 谓词；省略 using 保持原有查询。白名单按实际证明依赖来源检查，所有依赖来源都须获准，并非要求使用每个标签。合法标签：${PROOF_TAGS.map(tag => `${tag.id}（${tag.zh}）`).join('、')}。using 后至少一个标签，不允许空白名单、重复或未知标签；type 不接受 using。IPC 示例 using propositional intuitionistic 不允许 classical 来源，因此依赖 a3 的经典证明不能通过；其他工作表中同一目标的独立合格证明仍可通过。a3i 是独立原始 IPC 公理，模式为 ⊢($1→$2)→¬$2→¬$1；旧 .a30 的实际证明依赖 classical，模式相同并不改变来源。原生 #pi（data.pi）与 #di（data.di）的来源限制分别对应上述 proof 与 rule 白名单，脚本仍使用 using 标签语法。`;
 
 export function supportedScriptGroups(parse) {
     return SCRIPT_GROUPS.map(group => ({...group, entries: group.entries.filter(item => {

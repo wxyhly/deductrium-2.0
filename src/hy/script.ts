@@ -1,6 +1,7 @@
 /** A bounded, data-only map language. This module has no game or DOM dependencies. */
 import { createCurrencyBalances, exchange, validateBankConfig, validateCurrencyBalances, validateCurrencyId } from './economy.js';
 import type { BankConfig, Currency, CurrencyBalances } from './economy.js';
+import { validProofTags } from '../hs/proof-tags.js';
 
 export interface MapScriptState {
     keys: string[];
@@ -33,7 +34,8 @@ export interface MapScriptOrdinalState {
 }
 
 export type MapScriptEngineQuery =
-    | { kind: 'proof' | 'rule' | 'type'; text: string }
+    | { kind: 'proof' | 'rule'; text: string; allowedTags?: string[] }
+    | { kind: 'type'; text: string }
     | { kind: 'rule-name'; pattern: string }
     | { kind: 'rule-present' | 'type-present'; id: string };
 export type MapScriptEngineEdit =
@@ -416,7 +418,15 @@ function parseCommand(tokens: Token[], line: number): MapScriptCommand {
         return command;
     }
     if (op === 'require') {
-        if (kind === 'proof' || kind === 'rule' || kind === 'type') { shape(3, 2); return { line, op, kind, text: words[2] }; }
+        if (kind === 'proof' || kind === 'rule') {
+            if (tokens.length === 3) { shape(3, 2); return { line, op, kind, text: words[2] }; }
+            if (words[3] !== 'using' || tokens.length < 5
+                || tokens.some((token, i) => token.quoted !== (i === 2))) fail(line, 'Expected using followed by proof source tags');
+            const allowedTags = words.slice(4);
+            if (!validProofTags(allowedTags)) fail(line, 'Unknown, duplicate, or empty proof source tags');
+            return { line, op, kind, text: words[2], allowedTags };
+        }
+        if (kind === 'type') { shape(3, 2); return { line, op, kind, text: words[2] }; }
         if (kind === 'rule-name') {
             shape(3, 2);
             if (!words[2].length || words[2].length > MAX_ID) fail(line, 'Invalid rule-name pattern');
@@ -535,7 +545,13 @@ function parseCondition(input: Token[], line: number): MapScriptCondition {
                 cursor++;
             }
             if (cursor === operandStart) fail(line, 'Incomplete condition predicate');
-        } else cursor += kind === 'ordinal' || kind === 'tile' ? 4 : 2;
+        } else {
+            cursor += kind === 'ordinal' || kind === 'tile' ? 4 : 2;
+            if ((kind === 'proof' || kind === 'rule') && at('using')) {
+                cursor++;
+                while (cursor < tokens.length && (tokens[cursor].quoted || ![')', 'and', 'or'].includes(tokens[cursor].value))) cursor++;
+            }
+        }
         const words = tokens.slice(start, cursor);
         if (cursor > tokens.length) fail(line, 'Incomplete condition predicate');
         const command = parseCommand([{ value: 'require', quoted: false }, ...words], line);
@@ -679,7 +695,8 @@ function formatPredicate(predicate: MapScriptPredicate): string {
     if (predicate.kind === 'currency') return `currency ${predicate.currency} ${predicate.comparison} ${operand}`;
     if (predicate.kind === 'count') return `count ${predicate.id} ${predicate.comparison} ${operand}`;
     if (predicate.kind === 'metric') return `metric ${predicate.name} ${predicate.comparison} ${operand}`;
-    if (predicate.kind === 'proof' || predicate.kind === 'rule' || predicate.kind === 'type') return `${predicate.kind} ${JSON.stringify(predicate.text)}`;
+    if (predicate.kind === 'proof' || predicate.kind === 'rule' || predicate.kind === 'type') return `${predicate.kind} ${JSON.stringify(predicate.text)}`
+        + ('allowedTags' in predicate && predicate.allowedTags ? ` using ${predicate.allowedTags.join(' ')}` : '');
     if (predicate.kind === 'rule-name') return `rule-name ${JSON.stringify(predicate.pattern)}`;
     if (predicate.kind === 'ordinal') return `ordinal ${predicate.slot} ${predicate.comparison} ${JSON.stringify(JSON.stringify(predicate.value))}`;
     if (predicate.kind === 'tile') return `tile ${predicate.id} ${predicate.comparison} ${TILE_NAMES[predicate.type]}`;
@@ -908,7 +925,9 @@ function changeMember(values: string[], id: string, present: boolean): void {
 }
 
 function engineQuery(predicate: MapScriptPredicate): MapScriptEngineQuery | undefined {
-    if (predicate.kind === 'proof' || predicate.kind === 'rule' || predicate.kind === 'type') return { kind: predicate.kind, text: predicate.text };
+    if (predicate.kind === 'proof' || predicate.kind === 'rule') return { kind: predicate.kind, text: predicate.text,
+        ...(predicate.allowedTags ? { allowedTags: [...predicate.allowedTags] } : {}) };
+    if (predicate.kind === 'type') return { kind: predicate.kind, text: predicate.text };
     if (predicate.kind === 'rule-name') return { kind: predicate.kind, pattern: predicate.pattern };
     if (predicate.kind === 'rule-present' || predicate.kind === 'type-present') return { kind: predicate.kind, id: predicate.id };
     return undefined;

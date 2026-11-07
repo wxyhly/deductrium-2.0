@@ -798,18 +798,18 @@ class Game {
                     return true;
                 }
                 // [p]门：任意sheet满足（无断言/假设 + 某步骤wrap后ast等于门文本）
-                if (data.p) {
+                if (data.pi || data.p) {
                     const ast = parseGateAst(tile, "wff");
                     if (ast)
                         this.hsLayer.rememberGate(ast);
-                    return ast ? this.hsLayer.checkPropGate(ast) : false;
+                    return ast ? this.hsLayer.checkPropGate(ast, data.pi ? ['propositional', 'intuitionistic'] : undefined) : false;
                 }
                 // [d]门：规则表中存在文本等价规则
-                if (data.d) {
+                if (data.di || data.d) {
                     const ast = parseGateAst(tile, "rule");
                     if (ast)
                         this.hsLayer.rememberGate(ast);
-                    return ast ? this.hsLayer.checkRuleGate(ast) : false;
+                    return ast ? this.hsLayer.checkRuleGate(ast, data.di ? ['propositional', 'intuitionistic'] : undefined) : false;
                 }
                 if (data.t) {
                     const text = typeof tile.text === "string" ? tile.text : tile.text[LangMgr.lang] ?? Object.values(tile.text)[0];

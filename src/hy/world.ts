@@ -298,7 +298,7 @@ const PRESENTATION = new Set(['color', 'textColor', 'background', 'appearance', 
 function goal(tile: TileBlock): string {
     const data = Object.fromEntries(Object.entries(tile.data ?? {}).filter(([key]) => !PRESENTATION.has(key)));
     // Road/reward text is display-only. A proof gate's text and #imm are actual conditions.
-    const puzzle = tile.type === 2 && (data.p || data.d || data.t || data.td || data.puzzle !== undefined);
+    const puzzle = tile.type === 2 && (data.pi || data.di || data.p || data.d || data.t || data.td || data.puzzle !== undefined);
     const immediate = Object.values(typeof tile.text === 'string' ? { text: tile.text } : tile.text).some(t => t.endsWith('#imm'));
     return JSON.stringify(ordered({ type: tile.type, data, ...(puzzle || immediate ? { text: tile.text } : {}) }));
 }

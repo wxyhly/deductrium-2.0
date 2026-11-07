@@ -21,6 +21,27 @@ import { checkDeletion, deleteSelection, planDeletion } from "./editing.js";
 import { findTargets, targetAtom, targetList } from "./targets.js";
 import { ProofNavigator } from "./proof-navigation.js";
 import { MapAxiomPolicy } from "./map-policy.js";
+import { permitsProvenance, ruleProvenance, stepProvenance } from "./provenance.js";
+import { PROOF_TAGS } from "./proof-tags.js";
+function appendProofTags(host, value) {
+    const labels = document.createElement('span');
+    labels.className = 'proof-tags';
+    labels.dataset.provenanceValid = String(value.valid);
+    labels.dataset.proofSources = value.sources.map(source => source.id).join(' ');
+    labels.title = value.valid ? value.sources.map(source => `${source.id} [${source.tag}]`).join('\n')
+        : value.error ?? (LangMgr.lang === 'zh' ? '无法确认证明来源' : 'Proof sources could not be verified');
+    for (const tag of value.valid ? value.tags : ['unknown']) {
+        const badge = document.createElement('span');
+        badge.className = 'proof-tag';
+        badge.dataset.proofTag = tag;
+        const label = PROOF_TAGS.find(label => label.id === tag);
+        badge.textContent = label ? (LangMgr.lang === 'zh' ? label.zh : label.en)
+            : LangMgr.lang === 'zh' ? '来源未确认' : 'Unverified sources';
+        labels.appendChild(badge);
+    }
+    if (labels.hasChildNodes())
+        host.appendChild(labels);
+}
 // a/d 开头的公理规则在存档中只存名称占位（name:ax:.），内容以初始定义为准：
 // 这样存档体积小、作者更新 init 规则后玩家无需重置存档。
 // 此处预解析 init 文本，构建 名字→完整规则行 的映射供占位符恢复。
@@ -174,7 +195,7 @@ export class HSLayer {
     }
     // [p]门判定：任意sheet满足（无断言/假设 + 某步骤wrap后ast等于目标）
     // 步骤在 c/v 文件夹内时，ast 需包上相应条件/量词（captureScope 得层级再 wrap）
-    checkPropGate(ast) {
+    checkPropGate(ast, allowedTags) {
         const gui = this.sheetGui;
         gui.saveCurrentSheet(); // 激活sheet ctx 最新
         const saved = this.hilbertSystem.saveContext();
@@ -191,7 +212,8 @@ export class HSLayer {
                         if (p.from.type === "d") {
                             try {
                                 const wrapped = this.hilbertSystem.ref_addCaptureScopeToAST(p.ast, this.hilbertSystem.captureScope(null, p, []));
-                                if (wrapped.equal(ast) && (!this.mapPolicy || this.mapPolicy.allowsStep(p)))
+                                if (wrapped.equal(ast) && (!this.mapPolicy || this.mapPolicy.allowsStep(p))
+                                    && (allowedTags === undefined || permitsProvenance(stepProvenance(this.hilbertSystem, p), allowedTags)))
                                     return true;
                             }
                             catch { /* 层级捕获失败（如v作用域缺断言）跳过 */ }
@@ -211,7 +233,7 @@ export class HSLayer {
         }
     }
     // [d]门判定：规则表中（忽略文件夹结构，全部规则）存在文本等价规则
-    checkRuleGate(ast) {
+    checkRuleGate(ast, allowedTags) {
         for (const rule of this.hilbertSystem.rules.values()) {
             if (rule.error)
                 continue;
@@ -219,7 +241,8 @@ export class HSLayer {
                 continue;
             try {
                 const ruleAst = new HSParser().parse(rule.toString(), "rule");
-                if (ruleAst && ruleAst.equal(ast))
+                if (ruleAst && ruleAst.equal(ast)
+                    && (allowedTags === undefined || permitsProvenance(ruleProvenance(this.hilbertSystem, rule), allowedTags)))
                     return true;
             }
             catch { }
@@ -230,9 +253,15 @@ export class HSLayer {
         this.ruleListView.allowDrop = () => !this.cmdEngine.isExecuting() && !this.navigator.active;
         // 规则表
         this.ruleListView.renderExtra = it => {
+            const result = document.createElement('span');
+            result.className = 'proof-rule-meta';
             const span = document.createElement('span');
             span.classList.add("extra-rule", "extra-" + (["m<>", "m=", "mcpt", "c", "v"].includes(it.name) || it.name[0] === "a" || it.name === "mp" ? "a" : it.name[0] === "d" ? "d" : "t"));
-            return span;
+            result.appendChild(span);
+            const rule = this.hilbertSystem.rules.get(it.name);
+            if (!it.children && rule)
+                appendProofTags(result, ruleProvenance(this.hilbertSystem, rule));
+            return result;
         };
         this.ruleListView.renderContent = (it, span) => {
             if (this.hilbertSystem.rules.get(it.name)?.error) {
@@ -503,6 +532,8 @@ export class HSLayer {
                 val = `${data.deduction} ${data.conditions.map(p => p.name || p.id).join(" ")}`;
             }
             new SyntaxViewer(span, new HSParser, val, "cmd");
+            if (item.from.type === 'd')
+                appendProofTags(span, stepProvenance(this.hilbertSystem, item));
             return span;
         };
         this.propListView.onRename = (p, name) => {

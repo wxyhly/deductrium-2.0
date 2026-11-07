@@ -66,6 +66,34 @@
 
 内置推理规则解锁复用现有证明和依赖，不将未迁移定理替换成公理。地图显式添加的公理保留完整公式和所有权，不能覆盖现有玩家规则。未迁移的 1.0 类型论战术、定义谜题检查器及引擎扩展见 [1.0 行为覆盖说明](map-script-coverage.md)。
 
+## 证明来源与直觉命题逻辑
+
+正常 `index.html` 主世界已挂载直觉命题逻辑区域，入口位于 a3 区域下方规则门 `$0→($0→$1)⊢$0→$1` 旁的外侧空白处，可沿原路双向返回。使用原来的生存或创造存档，不另建世界存档；既有位置、奖励与证明保留。进入后须领取工具包才会解锁 `a3i` 等直觉公理，主世界的 `a3` 保持原样。地图编辑器的官方底图和独立 `?mod-world` 试玩不自动叠加此区域。
+
+规则和证明步骤旁的标签来自其最终结论实际使用的公理链；悬停可查看原始公理名。未参与结论的旁支不计入来源。宏、规则组合和改名继续追踪原始来源，读档后重新计算。自定义公理标为 `custom`；无法确认、循环或超过检查预算的证明不通过带来源限制的门。
+
+普通 `#p` / `#d` 保持现有行为。`#pi` / `#di` 分别检查命题证明和规则，且只接受 `propositional` 与 `intuitionistic` 来源。脚本可以显式指定同样的条件：
+
+```text
+on pass
+  event repeat
+  require proof "($p→$q)→¬$q→¬$p" using propositional intuitionistic
+end
+```
+
+规则门改用 `require rule "条件⊢结论" using propositional intuitionistic`。省略 `using` 不限制来源。`a1`、`a2`、`mp` 属于 `propositional`；`a3`、经典连接词定义和 `mcpt` 属于 `classical`，不会因宏改名而变成直觉主义证明。
+
+可选的 `a3i` 公理公式与旧 `.a30` 相同：`⊢($1→$2)→¬$2→¬$1`。旧 `.a30` 的现有推导使用 `a3`，仍是经典来源；地图通过 `unlock rule a3i` 独立提供直觉主义公理。完整的连接词规则也需显式解锁，不自动加入主游戏。`examples/intuitionistic-propositional.map-project.json` 可继续编辑，配套 `.world.json` 可直接作为扩展世界游玩。
+
+新增连接词公理沿用游戏的符号命名：
+
+| 名称 | 作用 |
+| --- | --- |
+| `d/\i`、`d/\i1`、`d/\i2` | 合取引入、左消去、右消去 |
+| `d\/i`、`d\/i1`、`d\/i2` | 析取消去、左引入、右引入 |
+| `d~i`、`d~i1` | 否定引入、矛盾推出任意命题 |
+| `d<>i`、`d<>i1`、`d<>i2` | 等价引入、正向消去、反向消去 |
+
 ## mod 入口与世界模式
 
 项目面板展开发布设置，选中可通行砖块设为入口，选择朝向和模式，应用后导出世界 JSON 或试玩：
@@ -101,4 +129,4 @@
 
 `test/test-map-editor.mjs`、`test/test-map-module-update.mjs`、`test/test-map-economy.mjs`、`test/test-map-world.mjs`、`test/test-world-save-load.mjs`、`test/test-map-half-plane.mjs`、`test/test-map-script-events.mjs` 验证模型、几何、账本、事件与迁移；`test/browser/map-editor.mjs`、`test/browser/map-world.mjs`、`test/browser/map-half-plane.mjs`、`test/browser/map-script-events.mjs` 验证桌面和手机的实际编辑、发布、地图银行、半平面入口、脚本模板、保存重载、升级恢复和跨世界隔离。
 
-自定义 data 字段不会自动成为新 action；旧硬编码奖励名不会因模块前缀而产生新行为。未移植的类型论关卡与新公理来源体系不在本次范围内。
+自定义 data 字段不会自动成为新 action；旧硬编码奖励名不会因模块前缀而产生新行为。未移植的类型论关卡仍不在本次范围内。

@@ -678,3 +678,28 @@ body {
 #propListWrapper .item-row.row-dep-after:nth-of-type(2n) {
     background-color: #dfe9fb;
 }
+.proof-rule-meta, .proof-tags {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+.proof-tags { margin-inline-start: 4px; vertical-align: middle; }
+.proof-tag {
+    display: inline-block;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 0 3px;
+    font-size: 10px;
+    line-height: 1.4;
+    color: #526777;
+    white-space: normal;
+}
+.proof-tag[data-proof-tag="classical"] { color: #9d4d27; }
+.proof-tag[data-proof-tag="intuitionistic"] { color: #287558; }
+.proof-tag[data-proof-tag="custom"], .proof-tag[data-proof-tag="unknown"] { color: #a34562; }
+html[data-theme="dark"] .proof-tag { color: #adc2d7; }
+html[data-theme="dark"] .proof-tag[data-proof-tag="classical"] { color: #edb781; }
+html[data-theme="dark"] .proof-tag[data-proof-tag="intuitionistic"] { color: #8cdbb7; }
+html[data-theme="dark"] .proof-tag[data-proof-tag="custom"],
+html[data-theme="dark"] .proof-tag[data-proof-tag="unknown"] { color: #f1a6bd; }

@@ -33,7 +33,7 @@ export class Serde {
     }
     deserialize(data: any) {
         this.hs.renamedSysRule = new Map(data.rsr ?? []);
-        this.deserializeRulelist(data.r);
+        this.deserializeRulelist(data.r, data.mapRules ?? []);
         this.hsLayer.captureMapScriptRules?.(data.mapRules ?? []);
         this.deserializeSheets(data.s);
         this.rv.idCounter = data.ri || 1;
@@ -108,11 +108,20 @@ export class Serde {
         iter(this.ruleList);
         return lines.join("\n");
     }
-    deserializeRulelist(data: string) {
+    deserializeRulelist(data: string, mapRules: readonly string[] = []) {
         // 与addRules相同格式：逐行解析 (uuid)前缀 + 文件夹大括号 + 规则；uuid写入ListNode
         // 直接复用hsLayer.addRules（它已支持(uuid)前缀、文件夹嵌套、自动补hyp）
         this.ruleList.length = 0;
         this.hs.rules.clear();
+        if (mapRules.length) {
+            // Map commits append owned rules after user macros. Resolve the saved
+            // map definitions first, then replay the original list in its UI order.
+            this.hsLayer.addRules(data);
+            const dependencies = mapRules.map(name => [name, this.hs.rules.get(name)] as const);
+            this.hs.rules.clear();
+            for (const [name, rule] of dependencies) if (rule) this.hs.rules.set(name, rule);
+            this.ruleList.length = 0;
+        }
         this.hsLayer.addRules(data);
     }
 }

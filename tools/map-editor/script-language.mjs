@@ -1,4 +1,7 @@
 import {SCRIPT_GROUPS} from './script-help.mjs';
+import {PROOF_TAGS} from '../../js/hs/proof-tags.js';
+
+const proofTags = PROOF_TAGS.map(tag => tag.id);
 
 const comparisons = ['>=', '<=', '==', '!=', '>', '<'];
 const layers = ['D-layer', 'T-layer', 'P-layer', 'G-layer'];
@@ -77,7 +80,7 @@ for (const group of SCRIPT_GROUPS) for (const item of group.entries) {
     }
 }
 for (const [head, seconds] of commands) { vocabulary.add(head); for (const word of seconds) vocabulary.add(word); }
-for (const word of [...functions, ...layers, ...tileTypes, ...metrics, 'and', 'or', 'not', 'next', 'base']) vocabulary.add(word);
+for (const word of [...functions, ...layers, ...tileTypes, ...metrics, ...proofTags, 'using', 'and', 'or', 'not', 'next', 'base']) vocabulary.add(word);
 
 /** Non-overlapping spans only; whitespace is preserved by gaps, never rewritten. */
 export function tokenizeScript(source) {
@@ -116,7 +119,7 @@ function numberCandidates(words, ids, logical = false) {
     return ['+', '-', '*', ...(logical ? ['and', 'or'] : [])];
 }
 
-function conditionCandidates(words, ids, logical) {
+function conditionCandidates(words, ids, logical, following) {
     const split = words.findLastIndex(word => word === 'and' || word === 'or');
     const part = words.slice(split + 1);
     while (part[0] === '(' || part[0] === 'not') part.shift();
@@ -124,6 +127,16 @@ function conditionCandidates(words, ids, logical) {
     const [kind] = part;
     const at = part.length - 1;
     const idKind = kind.startsWith('not-') ? kind.slice(4) : kind;
+    if (['proof', 'rule'].includes(kind) && /^"[\s\S]*"$/.test(part[1] ?? '')) {
+        if (at === 1) return ['using', ...(logical ? ['and', 'or'] : [])];
+        if (part[2] === 'using' && part.at(-1) !== ')') {
+            // Exclude tags on either side of the caret, stopping at this predicate's end.
+            const end = following.findIndex(word => ['and', 'or', ')'].includes(word));
+            const selected = new Set([...part.slice(3), ...following.slice(0, end < 0 ? following.length : end)]);
+            const complete = part.length > 3 && part.slice(3).every(tag => proofTags.includes(tag));
+            return [...proofTags.filter(tag => !selected.has(tag)), ...(logical && complete ? ['and', 'or'] : [])];
+        }
+    }
     if (['money', 'currency', 'count', 'metric'].includes(kind)) {
         const comparisonAt = kind === 'money' ? 1 : 2;
         if (at < comparisonAt - 1) return ids[kind] ?? [];
@@ -146,10 +159,10 @@ function conditionCandidates(words, ids, logical) {
     return predicates.has(kind) && logical ? ['and', 'or'] : [];
 }
 
-function candidates(words, ids) {
+function candidates(words, ids, following) {
     if (!words.length) return [...commands.keys()];
     const [op, kind] = words;
-    if (['require', 'if', 'elif'].includes(op)) return conditionCandidates(words.slice(1), ids, op !== 'require');
+    if (['require', 'if', 'elif'].includes(op)) return conditionCandidates(words.slice(1), ids, op !== 'require', following);
     if (op === 'exchange') {
         if (words.length === 1) return ids.bank;
         if (words.length === 2) return ids.currency;
@@ -191,8 +204,13 @@ export function completeScript(source, cursor, context = {}) {
         start--;
     }
     const words = before.slice(start).map(token => token.value);
+    const after = tokens.filter(token => token.start >= to);
+    let end = 0, previous = to;
+    while (end < after.length && after[end].value !== ';' && after[end].kind !== 'comment'
+        && !/[\r\n]/.test(source.slice(previous, after[end].start))) previous = after[end++].end;
+    const following = after.slice(0, end).map(token => token.value);
     const result = [], seen = new Set();
-    for (const value of candidates(words, symbols(source, tokens, context))) {
+    for (const value of candidates(words, symbols(source, tokens, context), following)) {
         if (typeof value !== 'string' || !value.startsWith(prefix) || value === original || seen.has(value)) continue;
         seen.add(value);
         result.push({from, to, label: value, insertText: value});

@@ -2,7 +2,7 @@ import { HWorld } from "./hworld.js";
 import { Serde } from "./serde.js";
 export class HyLayer {
     canvas = document.getElementById("hyper");
-    world = new HWorld(this.canvas);
+    world = new HWorld(this.canvas, true);
     serde = new Serde(this.world);
     onchange;
     moveSpeed = 0.5;

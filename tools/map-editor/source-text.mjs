@@ -127,7 +127,7 @@ export class MapDocument {
             if (name !== undefined) { pos += name.length + 4; names.set(name, [...tile]); }
             for (;;) {
                 if (text.startsWith('[=', pos)) pos = bracketEnd(text, pos);
-                else { const shortcut = text.slice(pos).match(/^\[(p|d|t|td|never)\]/); if (!shortcut) break; pos += shortcut[0].length; }
+                else { const shortcut = text.slice(pos).match(/^\[(pi|di|p|d|t|td|never)\]/); if (!shortcut) break; pos += shortcut[0].length; }
             }
             if (parent === 'type') inTT = true;
             const record = {id:String(firstLine + index), line:firstLine + index, index, raw, rawStart:offsets[pos],

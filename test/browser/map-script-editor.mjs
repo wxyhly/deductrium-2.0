@@ -90,6 +90,7 @@ async function testHighlight(page, screenshots) {
         '  if count visits >= 2 and not flag ready',
         '    give money max(0, currency(type) - 1.25)',
         '    require tile @self != wall',
+        '    require proof "$p→$p" using propositional intuitionistic',
         '    message ' + JSON.stringify('中文 😀 引号" 反斜线\\ 换行\n <b>literal</b> // ; req'),
         '  end',
         'end',
@@ -101,6 +102,8 @@ async function testHighlight(page, screenshots) {
         'HTML-looking script strings and comments remain inert text');
     for (const kind of ['keyword','string','number','comment','operator','reference'])
         assert.ok(await page.locator('#script-highlight .script-token-'+kind).count()>0,kind+' is visibly decorated');
+    const keywords = await page.locator('#script-highlight .script-token-keyword').allTextContents();
+    for (const word of ['using','propositional','intuitionistic']) assert.ok(keywords.includes(word),word+' is highlighted');
     const geometry=await field(page).evaluate(element => {
         const pre=document.getElementById('script-highlight'),a=element.getBoundingClientRect(),b=pre.getBoundingClientRect();
         const css=getComputedStyle(element),style=getComputedStyle(pre);
@@ -172,11 +175,31 @@ async function testCompletion(page,screenshots) {
         ['require tile do','door','require tile door '],
         ['if not fl','flag','if not flag '],
         ['set language z','zh','set language zh '],
+        ['require proof "$p→$p" u','using','require proof "$p→$p" using '],
+        ['require rule "$p,$p→$q⊢$q" using propositional intu','intuitionistic',
+            'require rule "$p,$p→$q⊢$q" using propositional intuitionistic '],
         ['add axiom zBrowserAxiom "⊢$p"\nrequire axiom zB','zBrowserAxiom',
             'add axiom zBrowserAxiom "⊢$p"\nrequire axiom zBrowserAxiom '],
         ['on touch\n  add axiom zBrowserEvent "⊢$p"; require axiom zBr','zBrowserEvent',
             'on touch\n  add axiom zBrowserEvent "⊢$p"; require axiom zBrowserEvent '],
     ]) {await draft(page,source);await choose(page,label);assert.equal(await field(page).inputValue(),expected);await matchesSource(page);}
+    const taggedFormula=JSON.stringify('😀 using classical; $p→$p \\"');
+    const prefix=`if proof ${taggedFormula} using propositional `;
+    const suffix=' classical) and flag ready\nmessage "tail"';
+    await draft(page,prefix+'intuWrong'+suffix,prefix.length+4);
+    assert.equal((await labels(page)).includes('propositional'),false);
+    assert.equal((await labels(page)).includes('classical'),false);
+    await choose(page,'intuitionistic');
+    assert.equal(await field(page).inputValue(),prefix+'intuitionistic'+suffix,
+        'tag completion preserves the exact quoted formula, selected tags and following condition');
+    await matchesSource(page);
+    await draft(page,'require proof "$p" using propositional ');
+    const remaining=await labels(page);
+    assert.ok(remaining.includes('classical')&&remaining.includes('intuitionistic'));
+    assert.equal(remaining.includes('propositional'),false,'already selected tags are excluded');
+    await draft(page,'require type "True" ');await hiddenMenu(page);
+    await draft(page,'if type "True" ');
+    assert.equal((await labels(page)).includes('using'),false,'type does not advertise a source policy');
     for(const source of ['// req','  // req','message "req','message "中\\" req','message "req"','on nonsense ']) {
         await draft(page,source);await hiddenMenu(page);
         assert.equal(await field(page).inputValue(),source,'no replacement inside comments/quotes or unrelated contexts');

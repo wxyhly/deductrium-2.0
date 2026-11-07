@@ -78,4 +78,6 @@ DSL 支持钥匙、旗标、奖励、金额、计数及已接入引擎的证明 
 
 `add axiom` 可以写在任意触发事件中，不限于初始化；添加成功后默认可用。`enable axiom` / `disable axiom` 与公理条件按实际执行顺序识别同一脚本新增或移除的公理，失败或取消仍整体回滚。
 
+`#pi` / `#di` 是带来源限制的证明门 / 规则门，只接受命题逻辑与直觉逻辑来源。纯脚本写法为 `require proof "目标" using propositional intuitionistic` 或 `require rule "条件⊢结论" using propositional intuitionistic`。来源标签按实际证明依赖计算，改名和宏不会抹去 `a3` 等经典来源。`a3i` 是与旧 `.a30` 同公式的可选直觉逻辑公理，须由地图显式解锁。正常 `index.html` 已在 a3 区域下方规则门 `$0→($0→$1)⊢$0→$1` 旁的外侧空白处挂载直觉逻辑区域，领取工具包解锁 `d/\i`、`d\/i`、`d~i`、`d<>i` 等符号命名公理；沿用主世界存档。可编辑源为 `examples/intuitionistic-propositional.map-project.json`，配套 `.world.json` 可单独试玩；编辑器的官方底图不叠加内置区域。详情见 [证明来源说明](../../doc/map-mod-design.md#证明来源与直觉命题逻辑)。
+
 `node test/test-map-attachment.mjs` 与 `node test/browser/map-attachment.mjs` 验证整体连接的几何、原子性、桌面 / 手机交互及发布。

@@ -1,5 +1,6 @@
 /** A bounded, data-only map language. This module has no game or DOM dependencies. */
 import { createCurrencyBalances, exchange, validateBankConfig, validateCurrencyBalances, validateCurrencyId } from './economy.js';
+import { validProofTags } from '../hs/proof-tags.js';
 const MAX_SOURCE = 16_384;
 const MAX_COMMANDS = 256;
 const MAX_DEPTH = 16;
@@ -282,7 +283,20 @@ function parseCommand(tokens, line) {
         return command;
     }
     if (op === 'require') {
-        if (kind === 'proof' || kind === 'rule' || kind === 'type') {
+        if (kind === 'proof' || kind === 'rule') {
+            if (tokens.length === 3) {
+                shape(3, 2);
+                return { line, op, kind, text: words[2] };
+            }
+            if (words[3] !== 'using' || tokens.length < 5
+                || tokens.some((token, i) => token.quoted !== (i === 2)))
+                fail(line, 'Expected using followed by proof source tags');
+            const allowedTags = words.slice(4);
+            if (!validProofTags(allowedTags))
+                fail(line, 'Unknown, duplicate, or empty proof source tags');
+            return { line, op, kind, text: words[2], allowedTags };
+        }
+        if (kind === 'type') {
             shape(3, 2);
             return { line, op, kind, text: words[2] };
         }
@@ -439,8 +453,14 @@ function parseCondition(input, line) {
             if (cursor === operandStart)
                 fail(line, 'Incomplete condition predicate');
         }
-        else
+        else {
             cursor += kind === 'ordinal' || kind === 'tile' ? 4 : 2;
+            if ((kind === 'proof' || kind === 'rule') && at('using')) {
+                cursor++;
+                while (cursor < tokens.length && (tokens[cursor].quoted || ![')', 'and', 'or'].includes(tokens[cursor].value)))
+                    cursor++;
+            }
+        }
         const words = tokens.slice(start, cursor);
         if (cursor > tokens.length)
             fail(line, 'Incomplete condition predicate');
@@ -641,7 +661,8 @@ function formatPredicate(predicate) {
     if (predicate.kind === 'metric')
         return `metric ${predicate.name} ${predicate.comparison} ${operand}`;
     if (predicate.kind === 'proof' || predicate.kind === 'rule' || predicate.kind === 'type')
-        return `${predicate.kind} ${JSON.stringify(predicate.text)}`;
+        return `${predicate.kind} ${JSON.stringify(predicate.text)}`
+            + ('allowedTags' in predicate && predicate.allowedTags ? ` using ${predicate.allowedTags.join(' ')}` : '');
     if (predicate.kind === 'rule-name')
         return `rule-name ${JSON.stringify(predicate.pattern)}`;
     if (predicate.kind === 'ordinal')
@@ -915,7 +936,10 @@ function changeMember(values, id, present) {
         values.splice(index, 1);
 }
 function engineQuery(predicate) {
-    if (predicate.kind === 'proof' || predicate.kind === 'rule' || predicate.kind === 'type')
+    if (predicate.kind === 'proof' || predicate.kind === 'rule')
+        return { kind: predicate.kind, text: predicate.text,
+            ...(predicate.allowedTags ? { allowedTags: [...predicate.allowedTags] } : {}) };
+    if (predicate.kind === 'type')
         return { kind: predicate.kind, text: predicate.text };
     if (predicate.kind === 'rule-name')
         return { kind: predicate.kind, pattern: predicate.pattern };

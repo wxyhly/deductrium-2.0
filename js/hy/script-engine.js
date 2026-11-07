@@ -3,11 +3,13 @@ import { NodeType } from '../asttype.js';
 import { Deduction } from '../hs/core/deduction.js';
 import { AtomSolver } from '../hs/core/assert.js';
 import { initialCreativeRules } from '../hs/core/initial.js';
+import { intuitionisticRules } from '../hs/core/intuitionistic.js';
+import { validProofTags } from '../hs/proof-tags.js';
 import { MCPT } from '../hs/core/combine.js';
 import { getSurvivalRules } from '../hs/rewards.js';
 import { validateMapTypeId, validateMapTypeQuery } from '../tt/gui.js';
 const parser = new HSParser();
-const catalog = new Map(initialCreativeRules.split('\n').map(s => s.trim())
+const catalog = new Map((initialCreativeRules + '\n' + intuitionisticRules).split('\n').map(s => s.trim())
     .filter(s => s && !s.startsWith('//') && !s.startsWith('{') && !s.startsWith('}'))
     .map(s => [s.slice(0, s.indexOf(':')), s]));
 function parseHS(text, mode) {
@@ -168,8 +170,11 @@ function stageHS(hs, state) {
 export function createMapScriptEngine(hs, tt) {
     const validate = (request) => {
         if ('kind' in request) {
-            if (request.kind === 'proof' || request.kind === 'rule')
+            if (request.kind === 'proof' || request.kind === 'rule') {
                 parseHS(request.text, request.kind === 'proof' ? 'wff' : 'rule');
+                if (request.allowedTags !== undefined && !validProofTags(request.allowedTags))
+                    throw new Error('Invalid proof source tags');
+            }
             else if (request.kind === 'type')
                 validateMapTypeQuery(request.text);
             else if (request.kind === 'rule-name')
@@ -209,9 +214,9 @@ export function createMapScriptEngine(hs, tt) {
             }
             const { view } = stageHS(hs, state);
             if (request.kind === 'proof')
-                return view.checkPropGate(parseHS(request.text, 'wff'));
+                return view.checkPropGate(parseHS(request.text, 'wff'), request.allowedTags);
             if (request.kind === 'rule')
-                return view.checkRuleGate(parseHS(request.text, 'rule'));
+                return view.checkRuleGate(parseHS(request.text, 'rule'), request.allowedTags);
             const rules = view.getMapScriptSystem().rules;
             const id = 'id' in request ? request.id : '';
             const matches = request.kind === 'rule-name' ? glob(request.pattern) : (name) => name === id;

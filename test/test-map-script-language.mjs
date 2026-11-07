@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tokenizeScript, completeScript} from '../tools/map-editor/script-language.mjs';
-import {SCRIPT_GROUPS} from '../tools/map-editor/script-help.mjs';
+import {SCRIPT_GROUPS, SCRIPT_RULES} from '../tools/map-editor/script-help.mjs';
+import {PROOF_TAGS} from '../js/hs/proof-tags.js';
 
 function at(marked, context) {
     const cursor = marked.indexOf('|');
@@ -191,13 +192,76 @@ test('deduplication, limit and ID filtering protect plain-text edits', () => {
     has('open gate |', ['door'], {tiles: [{id: 'door'}]});
 });
 
-test('invalid API input returns empty results, no DOM or compiled JS dependencies', () => {
+test('invalid API input returns empty results without DOM access', () => {
     for (const source of [null, undefined, 123, {}, []]) {
         assert.deepEqual(tokenizeScript(source), []);
         assert.deepEqual(completeScript(source, 0), []);
     }
     for (const cursor of [undefined, null, NaN, Infinity, -1, 1.5, 999]) assert.deepEqual(completeScript('set ', cursor), []);
     for (const context of [null, false, 1, {tiles: null, banks: 'bad', axioms: [null, 1, {}]}]) assert.doesNotThrow(() => completeScript('open gate ', 10, context));
+});
+
+test('proof provenance completion uses the shared catalogue and excludes selected tags on both sides', () => {
+    const tags = PROOF_TAGS.map(tag => tag.id);
+    assert.deepEqual(labels(at('require proof "$p→$p" using |')), tags);
+    assert.deepEqual(at(`require proof "$p" using ${tags.join(' ')} |`), []);
+    for (const kind of ['proof', 'rule']) {
+        has(`require ${kind} "$p→$p" u|`, ['using']);
+        has(`if ${kind} "$p→$p" |`, ['using', 'and', 'or']);
+        has(`elif not (${kind} "$p→$p" using propositional i|)`, ['intuitionistic']);
+        lacks(`require ${kind} "$p→$p" using propositional |`, ['propositional', 'using', 'and', 'or']);
+        const middle = labels(at(`if ${kind} "$p→$p" using propositional | classical) and flag ready`));
+        assert.ok(!middle.includes('propositional') && !middle.includes('classical'));
+        assert.ok(middle.includes('intuitionistic'));
+    }
+    has('if proof "$p" using propositional |', ['and', 'or', 'intuitionistic']);
+    lacks('if proof "$p" using |', ['and', 'or']);
+    has('if proof "$p" using propositional and rule "$p⊢$p" using |', ['propositional']);
+    has('if (proof "$p" using propositional) |', ['and', 'or']);
+    lacks('if (proof "$p" using propositional) |', ['using', 'intuitionistic']);
+    for (const marked of ['require type "True" |', 'if type "True" |', 'remember proof "$p" |',
+        'require rule-name "a*" |', 'require proof "$p" using classical; require type "True" |']) lacks(marked, ['using', ...tags]);
+    for (const separator of ['\n', '\r\n', ';']) {
+        has(`require proof "$p" using classical${separator}require proof "$q" using |`, ['classical']);
+        has(`require proof "$p" using |${separator}require rule "$q⊢$q" using classical`, ['classical']);
+    }
+});
+
+test('tag completion edits only its entire token and never alters a quoted formula', () => {
+    const formula = JSON.stringify('😀 using classical; and \\" $p→$p');
+    const marked = `if proof ${formula} using propositional intu|garbage and flag ready\r\nmessage "tail"`;
+    const source = marked.replace('|', '');
+    const edit = at(marked).find(item => item.label === 'intuitionistic');
+    assert.ok(edit);
+    assert.equal(source.slice(edit.from, edit.to), 'intugarbage');
+    assert.equal(source.slice(0, edit.from) + edit.insertText + source.slice(edit.to),
+        `if proof ${formula} using propositional intuitionistic and flag ready\r\nmessage "tail"`);
+    for (const cursor of [formula.indexOf('using'), formula.indexOf('classical')]) {
+        assert.deepEqual(completeScript(`require proof ${formula} using `, 'require proof '.length + cursor), []);
+    }
+    const text = `require rule ${formula} using ${PROOF_TAGS.map(tag => tag.id).join(' ')}`;
+    const tokens = tokenizeScript(text);
+    assert.deepEqual(tokens.filter(token => token.kind === 'string').map(token => text.slice(token.start, token.end)), [formula]);
+    for (const word of ['using', ...PROOF_TAGS.map(tag => tag.id)]) {
+        assert.ok(tokens.some(token => token.kind === 'keyword' && text.slice(token.start, token.end) === word), word);
+    }
+});
+
+test('IPC help templates and rules explain actual dependency whitelists', () => {
+    const entries = SCRIPT_GROUPS.flatMap(group => group.entries);
+    for (const id of ['require-proof-ipc', 'require-rule-ipc', 'if-engine-ipc', 'on-proof-gate-ipc', 'on-rule-gate-ipc']) {
+        const item = entries.find(entry => entry.id === id);
+        assert.ok(item, id);
+        assert.match(item.template, /using propositional intuitionistic/);
+        assert.ok(item.template.includes(item.select));
+    }
+    for (const tag of PROOF_TAGS) assert.ok(SCRIPT_RULES.includes(tag.id));
+    for (const text of ['实际证明依赖', '空白名单', 'type 不接受 using', 'a3', '其他工作表']) assert.ok(SCRIPT_RULES.includes(text));
+    for (const [kind, marker] of [['proof', '#pi（data.pi）'], ['rule', '#di（data.di）']]) {
+        assert.ok(entries.find(entry => entry.id === `on-${kind}-gate-ipc`).note.includes(marker));
+    }
+    assert.ok(SCRIPT_RULES.includes('a3i 是独立原始 IPC 公理'));
+    assert.ok(SCRIPT_RULES.includes('旧 .a30 的实际证明依赖 classical'));
 });
 
 test('every cursor in malformed mixed text produces valid bounded edit ranges', () => {

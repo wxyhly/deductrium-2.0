@@ -84,7 +84,13 @@ try {
         try {
             const official = await context.newPage();
             await official.goto(origin + '/?survival'); await ready(official);
-            const base = await readMap(official);
+            const mounted = await readMap(official);
+            const {id: builtinId, tiles: builtinTiles} = JSON.parse(await readFile(resolve(root,
+                'examples/intuitionistic-propositional.world.json'), 'utf8'));
+            const builtinNames = new Set(builtinTiles.map(tile=>`mod:${builtinId}::${tile.id}`));
+            const base = mounted.filter(([,tile])=>!builtinNames.has(tile.name));
+            assert.equal(mounted.length, base.length+builtinTiles.length,
+                'normal play mounts the built-in extension while custom-world validation uses the original base');
             assert.equal(base.length, 2120, 'fixture must be tested against the full official map');
             assert.equal(base.find(([h]) => h === '1')?.[1].type, 0);
             assert(!base.some(([h]) => h === '1,4'), 'entry must be outside the official map');
