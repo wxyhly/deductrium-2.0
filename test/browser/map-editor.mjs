@@ -86,6 +86,35 @@ try {
         const initialCanvas = await page.locator('#map').boundingBox();
         assert.ok(initialCanvas.height > viewport.height * .5, 'canvas owns the initial screen');
         if (viewport.width < 700) assert.ok(initialCanvas.y < (await page.locator('#inspector').boundingBox()).y, 'mobile canvas precedes property drawer');
+        const divider = page.locator('#inspector-resizer');
+        if (viewport.width > 700) {
+            const beforeResize = await snapshot(page), start = await page.locator('#inspector').boundingBox();
+            const bar = await divider.boundingBox();
+            await page.mouse.move(bar.x + bar.width / 2, bar.y + 80);
+            await page.mouse.down();
+            await page.mouse.move(bar.x + bar.width / 2 - 150, bar.y + 80, {steps: 5});
+            await page.mouse.up();
+            const wider = await page.locator('#inspector').boundingBox();
+            assert.equal(wider.width, start.width + 150, 'dragging the left divider widens properties');
+            assert.equal(await snapshot(page), beforeResize, 'resizing does not edit the project');
+            assert.equal(await page.locator('.resizing-inspector').count(), 0, 'pointer release ends resizing');
+            await page.waitForFunction(() => {
+                const canvas = document.getElementById('map');
+                return Math.abs(canvas.width - canvas.clientWidth * devicePixelRatio) < 2;
+            });
+            await page.reload(); await waitReady(page);
+            assert.equal((await page.locator('#inspector').boundingBox()).width, wider.width, 'width survives reload');
+            await page.setViewportSize({width: 900, height: 844});
+            await page.waitForFunction(() => Number(document.getElementById('inspector-resizer').getAttribute('aria-valuemax')) < innerWidth);
+            await divider.press('End');
+            assert.ok((await page.locator('#map').boundingBox()).width >= 258, 'width limit leaves room for the map');
+            assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+            await page.setViewportSize(viewport);
+            await divider.press('Home');
+            assert.equal((await page.locator('#inspector').boundingBox()).width, 260, 'minimum width');
+            await divider.dblclick();
+            assert.equal((await page.locator('#inspector').boundingBox()).width, start.width, 'double click restores default');
+        } else assert.equal(await divider.isVisible(), false, 'mobile retains the property drawer');
         assert.equal(await page.evaluate(async () => {
             const {LocalDraw} = await import('/js/hy/localdraw.js');
             const {tileTextColor, tileDisplayText} = await import('/js/hy/appearance.js');
@@ -112,6 +141,12 @@ try {
         assert.equal(await snapshot(page), emptyState, 'typing is not Apply');
         await openPanel(page, 'project'); await closePanel(page);
         assert.equal(await page.locator('#tile-name').inputValue(), 'not-applied', 'panel disclosure retains pending fields');
+        if (viewport.width > 700) {
+            await divider.press('ArrowLeft');
+            assert.equal(await page.locator('#tile-name').inputValue(), 'not-applied', 'resizing preserves unapplied fields');
+            assert.equal(await snapshot(page), emptyState);
+            await divider.dblclick();
+        }
         if (viewport.width < 700) {
             await page.locator('#toggle-inspector').click();
             assert.equal(await page.locator('#pending').isVisible(), true, 'collapsed drawer retains pending marker');
@@ -467,7 +502,7 @@ try {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'responsive layout has no horizontal overflow');
         await page.locator('#map').scrollIntoViewIfNeeded(); await page.screenshot({path: join(screenshots, `editor-${viewport.width}.png`)});
         assert.deepEqual(errors, [], 'no uncaught browser errors');
-        console.log(JSON.stringify({viewport, checks: 'progressive disclosure, exclusive panels, mobile drawer/pending fields, confirm cancellation, save protection, checkbox multi-selection, native rendering, Apply, shared script catalogue, caret insertion/native undo, pure checks/dirty retention, gutter scroll, JSON row/column, script error focus/goto/live validation, history, metadata, language/theme, empty hit, drag, brush/erase, selection/module, collision/mount/move/rotate/detach/remove, import/export, restoration, preview payload, layout'}));
+        console.log(JSON.stringify({viewport, checks: 'resizable/persistent properties, progressive disclosure, exclusive panels, mobile drawer/pending fields, confirm cancellation, save protection, checkbox multi-selection, native rendering, Apply, shared script catalogue, caret insertion/native undo, pure checks/dirty retention, gutter scroll, JSON row/column, script error focus/goto/live validation, history, metadata, language/theme, empty hit, drag, brush/erase, selection/module, collision/mount/move/rotate/detach/remove, import/export, restoration, preview payload, layout'}));
         await context.close();
     }
 
