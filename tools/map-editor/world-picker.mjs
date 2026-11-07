@@ -13,7 +13,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
     const toolbar = document.createElement('section');
     toolbar.id = 'world-picker-toolbar'; toolbar.className = 'world-picker-toolbar'; toolbar.hidden = true;
     toolbar.setAttribute('aria-label', '地图范围与入口选取');
-    toolbar.innerHTML = '<strong id="world-picker-title"></strong><p id="world-picker-status" role="status" aria-live="polite"></p><div class="world-picker-actions"><button type="button" id="world-picker-flip">翻转 mod 范围</button><button type="button" id="world-picker-cancel">取消</button><button type="button" id="world-picker-confirm" class="primary">确认选择</button></div><small>拖动地图平移 · 绿色涂色为 mod 范围 · 范围外只读 · Esc 取消</small>';
+    toolbar.innerHTML = '<strong id="world-picker-title"></strong><p id="world-picker-status" role="status" aria-live="polite"></p><div class="world-picker-actions"><button type="button" id="world-picker-flip">翻转 mod 范围</button><button type="button" id="world-picker-cancel">取消</button><button type="button" id="world-picker-confirm" class="primary">确认选择</button></div><small>拖动地图平移 · 选取时涂色为 mod 范围 · 确认后涂色侧不可写 · Esc 取消</small>';
     const edges = document.createElement('div');
     edges.className = 'world-picker-edges'; edges.hidden = true;
     edges.setAttribute('role', 'group'); edges.setAttribute('aria-label', '选择边界格的一条边');
@@ -68,7 +68,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         if (kind === 'region') {
             checkRegion();
             status.textContent = message || (draftRegion
-                ? `边界 [${draftRegion.hash || '原点'}] · 边 ${draftRegion.edge} · ${draftRegion.side === 1 ? 'mod 范围包含边界格' : 'mod 范围在边界格另一侧'}。${regionError || '涂色区域为 mod 范围，可点边号或翻转，再确认。'}`
+                ? `边界 [${draftRegion.hash || '原点'}] · 边 ${draftRegion.edge} · ${draftRegion.side === 1 ? 'mod 范围包含边界格' : 'mod 范围在边界格另一侧'}。${regionError || '当前涂色为 mod 范围；确认后遮罩翻到不可写侧。'}`
                 : '第 1 步：点选地图上的边界格；再从六条边中选择。');
             confirm.disabled = !draftRegion || !!regionError;
         } else if (kind === 'entry') {
@@ -261,6 +261,8 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
         }
         try {
             if (region) {
+                // Preview the chosen mod side while picking; after confirmation shade the readonly side.
+                const shadedSide = kind === 'region' ? region.side : -region.side;
                 // Lorentz plane <p,n>=0 becomes an exact orthogonal circle in the disk.
                 const normal = viewFrame(region.hash).mul(Rotor.rotate(region.edge * Math.PI / 3)).apply(polygon().n3);
                 ctx.save();
@@ -270,7 +272,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
                     const plane = new Path2D();
                     if (Math.abs(normal.z) < 1e-12) {
                         const length = Math.hypot(normal.x, normal.y), nx = normal.x/length, ny = normal.y/length;
-                        const sign = -region.side, tx = -ny, ty = nx;
+                        const sign = -shadedSide, tx = -ny, ty = nx;
                         plane.moveTo(tx*3,ty*3); plane.lineTo(-tx*3,-ty*3);
                         plane.lineTo(-tx*3+nx*sign*4,-ty*3+ny*sign*4);
                         plane.lineTo(tx*3+nx*sign*4,ty*3+ny*sign*4); plane.closePath();
@@ -281,7 +283,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
                         const radius=Math.sqrt(Math.max(0,cx*cx+cy*cy-1));
                         plane.arc(cx,cy,radius,0,2*Math.PI);
                         ctx.fillStyle='rgba(33,168,105,.17)';
-                        if (region.side*normal.z > 0) { const outside=new Path2D(disk); outside.addPath(plane); ctx.fill(outside,'evenodd'); }
+                        if (shadedSide*normal.z > 0) { const outside=new Path2D(disk); outside.addPath(plane); ctx.fill(outside,'evenodd'); }
                         else ctx.fill(plane);
                         ctx.beginPath(); ctx.arc(cx,cy,radius,0,2*Math.PI);
                     }
@@ -291,7 +293,7 @@ export function installWorldPicker(api, {onRegion, onEntry} = {}) {
                 for (const hash of api.world.atlasTile.rotors.keys()) {
                     if (!project.tiles.has(hash) && !(showOfficial && official.has(hash))) continue;
                     const allowed = regionContains(hash,region,polygon()) && !(showOfficial && official.has(hash));
-                    if (allowed) { ctx.fillStyle = 'rgba(29,174,103,.17)'; ctx.fill(tilePath(hash)); }
+                    if (kind === 'region' ? allowed : !allowed) { ctx.fillStyle = 'rgba(29,174,103,.17)'; ctx.fill(tilePath(hash)); }
                 }
                 if (kind === 'region') {
                     mark(region.hash,'rgba(231,162,28,.9)',false);

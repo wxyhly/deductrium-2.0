@@ -135,7 +135,7 @@ const overlayImage = async page => {
     await rendered(page);
     return page.locator('canvas.world-picker-overlay').screenshot();
 };
-async function assertModShading(page, region) {
+async function assertShading(page, region, picking = false) {
     await rendered(page);
     const samples = await page.evaluate(async region => {
         const {Hvec} = await import('/js/hy/algebra.js');
@@ -159,10 +159,14 @@ async function assertModShading(page, region) {
         return samples;
     }, region);
     assert.ok(samples.mod.length && samples.outside.length, 'sample visible whole tiles on both sides of the boundary');
-    assert.deepEqual(samples.mod.filter(({rgba:[r,g,b,a]}) => !a || g <= r || g <= b), [],
-        'every whole tile in the mod half-plane is shaded green');
-    assert.deepEqual(samples.outside.filter(({rgba:[,,,a]}) => a !== 0), [],
-        'outside the mod half-plane stays unshaded');
+    const shaded = picking ? samples.mod : samples.outside;
+    const unshaded = picking ? samples.outside : samples.mod;
+    assert.deepEqual(shaded.filter(({rgba:[r,g,b,a]}) => !a || g <= r || g <= b), [],
+        picking ? 'while picking, the mod half-plane is shaded green'
+            : 'after confirmation, the readonly half-plane is shaded green');
+    assert.deepEqual(unshaded.filter(({rgba:[,,,a]}) => a !== 0), [],
+        picking ? 'while picking, the readonly half-plane stays unshaded'
+            : 'after confirmation, the writable mod half-plane stays unshaded');
 }
 const nonadjacentOfficial = page => page.evaluate(async () => {
     const {Hvec} = await import('/js/hy/algebra.js');
@@ -367,9 +371,9 @@ async function testEdgeButtonHitTargets(page, viewport, screenshots) {
     for (let edge = 0; edge < 6; edge++) {
         await page.locator(`#world-picker-edge-${edge}`).click();
         assert.equal(await page.locator(`#world-picker-edge-${edge}`).getAttribute('aria-pressed'), 'true');
-        await assertModShading(page, {hash:boundaryHash, edge, side:1});
+        await assertShading(page, {hash:boundaryHash, edge, side:1}, true);
         await page.locator('#world-picker-flip').click();
-        await assertModShading(page, {hash:boundaryHash, edge, side:-1});
+        await assertShading(page, {hash:boundaryHash, edge, side:-1}, true);
         await page.locator('#world-picker-flip').click();
     }
     await page.keyboard.press('Escape');
@@ -393,6 +397,48 @@ async function testEdgeButtonHitTargets(page, viewport, screenshots) {
     assert.deepEqual(await formState(page), extensionDraft, 'cancelling keeps the unapplied extension form');
     assert.equal(await page.evaluate(async () => (await import('/js/hy/maploader.js')).blockMap.size), 0,
         'cancelling removes the temporary official base from an empty project');
+}
+
+async function testConfirmedReadonlyShading(page, viewport, screenshots) {
+    await canvasReady(page);
+    await page.locator('#file-menu > summary').click();
+    await page.locator('#new-project').click();
+    await page.evaluate(() => mapEditor.selectHash('', {jump:true}));
+    await beginPicker(page, 'region');
+    const rect = await page.locator('#map').boundingBox();
+    const point = viewport.width <= 700 ? {x:262, y:448}
+        : {x:rect.x + rect.width * .68, y:rect.y + rect.height * .65};
+    assert.equal(await page.evaluate(({x,y}) => document.elementFromPoint(x,y)?.id, point), 'map');
+    const hash = await page.evaluate(({x,y}) => mapEditor.hashAtPoint(x,y), point);
+    await page.mouse.click(point.x, point.y);
+    await page.locator('#world-picker-edge-2').click();
+    const chosen = {hash, edge:2, side:1};
+    const centerBoundary = () => page.evaluate(hash => {
+        const world = mapEditor.world;
+        mapEditor.selectHash(hash, {jump:true});
+        world.localCamMat = world.atlasTile.rotors.get(hash).conj();
+        mapEditor.redraw();
+    }, hash);
+    await centerBoundary();
+    await assertShading(page, chosen, true);
+    const before = await projectState(page);
+    await page.locator('#world-picker-confirm').click();
+    assert.deepEqual(await projectState(page), before, 'confirmation preserves the saved writable range until Apply');
+    assert.match(await page.locator('#world-settings-status').textContent(), /涂色侧不可写/);
+    await canvasReady(page);
+    await assertShading(page, chosen);
+    await openProject(page); await page.locator('#region-apply').click();
+    assert.deepEqual(await page.evaluate(() => mapEditor.project.region), chosen, 'shading never inverts the saved writable side');
+    await canvasReady(page); await assertShading(page, chosen);
+    assert.deepEqual(await page.evaluate(async region => {
+        const {regionContains} = await import('/tools/map-editor/geometry.mjs');
+        return [...mapEditor.world.atlasTile.rotors.keys()].filter(hash =>
+            mapEditor.project.canEdit(hash) !== regionContains(hash, region, mapEditor.world.atlasTile));
+    }, chosen), [], 'actual edit permissions agree with the unshaded half-plane');
+    await page.reload(); await ready(page);
+    assert.deepEqual(await page.evaluate(() => mapEditor.project.region), chosen);
+    await canvasReady(page); await centerBoundary(); await assertShading(page, chosen);
+    await page.screenshot({path:join(screenshots, `readonly-applied-${viewport.width}.png`)});
 }
 
 let browser;
@@ -433,9 +479,10 @@ try {
             }), officialBase, 'picker interactions leave all 2120 official tile bodies unchanged');
             await testStandaloneEntry(page, viewport, screenshots);
             await testEdgeButtonHitTargets(page, viewport, screenshots);
+            await testConfirmedReadonlyShading(page, viewport, screenshots);
             assert.deepEqual(errors, []);
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no mobile horizontal overflow');
-            console.log(JSON.stringify({viewport, region:'PASS', entry:'PASS', standaloneEntry:'PASS', edgeHitTargets:'PASS',
+            console.log(JSON.stringify({viewport, region:'PASS', entry:'PASS', standaloneEntry:'PASS', edgeHitTargets:'PASS', readonlyShading:'preview/confirm/apply/reload PASS',
                 canvas:'click/drag/edge/flip/cancel/paint suppression', drafts:'explicit apply/preservation/manual overlay sync',
                 persistence:'project download/upload/browser restore', officialReadonly:'PASS', errors, screenshots}));
         } finally {await context.close();}
