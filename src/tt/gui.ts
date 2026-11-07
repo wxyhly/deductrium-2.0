@@ -4,7 +4,86 @@ import { TreeListViewer, ListNode } from "../listmgr.js";
 import { TypeParser, setTokenCategories } from "./parser.js";
 import { Core } from "./core.js";
 import { initTypeSystem, type SysRule } from "./initial.js";
-import { astToString } from "./kast.js";
+import { astToString, toKAST, type AST as KAST } from "./kast.js";
+import { NodeType } from "./ast.js";
+
+function parseMapType(text: string) {
+    const ast = new TypeParser().parse(text);
+    if (!ast || ast.end !== text.trimEnd().length) throw new Error('地图类型表达式不完整：' + text);
+    return ast;
+}
+function freeMapNames(ast: KAST, bound = new Set<string>(), result = new Set<string>()): Set<string> {
+    if (ast.type === 'var') { if (!bound.has(ast.name)) result.add(ast.name); return result; }
+    if (['L', 'P', 'S', 'W'].includes(ast.type) && ast.nodes?.length === 2) {
+        freeMapNames(ast.nodes[0], bound, result);
+        freeMapNames(ast.nodes[1], new Set([...bound, ast.name]), result);
+    } else ast.nodes?.forEach(n => freeMapNames(n, bound, result));
+    return result;
+}
+function hasMapMeta(ast: KAST): boolean {
+    return ast.type === 'hole' || (ast.type === 'var' && (ast.name === '_' || ast.name.startsWith('?')))
+        || !!ast.nodes?.some(hasMapMeta);
+}
+export function validateMapTypeQuery(text: string): void {
+    const ast = parseMapType(text);
+    const k = toKAST(ast);
+    if (ast.type === NodeType.PROP || !k || hasMapMeta(k)) throw new Error('类型门需要不含空洞的类型');
+}
+const mapTypeCatalog = initTypeSystem(true);
+const mapTypeSyntax = new Map<SysRule, { head?: string; refs: Set<string> }>();
+function mapTypeInfo(rule: SysRule) {
+    let info = mapTypeSyntax.get(rule);
+    if (!info) {
+        const ast = new TypeParser().parse(rule.text);
+        const k = ast && toKAST(ast);
+        info = {
+            head: ast?.type === NodeType.PROP && [':', ':='].includes(ast.name) && ast.nodes[0].type === NodeType.ATOM ? ast.nodes[0].name : undefined,
+            refs: k ? freeMapNames(k) : new Set<string>(),
+        };
+        mapTypeSyntax.set(rule, info);
+    }
+    return info;
+}
+const mapTypeHead = (rule: SysRule) => mapTypeInfo(rule).head;
+export function validateMapTypeId(id: string): void {
+    if (!mapTypeCatalog.some(r => r.group === id || mapTypeHead(r) === id)) throw new Error('未知系统类型：' + id);
+}
+function selectMapTypes(creative: boolean, types: readonly string[], disabled: readonly string[]): SysRule[] {
+    [...types, ...disabled].forEach(validateMapTypeId);
+    const byName = new Map<string, string>();
+    mapTypeCatalog.forEach(r => { const head = mapTypeHead(r); if (head) byName.set(head, r.group); });
+    const base = initTypeSystem(creative);
+    const baseNames = new Set(base.map(mapTypeHead).filter((n): n is string => !!n));
+    const groups = new Set<string>();
+    types.forEach(id => groups.add(byName.get(id) ?? id));
+    const refs = (rule: SysRule) => mapTypeInfo(rule).refs;
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const rule of mapTypeCatalog) if (groups.has(rule.group)) for (const name of refs(rule)) {
+            const dep = byName.get(name);
+            if (dep && !baseNames.has(name) && !groups.has(dep)) { groups.add(dep); changed = true; }
+        }
+    }
+    const deniedGroups = new Set(disabled.filter(id => mapTypeCatalog.some(r => r.group === id)));
+    const deniedNames = new Set(disabled);
+    for (const rule of mapTypeCatalog) if (deniedGroups.has(rule.group)) {
+        const head = mapTypeHead(rule); if (head) deniedNames.add(head);
+    }
+    let selected = [...new Map([...base, ...mapTypeCatalog.filter(r => groups.has(r.group))]
+        .filter(r => !deniedGroups.has(r.group)).map(r => [r.text, r])).values()];
+    do {
+        changed = false;
+        selected = selected.filter(rule => {
+            const head = mapTypeHead(rule);
+            const blocked = (head && deniedNames.has(head)) || [...refs(rule)].some(n => n !== head && deniedNames.has(n));
+            if (!blocked) return true;
+            if (head && !deniedNames.has(head)) { deniedNames.add(head); changed = true; }
+            return false;
+        });
+    } while (changed);
+    return selected;
+}
 
 // ==================== 类型层 GUI ====================
 // 系统表节点：{ prefix: "type"|"ctor"|"ind"|"def"|"rule", content, children? }
@@ -80,6 +159,80 @@ function collectTokenCategories(rules: SysRule[]) {
 }
 
 export class TTGui {
+    /** Rebuild instead of reusing a core whose disabled constants/definitions can survive. */
+    createMapScriptSnapshot(types: readonly string[], disabled: readonly string[]): TTGui {
+        const rules = selectMapTypes(this.creative, types, disabled);
+        const view = Object.create(TTGui.prototype) as TTGui;
+        view.creative = this.creative;
+        view.core = new Core();
+        // The Core constructor supplies defaults independently of registerSystemRules.
+        for (const name of view.core.sysTypes.keys()) view.core.checker.setConstantType(name);
+        view.core.sysTypes.clear();
+        view.core.registerSystemRules(rules);
+        view.sysData = buildSysData(rules);
+        const copy = (nodes: TTNode[]): TTNode[] => nodes.map(n => ({ ...n, children: n.children && copy(n.children) }));
+        view.tableData = copy(this.tableData);
+        view.checkAll(view.tableData);
+        return view;
+    }
+    restoreMapScriptTypes(types: readonly string[], disabled: readonly string[]): void {
+        const view = this.createMapScriptSnapshot(types, disabled);
+        this.applyMapScriptSnapshot(view);
+    }
+    applyMapScriptSnapshot(view: TTGui): void {
+        this.core = view.core;
+        this.sysData.splice(0, this.sysData.length, ...view.sysData);
+        // Keep existing table nodes and selection; only refresh their derived diagnostics.
+        const update = (nodes: TTNode[], checked: TTNode[]) => nodes.forEach((node, i) => {
+            node.ttType = checked[i].ttType; node.ttErr = checked[i].ttErr;
+            if (node.children) update(node.children, checked[i].children!);
+        });
+        update(this.tableData, view.tableData);
+        this.refresh();
+    }
+    hasMapScriptType(id: string): boolean {
+        if (this.core.sysTypes.has(id) || this.core.sysDefs.has(id)) return true;
+        return this.sysData.some(n => n.content === mapTypeCatalog.find(r => r.group === id)?.text);
+    }
+    checkMapScriptType(text: string): boolean {
+        validateMapTypeQuery(text);
+        const target = toKAST(parseMapType(text))!;
+        if (this.core.checker.trySynthesize(target).status !== 'success') return false;
+        const closed = (term: KAST, seen = new Set<string>()): boolean => {
+            if (hasMapMeta(term)) return false;
+            for (const name of freeMapNames(term)) {
+                if (name === 'U' || /^@\d+$/.test(name)) continue;
+                if (seen.has(name)) return false;
+                if (this.core.userDefs.has(name)) {
+                    const value = toKAST(this.core.userDefs.get(name)!);
+                    const type = this.core.userTypes.get(name);
+                    if (!value || !closed(value, new Set([...seen, name])) || (type && !closed(toKAST(type)!, new Set([...seen, name])))) return false;
+                } else if (!this.core.checker.hasConstantType(name) && !this.core.sysDefs.has(name)) return false;
+            }
+            return true;
+        };
+        const check = (nodes: TTNode[]): boolean => nodes.some(node => {
+            if (node.children) return check(node.children);
+            if (node.ttErr || !node.content.trim()) return false;
+            try {
+                const ast = parseMapType(node.content);
+                const source = toKAST(ast);
+                if (!source || hasMapMeta(source)) return false;
+                let candidate = ast;
+                if (ast.type === NodeType.PROP) {
+                    if (ast.name === ':=') candidate = ast.nodes[0];
+                    else if (ast.name === ':') candidate = ast.nodes[0];
+                    else return false;
+                }
+                const term = toKAST(candidate);
+                if (!term || !closed(term)) return false;
+                const result = this.core.checker.tryCheck(term, target, [], { elaborateMetas: true });
+                return result.status === 'success' && !result.generalizedMetas?.length && !result.schematicMetaNames?.length
+                    && closed(result.term ?? result.elaboratedTerm ?? term) && closed(result.type);
+            } catch { return false; }
+        });
+        return closed(target) && check(this.tableData);
+    }
     sysData: TTSysNode[] = [];
     tableData: TTNode[] = [];
     // 类型论核心：系统表注册 + 定理表检查
@@ -89,7 +242,27 @@ export class TTGui {
     private tableView: TreeListViewer<TTNode>;
     // 活动文件夹（定理表）：新命题默认添加到这里
     private activeFolder: TTNode | null = null;
+    private mapScriptGoal?: HTMLElement;
     onchange?: () => void;
+
+    rememberMapScriptGoal(text: string): void {
+        parseMapType(text);
+        if (typeof document === 'undefined') return;
+        const table = document.getElementById('ttTable');
+        const layer = table?.closest('[data-layer="T-layer"]');
+        if (!table || !layer) return;
+        if (!this.mapScriptGoal?.isConnected) {
+            this.mapScriptGoal = document.createElement('div');
+            this.mapScriptGoal.className = 'manager-card tt-info tt-info-type';
+            this.mapScriptGoal.dataset.mapScriptGoal = 'type';
+            layer.insertBefore(this.mapScriptGoal, table);
+        }
+        const content = document.createElement('span');
+        new SyntaxViewer(content, new TypeParser, text);
+        this.mapScriptGoal.replaceChildren(
+            document.createTextNode(LangMgr.lang === 'en' ? 'Latest type goal: ' : '最近类型目标：'), content,
+        );
+    }
 
     constructor(creative = false) {
         this.creative = creative;
@@ -438,6 +611,8 @@ export class TTGui {
         return out;
     }
     deserialize(data: any) {
+        this.mapScriptGoal?.remove();
+        this.mapScriptGoal = undefined;
         if (!data?.table) return;
         // 清空并填充现有数组（TreeListViewer 持有同一引用，重新赋值会断引用）
         this.tableData.length = 0;

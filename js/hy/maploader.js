@@ -1,3 +1,5 @@
+import { activeWorld } from "./world-runtime.js";
+import { worldRuntimeTiles } from "./world.js";
 import { mapData } from "./map.js";
 import { genOrdTiles } from "./ordinal.js";
 export var TileBlockType;
@@ -10,6 +12,38 @@ export var TileBlockType;
 })(TileBlockType || (TileBlockType = {}));
 export const blockMap = new Map();
 export const nameMap = new Map();
+// Editor playtests consume JSON tiles, never JavaScript from imported map.ts.
+export const editorPreview = typeof window !== "undefined" && window.location?.search === "?map-editor-preview";
+export function editorPreviewTiles() {
+    if (!editorPreview)
+        return;
+    const data = JSON.parse(localStorage.getItem("deductrium2_map_preview") ?? "null");
+    if (!data || !Array.isArray(data.tiles) || data.tiles.length > 20000)
+        throw new Error("无效的编辑器试玩地图");
+    const positions = new Set(), names = new Set();
+    for (const row of data.tiles) {
+        if (!Array.isArray(row) || row.length !== 2)
+            throw new Error("试玩砖块格式无效");
+        const [hash, tile] = row;
+        if (typeof hash !== "string" || hash.length > 1024 || hash && !/^[0-5](,[0-5])*$/.test(hash) || positions.has(hash)
+            || !tile || !Number.isInteger(tile.type) || tile.type < 0 || tile.type > 4
+            || typeof tile.text !== "string" && (!tile.text || Array.isArray(tile.text) || typeof tile.text !== "object" || Object.values(tile.text).some(value => typeof value !== "string"))
+            || tile.name !== undefined && (typeof tile.name !== "string" || names.has(tile.name))
+            || tile.data !== undefined && (!tile.data || typeof tile.data !== "object" || Array.isArray(tile.data)))
+            throw new Error("试玩砖块数据无效");
+        positions.add(hash);
+        if (tile.name)
+            names.add(tile.name);
+    }
+    return data.tiles;
+}
+export function editorPreviewSaveMode() {
+    // A changed map receives a fresh save; normal survival slots stay untouched.
+    let hash = 2166136261;
+    for (const c of JSON.stringify(editorPreviewTiles()))
+        hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
+    return "map-editor-preview-" + (hash >>> 0).toString(16);
+}
 let prevTilehash = null;
 // 代码块栈：遇到 { 压入当前 tile 位置，} 时弹出恢复（支持嵌套）
 const blockStack = [];
@@ -244,7 +278,47 @@ function parseText(s) {
     }
     return seg;
 }
+// Shared with the map editor: metadata and language markers use the game parser.
+export function parseTileContent(content) {
+    const nameMatched = content.match(/^\[\[([^\]]+)\]\]/);
+    const data = {};
+    const rest = parseDataShortcuts(nameMatched ? content.slice(nameMatched[0].length) : content, data);
+    return { name: nameMatched?.[1], data, text: parseText(rest) };
+}
 export function initMap(p) {
+    const customTiles = activeWorld ? worldRuntimeTiles(activeWorld) : undefined;
+    if (customTiles && activeWorld.mode === "standalone") {
+        blockMap.clear();
+        nameMap.clear();
+        for (const [hash, tile] of customTiles) {
+            blockMap.set(hash, tile);
+            if (tile.name)
+                nameMap.set(tile.name, hash);
+        }
+        return;
+    }
+    if (activeWorld) {
+        blockMap.clear();
+        nameMap.clear();
+    }
+    const preview = editorPreviewTiles();
+    if (preview) {
+        blockMap.clear();
+        nameMap.clear();
+        for (const [hash, tile] of preview) {
+            const path = [];
+            if (hash)
+                for (const edge of hash.split(","))
+                    p.getNeighborAndDir(path, Number(edge), false);
+            const canonical = path.join(",");
+            if (blockMap.has(canonical))
+                throw new Error("试玩地图存在重叠坐标");
+            blockMap.set(canonical, structuredClone(tile));
+            if (tile.name)
+                nameMap.set(tile.name, canonical);
+        }
+        return;
+    }
     genOrdTiles(blockMap, nameMap, p, [1, 2, 1], [1], 5);
     blockStack.length = 0; // 防止 reload 时残留
     console.log("=== initMap: 解析 mapData ===");
@@ -327,25 +401,26 @@ export function initMap(p) {
                 p.getNeighborAndDir(t, Number(s), false);
             }
         // 内容 = 可选名称 [[xxx]] + 可选数据块([=json]/[p]/[d]/[t]/[td]) + 文本
-        const nameMatched = content.match(/^\[\[([^\]]+)\]\]/);
-        let name;
-        let rest = content;
-        if (nameMatched) {
-            name = nameMatched[1];
-            rest = content.slice(nameMatched[0].length);
-        }
-        const data = {};
-        rest = parseDataShortcuts(rest, data);
-        const text = parseText(rest);
-        const tb = { type: tbt, name: name, text, data };
+        const tb = { type: tbt, ...parseTileContent(content) };
         blockMap.set(t.join(","), tb);
-        if (name) {
-            nameMap.set(name, t.join(","));
+        if (tb.name) {
+            nameMap.set(tb.name, t.join(","));
         }
         console.log(`[map] ${t.join(",")} ${JSON.stringify(tb)}`);
         if (parentMarker !== "%*")
             prevTilehash = t;
     });
+    if (customTiles) {
+        // Validate the whole overlay before installing any tile.
+        for (const [hash] of customTiles)
+            if (blockMap.has(hash))
+                throw new Error(`世界扩展与主世界重叠：${hash || '[]'}`);
+        for (const [hash, tile] of customTiles) {
+            blockMap.set(hash, tile);
+            if (tile.name)
+                nameMap.set(tile.name, hash);
+        }
+    }
     // console.log(Array.from(blockMap.values()).filter(e=>e.type!=TileBlockType.Ordinal&&(e.text.startsWith("["))));
     // console.log(JSON.stringify(Array.from(blockMap.values()).filter(e=>(/[\u4e00-\u9fa5]/.test(e.text))).map(e=>e.text)));
     // console.log(JSON.stringify(Array.from(blockMap.values()).map(e=>langMgr.trc1(langMgr.trc(e.text))).filter(e=>(/[\u4e00-\u9fa5]/.test(e)))));

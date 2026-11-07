@@ -20,6 +20,7 @@ import { getSurvivalRules } from "./rewards.js";
 import { checkDeletion, deleteSelection, planDeletion } from "./editing.js";
 import { findTargets, targetAtom, targetList } from "./targets.js";
 import { ProofNavigator } from "./proof-navigation.js";
+import { MapAxiomPolicy } from "./map-policy.js";
 // a/d 开头的公理规则在存档中只存名称占位（name:ax:.），内容以初始定义为准：
 // 这样存档体积小、作者更新 init 规则后玩家无需重置存档。
 // 此处预解析 init 文本，构建 名字→完整规则行 的映射供占位符恢复。
@@ -34,7 +35,7 @@ for (const text of [initialCreativeRules, initialSurvivalRules]) {
             continue;
         const name = t.slice(0, ci).trim();
         const rest = t.slice(ci + 1).trim();
-        if (/^[ad]/.test(name) && rest.startsWith("ax:"))
+        if (rest.startsWith("ax:"))
             initRuleDefs.set(name, t);
     }
 }
@@ -54,6 +55,94 @@ export class HSLayer {
     inspectionRuleExpanded = null;
     onchange;
     survivalAccess = null;
+    mapPolicy;
+    mapDisabledAxioms = new Set();
+    mapScriptRules = new Map();
+    getMapScriptSystem() { return this.hilbertSystem; }
+    getMapScriptRuleNames() {
+        return [...(this.mapScriptRules ?? [])].filter(([, rule]) => this.hilbertSystem.rules.get(rule.name.name) === rule).map(([, rule]) => rule.name.name);
+    }
+    captureMapScriptRules(names) {
+        this.mapScriptRules = new Map();
+        for (const name of names) {
+            const rule = this.hilbertSystem.rules.get(name);
+            if (rule)
+                this.mapScriptRules.set(name, rule);
+        }
+    }
+    createMapScriptSnapshot() {
+        this.sheetGui.saveCurrentSheet();
+        const view = Object.create(HSLayer.prototype);
+        view.hilbertSystem = new HilbertSystem();
+        view.hilbertSystem.rules = new Map(this.hilbertSystem.rules);
+        view.hilbertSystem.renamedSysRule = new Map(this.hilbertSystem.renamedSysRule);
+        view.sheetGui = { sheets: this.sheetGui.sheets, saveCurrentSheet() { } };
+        view.ruleList = [];
+        view.ruleListView = { refresh() { } };
+        view.mapScriptRules = new Map(this.mapScriptRules ?? []);
+        return view;
+    }
+    replayMapScriptSheets() {
+        const core = this.hilbertSystem;
+        const saved = core.saveContext();
+        try {
+            this.sheetGui.sheets = this.sheetGui.sheets.map(sheet => {
+                const commands = core.genCmd(sheet.ctx.props);
+                core.loadContext(core.createEmptyContext());
+                try {
+                    core.fromCmd(commands.map(text => new HSParser().parse(text, 'cmd')));
+                }
+                catch {
+                    core.clear();
+                }
+                return { ...sheet, ctx: core.saveContext() };
+            });
+        }
+        finally {
+            core.loadContext(saved);
+        }
+    }
+    isMapScriptRuleAllowed(rule) { return !rule.error && (!this.mapPolicy || this.mapPolicy.allowsRule(rule)); }
+    replaceMapScriptRules(rules) {
+        const owned = new Set((this.mapScriptRules ?? new Map()).values());
+        for (const [name, rule] of rules) {
+            const previous = this.hilbertSystem.rules.get(name);
+            if (previous && !owned.has(previous) && previous !== rule)
+                throw new Error("地图规则名称已被占用：" + name);
+        }
+        const removed = new Set();
+        for (const [name, rule] of this.hilbertSystem.rules) {
+            if (owned.has(rule)) {
+                this.hilbertSystem.rules.delete(name);
+                removed.add(name);
+            }
+        }
+        const clean = (list) => {
+            for (let i = list.length - 1; i >= 0; i--) {
+                const node = list[i];
+                if (node.children)
+                    clean(node.children);
+                else if (removed.has(node.name))
+                    list.splice(i, 1);
+            }
+        };
+        clean(this.ruleList);
+        this.mapScriptRules = new Map(rules);
+        for (const [name, rule] of rules) {
+            this.hilbertSystem.rules.set(name, rule);
+            this.ruleList.push({ name, uuid: 0 });
+        }
+        this.ruleListView.refresh();
+    }
+    hasMapAxiom(name) {
+        return (this.getMapScriptRuleNames().includes(name) && !this.hilbertSystem.rules.get(name)?.step)
+            || [...initialCreativeRules.split("\n"), ...initialSurvivalRules.split("\n")]
+                .some(line => line.trimStart().startsWith(name + ":ax:"));
+    }
+    setMapDisabledAxioms(names) {
+        this.mapDisabledAxioms = new Set(names);
+        this.mapPolicy = this.mapDisabledAxioms.size ? new MapAxiomPolicy(this.hilbertSystem, this.mapDisabledAxioms) : undefined;
+    }
     lastGateAST = null;
     lastGateViewer;
     getSheetGui() { return this.sheetGui; }
@@ -102,7 +191,7 @@ export class HSLayer {
                         if (p.from.type === "d") {
                             try {
                                 const wrapped = this.hilbertSystem.ref_addCaptureScopeToAST(p.ast, this.hilbertSystem.captureScope(null, p, []));
-                                if (wrapped.equal(ast))
+                                if (wrapped.equal(ast) && (!this.mapPolicy || this.mapPolicy.allowsStep(p)))
                                     return true;
                             }
                             catch { /* 层级捕获失败（如v作用域缺断言）跳过 */ }
@@ -125,6 +214,8 @@ export class HSLayer {
     checkRuleGate(ast) {
         for (const rule of this.hilbertSystem.rules.values()) {
             if (rule.error)
+                continue;
+            if (this.mapPolicy && !this.mapPolicy.allowsRule(rule))
                 continue;
             try {
                 const ruleAst = new HSParser().parse(rule.toString(), "rule");
@@ -311,6 +402,8 @@ export class HSLayer {
             const scope = !dst ? src.parent : pos === "inside" ? dst : dst.parent;
             try {
                 this.survivalAccess?.checkMove(src, scope, this.hilbertSystem);
+                if (this.mapPolicy && !this.mapPolicy.allowsStep(src))
+                    return false;
             }
             catch {
                 return false;
@@ -630,11 +723,14 @@ export class HSLayer {
         this.cmdEngine.run(cmd);
     }
     checkInteractiveRule(ast) {
+        this.mapPolicy?.checkName(ast);
         this.survivalAccess?.checkRuleName(ast, this.hilbertSystem);
         const rule = this.isMsbtDname(ast) ? undefined : this.hilbertSystem.getD(ast);
         this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp, rule);
     }
     checkInteractiveSpecial() {
+        if (this.mapDisabledAxioms?.size)
+            throw new Error("公理受限时，请使用逐步推导代替自动元规则");
         this.survivalAccess?.checkScope(this.hilbertSystem.saveContext().activeProp);
     }
     configureSurvival(rewards) {
@@ -755,6 +851,8 @@ export class HSLayer {
     }
     inlineTarget(target) {
         if (target.kind === "step") {
+            if (this.mapPolicy && !this.mapPolicy.allowsStep(target.step))
+                throw new Error("此推导依赖已禁用的公理");
             this.survivalAccess?.checkExpand(target.step, this.hilbertSystem);
             const folders = this.hilbertSystem.expand(target.step) || [];
             for (const f of folders) {
@@ -765,6 +863,8 @@ export class HSLayer {
         }
         else {
             const rule = this.hilbertSystem.getD(new HSParser().parse(target.name, "dname"));
+            if (this.mapPolicy && !this.mapPolicy.allowsRule(rule))
+                throw new Error("此规则依赖已禁用的公理");
             if (!rule.step || rule.error)
                 throw HSError.atomicStep(rule.name);
             const commands = this.hilbertSystem.genCmd(rule.step).map(c => new HSParser().parse(c, "cmd"));
@@ -994,6 +1094,10 @@ export class HSLayer {
                     throw HSError.matchCond(idx + 1, HSError.pname404(e.name));
                 return p;
             });
+            for (const condition of conds) {
+                if (this.mapPolicy && !this.mapPolicy.allowsStep(condition))
+                    throw new Error("此条件依赖已禁用的公理");
+            }
             const replaceValues = Object.fromEntries(args.slice(1 + deduction.conditions.length).map((e, idx) => [deduction.replaceNames[idx][0], e]));
             this.hilbertSystem.d(deduction, conds, replaceValues);
             this.propListView.refresh();

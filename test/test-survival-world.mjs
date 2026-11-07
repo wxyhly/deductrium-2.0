@@ -13,7 +13,12 @@ const { initialCreativeRules, initialSurvivalRules } = await import('../js/hs/co
 const { calcMaxReachOrd, cmp, printOrd, genOrdTiles } = await import('../js/hy/ordinal.js');
 const { Serde: HySerde } = await import('../js/hy/serde.js');
 const { Rotor } = await import('../js/hy/algebra.js');
-const { getMapPalette } = await import('../js/hy/palette.js');
+const { tileColor, tileTextColor, tileDisplayText } = await import('../js/hy/appearance.js');
+const { stringifyDeductriumAmout } = await import('../js/format.js');
+const {createCurrencyBalances} = await import('../js/hy/economy.js');
+const {lobbyBank,redeemMapBankOffer} = await import('../js/hy/bank.js');
+const {createMapScriptState, planMapScript} = await import('../js/hy/script.js');
+const {createMapScriptEngine} = await import('../js/hy/script-engine.js');
 
 const quiet = fn => {
     const log = console.log;
@@ -23,6 +28,7 @@ const quiet = fn => {
 let saved;
 let confirmations;
 let confirmResult;
+let scriptTiles = [];
 class SaveBoundary {
     static getSavedLang() { return 'en'; }
     constructor(mode, serialize, deserialize) { Object.assign(this, { mode, serialize, deserialize }); }
@@ -32,6 +38,8 @@ class SaveBoundary {
 // HS/TT and DOM are integration boundaries; Game, map parsing, geometry lookup,
 // collision dispatch, reward callbacks, and save callbacks are production code.
 class HSBoundary {
+    setMapDisabledAxioms(names) { this.disabled = [...names]; }
+    hasMapAxiom(name) { return ['a1','a2','a3','mp'].includes(name); }
     applied = [];
     configurations = [];
     rules = new Map();
@@ -66,6 +74,10 @@ class HyBoundary {
         this.world.onLoop = () => {};
         this.serde = new HySerde(this.world);
         quiet(() => this.world.reload());
+        for (const [hash,tile] of scriptTiles) {
+            blockMap.set(hash, structuredClone(tile));
+            if (tile.name) nameMap.set(tile.name,hash);
+        }
     }
     serialize() { return this.serde.serialize(); }
     deserialize(data) { this.serde.deserialize(data); }
@@ -77,15 +89,21 @@ const documentBoundary = {
 let gameSource = fs.readFileSync(new URL('../js/game.js', import.meta.url), 'utf8');
 assert.equal((gameSource.match(/window\.game = new Game;/g) || []).length, 1);
 gameSource = gameSource.replace(/^import .*$/gm, '').replace('window.game = new Game;', 'return Game;');
-function makeGame(data, mode = 'survival') {
+function makeGame(data, mode = 'survival', tiles = []) {
+    scriptTiles = tiles;
     saved = data; confirmations = 0; confirmResult = true;
     const Game = new Function('window', 'document', 'confirm', 'initialCreativeRules', 'initialSurvivalRules',
         'HSLayer', 'TTLayer', 'HyLayer', 'blockMap', 'nameMap', 'TileBlockType', 'LangMgr',
-        'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd', 'getMapPalette', gameSource)(
+        'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd',
+        'tileColor', 'tileTextColor', 'tileDisplayText', 'stringifyDeductriumAmout',
+        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'planMapScript',
+        'activeWorld','activeWorldSaveMode','createCurrencyBalances','lobbyBank','redeemMapBankOffer','createMapScriptEngine',gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
-        ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd, getMapPalette);
+        ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd,
+        tileColor, tileTextColor, tileDisplayText, stringifyDeductriumAmout,
+        false, ()=>'unused', createMapScriptState, planMapScript, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer,createMapScriptEngine);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;
@@ -98,6 +116,61 @@ const hit = (game, name) => {
     return game.hyLayer.world.hitTest(hash.split(',').map(Number));
 };
 const saveData = (rw = [], dg = [], D = 0) => ({ rw, dg, D, DC: 0, tp: 0, ac: [], in: [], hs: { rules: [] } });
+
+test('map scripts atomically grant inventory, change gates and restore without repeating payouts', () => {
+    const tiles = [
+        ['0', {type: Type.Reward,name:'script-start',text:'start',data:{script:
+            'give key red;set flag ready;set count visits 1;give money 12;take money 2;disable axiom a3;unlock reward macro;unlock layer D-layer;open gate opened;set text sign "Changed"'}}],
+        ['1', {type: Type.Gate,name:'door',text:'door',data:{script:'require key red;require flag ready;require count visits == 1;take key red;enable axiom a3'}}],
+        ['2', {type: Type.Road,name:'sign',text:'Original',data:{}}],
+        ['3', {type: Type.Gate,name:'opened',text:'',data:{never:true}}],
+    ];
+    let game=makeGame(undefined,'survival',tiles);
+    assert.equal(hit(game,'script-start'),true);
+    assert.deepEqual(game.mapScript.keys,['red']);
+    assert.equal(game.deductrium,10); assert.equal(game.deductriumConsumed,2);
+    assert(game.gotRewards.has('macro')); assert(game.hsLayer.applied.includes('macro'));
+    assert.deepEqual(game.hsLayer.disabled,['a3']);
+    assert.equal(block('opened').type,Type.Road); assert.equal(block('sign').text,'Changed');
+    assert.equal(hit(game,'script-start'),true); assert.equal(game.deductrium,10);
+    const saved=structuredClone(game.saveload.serialize());
+    game=makeGame(saved,'survival',tiles);
+    assert.equal(block('opened').type,Type.Road); assert.equal(block('sign').text,'Changed');
+    assert.deepEqual(game.hsLayer.disabled,['a3']); assert.equal(game.deductrium,10);
+    assert.equal(hit(game,'door'),true); assert.deepEqual(game.mapScript.keys,[]);
+    assert.deepEqual(game.hsLayer.disabled,[]);
+    // A spent key is still required on re-entry; one-time effects do not bypass requirements.
+    assert.equal(hit(game,'door'),false); assert.equal(game.deductrium,10);
+});
+
+test('failed script requirements or combined tolls preserve all gameplay state', () => {
+    const tiles=[
+        ['0',{type:Type.Reward,name:'blocked',text:'',data:{getD:100,script:'give money 10;require key missing;give key red'}}],
+        ['1',{type:Type.Gate,name:'toll',text:'',data:{payD:5,script:'take money 6;give key paid'}}],
+        ['2',{type:Type.Road,name:'repeat',text:'',data:{script:'give money 2;add count visits 1',scriptRepeat:true}}],
+    ];
+    const game=makeGame(undefined,'survival',tiles); game.deductrium=10;
+    const before=JSON.stringify(game.mapScript);
+    assert.equal(hit(game,'blocked'),false); assert.equal(game.gotRewards.has('blocked'),false);
+    assert.equal(block('blocked').type,Type.Reward); assert.equal(game.deductrium,10);
+    assert.equal(hit(game,'toll'),false); assert.equal(game.deductriumConsumed,0);
+    assert.equal(game.deductrium,10); assert.equal(JSON.stringify(game.mapScript),before);
+    assert.equal(hit(game,'repeat'),true); assert.equal(hit(game,'repeat'),true);
+    assert.equal(game.deductrium,14); assert.equal(game.mapScript.counts.visits,2);
+});
+
+test('script close operations override demolished gates and survive save replay',()=>{
+    const tiles=[
+        ['0',{type:Type.Reward,name:'closer',text:'',data:{script:'close gate door'}}],
+        ['1',{type:Type.Gate,name:'door',text:'',data:{payD:0}}],
+    ];
+    let game=makeGame(undefined,'survival',tiles); game.gotRewards.add('dG');
+    assert.equal(hit(game,'door'),true); assert.equal(block('door').type,Type.Road);
+    assert.equal(hit(game,'closer'),true); assert.equal(block('door').type,Type.Gate);
+    assert.equal(game.destructedGates.has('door'),false);
+    game=makeGame(structuredClone(game.saveload.serialize()),'survival',tiles);
+    assert.equal(block('door').type,Type.Gate); assert(!block('door').data.del);
+});
 
 test('reward callback forwards independent rewards, ignores duplicate money and loading payouts', () => {
     const game = makeGame();
@@ -210,7 +283,7 @@ test('ordinary dG gates, save callback, and constructor restore are idempotent',
     const data = game.saveload.serialize();
     data.rw.push('neg', 'del<>', 'JJZO-1', 'JJZI-1', 'JJZ-1', 'missing-old-reward');
     data.hs.rules.push(['.i', 'player-macro']);
-    data.D = 18;
+    data.D = 18; data.balances.reasoning = 18;
     game = makeGame(data);
     assert.equal(game.deductrium, 18);
     assert.equal(block('宏门').type, Type.Road); assert.equal(block('宏门').data.del, true);

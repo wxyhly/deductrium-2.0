@@ -1,3 +1,4 @@
+import { activeWorld } from "./world-runtime.js";
 import { Hvec, Quaternion, Rotor } from "./algebra.js";
 import { LangMgr } from "../lang.js";
 import { LocalDraw } from "./localdraw.js";
@@ -23,6 +24,7 @@ export class HWorld {
     // 游戏交互尚未接入：闸门默认不可通过、奖励默认不发放，避免未绑定回调时报错
     onPassGate = () => false;
     onGetReward = () => { };
+    onEnterRoad = () => true;
     onStateChange = () => { };
     // 换格成功回调：hash = 新到达的方块 hash（供 game.ts 检查该方块成就等）
     onStepToAnotherTile = (hash) => { };
@@ -42,7 +44,7 @@ export class HWorld {
     }
     getBlock(hash) {
         const r = blockMap.get(hash) ?? blockMap.get(nameMap.get(hash));
-        if (!r && hash.startsWith("1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,3,3")) {
+        if (!r && activeWorld?.mode !== "standalone" && hash.startsWith("1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,3,3")) {
             if (hash.match(/^1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,3,3,(3|4(,2)*,1)/)) {
                 const stone = hash.match(/2,3$/);
                 const k = "卍般摩波慧迦莲净空寂禅佛孤於婆玄冥尔智超菩提修皈灵尊弥咒唵噜嘿噶吽萨魅魂丧魄心戒律缚摒幽乾刹伽吒禄衰阳阴若陀";
@@ -105,10 +107,9 @@ export class HWorld {
         if (!b || b.type === TileBlockType.Wall)
             return false;
         if (b.type === TileBlockType.Road)
-            return true;
+            return this.onEnterRoad(t.join(","), b);
         if (b.type === TileBlockType.Reward) {
-            this.hitReward(b, t.join(","));
-            return true;
+            return this.hitReward(b, t.join(","));
         }
         if (b.type === TileBlockType.Gate || b.type === TileBlockType.Ordinal) {
             return this.onPassGate(b.name ?? t.join(','), b, t.join(','));
@@ -117,7 +118,7 @@ export class HWorld {
     hitReward(b, hash, isLoading) {
         if (!b)
             return;
-        this.onGetReward(b.name ?? hash, b, isLoading);
+        return this.onGetReward(b.name ?? hash, b, isLoading) !== false;
         // 奖励的后续处理（data.got、type→road）由 game.ts 注入的 onGetReward 回调负责
     }
     setTileByName(tile, text, type) {

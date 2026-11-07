@@ -86,7 +86,7 @@ export class ProgressLayer {
         this.mode = mode;
         this.isAchievementGot = isAchievementGot ?? (() => false);
         this.isInfoGot = isInfoGot ?? (() => false);
-        this.slotKeys = [0, 1, 2, 3].map(i => `deductrium2_slot${i}`);
+        this.slotKeys = [0, 1, 2, 3].map(i => this.saveload.slotKey(i));
         this.init();
     }
 
@@ -185,8 +185,6 @@ export class ProgressLayer {
             const reader = new FileReader();
             reader.onload = () => {
                 const text = String(reader.result || "");
-                this.saveload.save(); // 刷新前保存当前进度，防丢数据
-                this.saveload.cancelPendingSave(); // 取消旧延时保存，防止覆盖导入结果
                 const ok = this.saveload.loadFromString(text);
                 if (ok) {
                     this.scheduleRefresh();
@@ -256,10 +254,8 @@ export class ProgressLayer {
                 const slotMeta = this.saveload.keyMeta(key);
                 const slotMode = slotMeta?.mode ?? this.mode;
                 if (!confirm(LangMgr.formalize.loadSlotConfirm(slotMode, this.mode))) return;
-                this.saveload.save(); // 刷新前保存当前进度
-                this.saveload.cancelPendingSave(); // 取消旧延时保存，防止覆盖槽位数据
-                this.saveload.loadFromString(data);
-                this.scheduleRefresh();
+                if (this.saveload.loadFromString(data)) this.scheduleRefresh();
+                else alert(LangMgr.text.importFailed);
             });
             const btnExport = document.createElement("button");
             btnExport.className = "btn-sm";
@@ -501,7 +497,7 @@ export class ProgressLayer {
         URL.revokeObjectURL(url);
     }
     private saveloadKey(): string {
-        return `deductrium2_${this.mode}`;
+        return this.saveload.saveKey ?? `deductrium2_${this.mode}`;
     }
     private fmtSize(n: number): string {
         if (n < 1024) return n + "B";
