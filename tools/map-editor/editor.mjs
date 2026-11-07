@@ -1,4 +1,5 @@
 import {installUI} from './ui.mjs';
+import {installScriptEditor} from './script-editor.mjs';
 
 const $ = id => document.getElementById(id);
 const STORAGE_KEY = 'deductrium-map-editor-project-v1';
@@ -8,7 +9,7 @@ const hashLabel = hash => hash || '[]（原点）';
 let EditorProject, Hvec, Rotor, LangMgr, parseMapScript, blockMap, nameMap, world, project;
 let selectedHash = '', group = new Set(), dirty = false, fieldDirty = false, infoDirty = false;
 let blockedDraft = null, preview = null, visibleLimit = 150, filePurpose = 'auto', drag = null;
-let renderFrame = 0, importBusy = false, ui;
+let renderFrame = 0, importBusy = false, ui, scriptUI;
 const pendingGuards = new Set();
 const externalPending = () => [...pendingGuards].some(check => check());
 
@@ -24,6 +25,11 @@ function objectJSON(text, label) {
     const value = JSON.parse(text);
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error(`${label} 必须是 JSON 对象。`);
     return value;
+}
+function readTextField(id, original) {
+    const value = $(id).value;
+    // Textareas normalize line endings on assignment; keep unchanged source.
+    return typeof original === 'string' && value === original.replace(/\r\n?/g, '\n') ? original : value;
 }
 function parseAt(value) {
     const input = value.trim();
@@ -47,6 +53,8 @@ function updateDirty() {
     $('dirty-indicator').title = dirty || pending ? '有尚未保存到项目文件的更改' : '已保存 / 尚无更改';
     $('pending').hidden = !fieldDirty;
     document.querySelector('.apply-bar').dataset.pending = String(fieldDirty);
+    $('apply-state').textContent = scriptUI?.errorMessage || (fieldDirty ? '未应用修改' : '');
+    $('apply-state').dataset.error = String(!!scriptUI?.errorMessage);
     $('apply-project').textContent = infoDirty ? '应用项目信息 *' : '应用项目信息';
 }
 function discardFields() {
@@ -163,7 +171,15 @@ function renderTextMode() {
 function fillForm() {
     const tile = project.tiles.get(selectedHash), text = tile?.text ?? '';
     $('tile-title').textContent = tile ? `${TYPES[tile.type]}属性` : '空白格 · 可新增';
-    $('tile-meta').textContent = `坐标：${hashLabel(selectedHash)}${tile ? `\nID：${tile.id}` : '\n填好属性后 Apply 新增格子。'}`;
+    $('tile-meta').textContent = `坐标 ${hashLabel(selectedHash)} · ${tile ? `ID ${tile.id}` : '空白，Apply 后新增'}`;
+    const at = selectedHash ? selectedHash.split(',').map(Number) : [];
+    for (const button of $('neighbors').querySelectorAll('button[data-edge]')) {
+        const neighborHash = world.atlasTile.getNeighborAndDir(at, Number(button.dataset.edge), true)[0].join(',');
+        const neighbor = project.tiles.get(neighborHash);
+        button.dataset.kind = neighbor ? String(neighbor.type) : 'empty';
+        const label = `边 ${button.dataset.edge}：${neighbor ? `${TYPES[neighbor.type]} ${neighbor.name || neighbor.id}` : '空白'} · ${hashLabel(neighborHash)}`;
+        button.setAttribute('aria-label', label); button.title = label;
+    }
     $('tile-type').value = String(tile?.type ?? 0); $('tile-name').value = tile?.name ?? '';
     $('text-mode').value = typeof text === 'string' ? 'plain' : 'languages';
     $('text-plain').value = typeof text === 'string' ? text : text.zh ?? Object.values(text)[0] ?? '';
@@ -172,7 +188,6 @@ function fillForm() {
     $('text-other').value = JSON.stringify(typeof text === 'string' ? {} : Object.fromEntries(Object.entries(text).filter(([key]) => key !== 'zh' && key !== 'en')), null, 2);
     const data = clone(tile?.data ?? {});
     $('tile-script').value = typeof data.script === 'string' ? data.script : '';
-    $('script-summary').textContent = data.script ? '已配置' : '可选';
     delete data.script;
     $('tile-data').value = JSON.stringify(data, null, 2);
     $('data-summary').textContent = `${Object.keys(data).length} 个字段`;
@@ -189,6 +204,8 @@ function fillForm() {
         open.onclick = () => ui.openPanel('modules');
         $('mounted-note').append(label, open, button);
     }
+    for (const section of $('tile-form').querySelectorAll('details')) delete section.dataset.dirty;
+    scriptUI.reset();
     fieldDirty = false; renderTextMode(); updateDirty(); renderSelection();
 }
 function selectHash(hash, options = {}) {
@@ -353,24 +370,41 @@ function useTool(hash, shift) {
 }
 function wireUI() {
     ui = installUI();
+    scriptUI = installScriptEditor({parse: parseMapScript, say, refresh: updateDirty});
     document.addEventListener('input', updateDirty);
     document.addEventListener('change', updateDirty);
-    $('tile-form').oninput = () => { fieldDirty = true; updateDirty(); };
-    $('tile-form').onchange = () => { fieldDirty = true; updateDirty(); };
+    const markFieldsDirty = event => {
+        if (event.target.id === 'script-insert') return;
+        fieldDirty = true;
+        const section = event.target.closest('details');
+        if (section) section.dataset.dirty = 'true';
+        updateDirty();
+    };
+    $('tile-form').oninput = markFieldsDirty;
+    $('tile-form').onchange = markFieldsDirty;
     $('text-mode').onchange = renderTextMode;
     $('tile-form').onsubmit = event => {
         event.preventDefault(); guard(() => {
             if (infoDirty) throw Error('请先应用项目信息。');
-            const data = objectJSON($('tile-data').value, 'data');
-            if (Object.hasOwn(data, 'script')) throw Error('请在上方地图脚本字段编辑 script，其他 data JSON 不要重复填写 script。');
-            const script = $('tile-script').value;
-            parseMapScript(script);
-            if (script.trim()) data.script = script;
-            let text = $('text-plain').value;
+            const original = project.tiles.get(selectedHash);
+            const data = scriptUI.readData({focus: true, throwError: true});
+            const script = readTextField('tile-script', original?.data?.script);
+            scriptUI.check({focus: true, throwError: true});
+            if (script.trim() || script === original?.data?.script) data.script = script;
+            let text = readTextField('text-plain', original?.text);
             if ($('text-mode').value === 'languages') {
                 const other = objectJSON($('text-other').value, '其他语言');
                 if (Object.values(other).some(value => typeof value !== 'string')) throw Error('每种语言的文字必须是字符串。');
-                text = {...other, zh: $('text-zh').value, en: $('text-en').value};
+                const languages = original?.text && typeof original.text === 'object' ? original.text : null;
+                text = {...other};
+                for (const language of ['zh', 'en']) {
+                    const value = readTextField(`text-${language}`, languages?.[language]);
+                    if (!languages || Object.hasOwn(languages, language) || value !== '') text[language] = value;
+                    else delete text[language];
+                }
+                // Missing-locale fallback uses the first value; retain its order.
+                text = Object.fromEntries([...new Set([...Object.keys(languages ?? {}), ...Object.keys(text)])]
+                    .filter(language => Object.hasOwn(text, language)).map(language => [language, text[language]]));
             }
             change(() => project.put(selectedHash, {type: Number($('tile-type').value), name: $('tile-name').value.trim() || undefined, text, data}), '格子属性已应用');
         });
@@ -424,7 +458,7 @@ function wireUI() {
         const location = $('location').value.trim();
         selectHash(nameMap.get(location) ?? parseAt(location).join(','), {jump: true});
     }); };
-    for (const button of $('neighbors').querySelectorAll('button')) button.onclick = () => {
+    for (const button of $('neighbors').querySelectorAll('button[data-edge]')) button.onclick = () => {
         const at = selectedHash ? selectedHash.split(',').map(Number) : [];
         selectHash(world.atlasTile.getNeighborAndDir(at, Number(button.dataset.edge), true)[0].join(','), {jump: true});
     };

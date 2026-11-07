@@ -3,7 +3,9 @@ import { Polygon } from './tiling.js';
 import type { TileBlock } from './maploader.js';
 import { validateBankConfig } from './economy.js';
 import type { BankConfig } from './economy.js';
+import { validateMapBankOffer } from './bank.js';
 import { createMapScriptState, parseMapScript, formatMapScript, rewriteMapScript } from './script.js';
+import type { MapScriptCommand, MapScriptPredicate, MapScriptCondition, MapScriptStatement, MapScriptNumberExpression } from './script.js';
 
 export interface WorldCurrency { id: string; name: string; symbol?: string }
 export interface WorldTile {
@@ -105,23 +107,42 @@ function aliases(world: WorldManifest): Map<string, string> {
     return result;
 }
 function script(source: string, world: WorldManifest, names: Map<string, string>): string {
-    // Parse first to distinguish tile references from key/flag/counter identifiers.
-    const commands = parseMapScript(source).map(command => {
-        if (command.op === 'exchange' && !Object.hasOwn(world.banks, command.bankId)) fail(`Unknown script bank: ${command.bankId}`);
-        const registered = new Set(['reasoning', 'type', world.currency?.id]);
+    const registered = new Set(['reasoning', 'type', ...(world.currency ? [world.currency.id] : [])]);
+    const number = (expression: MapScriptNumberExpression): void => {
+        if (expression.kind === 'currency' && !registered.has(expression.currency)) fail(`Unregistered script currency: ${expression.currency}`);
+        if (expression.kind === 'binary') { number(expression.left); number(expression.right); }
+    };
+    const reference = <T extends MapScriptCommand | MapScriptPredicate>(command: T): T => {
+        if ('op' in command && command.op === 'exchange' && !Object.hasOwn(world.banks, command.bankId)) fail(`Unknown script bank: ${command.bankId}`);
         if ('currency' in command && !registered.has(command.currency)) fail(`Unregistered script currency: ${command.currency}`);
-        if (command.op === 'exchange' && command.to !== undefined && !registered.has(command.to)) fail(`Unregistered exchange target currency: ${command.to}`);
-        if ('kind' in command && 'id' in command && ['gate', 'tile', 'text'].includes(command.kind)) {
-            const target = names.get(command.id);
-            if (!target) fail(`Unknown internal script tile: ${command.id}`);
-            return { ...command, id: target };
+        if ('expression' in command && command.expression) number(command.expression);
+        if ('op' in command && command.op === 'exchange' && command.to !== undefined && !registered.has(command.to)) fail(`Unregistered exchange target currency: ${command.to}`);
+        if ('kind' in command && 'id' in command) {
+            if (['gate', 'tile', 'text'].includes(command.kind)
+                || ('op' in command && command.op === 'reset' && command.kind === 'reward')) {
+                const target = names.get(command.id);
+                if (!target) fail(`Unknown internal script tile: ${command.id}`);
+                return { ...command, id: target };
+            }
+            if (command.kind === 'reward' || command.kind === 'not-reward') return { ...command, id: names.get(command.id) ?? command.id };
         }
         return command;
+    };
+    const condition = (value: MapScriptCondition): MapScriptCondition => {
+        if (value.op === 'predicate') return { ...value, predicate: reference(value.predicate) };
+        if (value.op === 'not') return { ...value, condition: condition(value.condition) };
+        return { ...value, left: condition(value.left), right: condition(value.right) };
+    };
+    const statements = (values: MapScriptStatement[]): MapScriptStatement[] => values.map(value => {
+        if (value.op !== 'if') return reference(value);
+        return { ...value, branches: value.branches.map(branch => ({...branch, condition: condition(branch.condition), body: statements(branch.body)})),
+            ...(value.elseBody === undefined ? {} : {elseBody: statements(value.elseBody)}) };
     });
     const prefix = `mod:${world.id}::`;
-    // rewriteMapScript also handles key/flag/count, with already resolved tile tokens left alone.
-    return rewriteMapScript(formatMapScript(commands), id => id.startsWith(prefix) ? id : prefix + id);
+    // Resolve tile aliases through every branch, then isolate keys/flags/counters recursively.
+    return rewriteMapScript(formatMapScript(statements(parseMapScript(source))), id => id.startsWith(prefix) ? id : prefix + id);
 }
+
 function runtime(world: WorldManifest): [string, TileBlock][] {
     const names = aliases(world);
     const stableNames = new Set(names.values());
@@ -162,6 +183,7 @@ export function parseWorld(input: unknown): WorldManifest {
     const currencies = new Set(['reasoning', 'type', ...(w.currency ? [w.currency.id] : [])]);
     for (const [id, config] of Object.entries(w.banks)) {
         if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id)) fail('Invalid bank ID');
+        if (id.startsWith('builtin:')) fail('Bank IDs beginning builtin: are reserved');
         const bank = validateBankConfig(config);
         for (const rule of bank.rules) if (!currencies.has(rule.from) || !currencies.has(rule.to)) fail(`Unregistered bank currency: ${id}`);
         w.banks[id] = bank;
@@ -187,6 +209,10 @@ export function parseWorld(input: unknown): WorldManifest {
         if (tile.data !== undefined) {
             record(tile.data, 'tile data');
             if (tile.data.bank !== undefined && (typeof tile.data.bank !== 'string' || !Object.hasOwn(w.banks, tile.data.bank))) fail('Tile bank must reference a registered bank ID');
+            if (tile.data.exchange !== undefined) {
+                if (tile.type !== 3 || ['script', 'getD', 'payD', 'unl', 'requiresReward'].some(key => tile.data[key] !== undefined)) fail('Bank offers must be standalone reward actions');
+                validateMapBankOffer(tile.data.exchange, w.banks);
+            }
             if (tile.data.script !== undefined && typeof tile.data.script !== 'string') fail('Script must be a string');
             if (tile.data.scriptRepeat !== undefined && typeof tile.data.scriptRepeat !== 'boolean') fail('scriptRepeat must be boolean');
             for (const key of ['payD', 'getD']) if (tile.data[key] !== undefined && (typeof tile.data[key] !== 'number' || tile.data[key] < 0 || tile.data[key] > 1e12)) fail(`Invalid ${key}`);
@@ -344,6 +370,12 @@ export function migrateWorldSave(data: any, world: WorldManifest): any {
             const mapped = translate(id); if (mapped !== null) edits[mapped] = edit;
         }
         state.tileEdits = edits; next.ms = state;
+        for (const field of ['rewards', 'removedRewards'] as const) {
+            state[field] = [...new Set(state[field].flatMap(id => {
+                if (!id.startsWith('mod:')) return [id];
+                const mapped = translate(id); return mapped === null ? [] : [mapped];
+            }))];
+        }
     }
     if (next.worldPosition !== undefined) {
         const position = record(next.worldPosition, 'worldPosition');

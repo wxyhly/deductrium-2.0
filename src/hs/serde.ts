@@ -3,6 +3,12 @@ import { HilbertSystem } from "./core/core.js";
 import { Proposition } from "./core/deduction.js";
 import { HSParser } from "./core/parser.js";
 import { HSLayer } from "./main.js";
+import { initialCreativeRules, initialSurvivalRules } from "./core/initial.js";
+const staticAxioms = new Map([...initialCreativeRules.split("\n"), ...initialSurvivalRules.split("\n")]
+    .map(line => line.trim()).filter(line => /^[^:]+:ax:/.test(line)).map(line => {
+        const split = line.indexOf(":ax:");
+        return [line.slice(0, split), new HSParser().parse(line.slice(split + 4), "rule")];
+    }));
 export class Serde {
     hsLayer: HSLayer;
     hs: HilbertSystem;
@@ -22,11 +28,13 @@ export class Serde {
             ri: this.rv.idCounter,
             s: this.serializeSheets(),
             rsr: Array.from(this.hs.renamedSysRule.entries()),
+            mapRules: this.hsLayer.getMapScriptRuleNames?.() ?? [],
         };
     }
     deserialize(data: any) {
         this.hs.renamedSysRule = new Map(data.rsr ?? []);
         this.deserializeRulelist(data.r);
+        this.hsLayer.captureMapScriptRules?.(data.mapRules ?? []);
         this.deserializeSheets(data.s);
         this.rv.idCounter = data.ri || 1;
         if (data.re) this.rv.expandedFolders = new Set(data.re);
@@ -89,7 +97,8 @@ export class Serde {
                         v = n.name + ":" + d?.toString() + ";" + this.hs.genCmd(d.step).filter(e => !e.startsWith("hyp ")).join(";");
                     } else if (d) {
                         // a/d 开头的公理：只存名称占位（内容以 init 为准，减小存档体积、便于作者更新规则）
-                        if (/^[ad]/.test(n.name) && !d.step?.length) v = n.name + ":ax:.";
+                        if (!(this.hsLayer.getMapScriptRuleNames?.() ?? []).includes(n.name)
+                            && staticAxioms.get(n.name)?.equal(new HSParser().parse(d.toString(), "rule"))) v = n.name + ":ax:.";
                         else v = n.name + ":ax:" + d?.toString();
                     }
                     lines.push(`(${n.uuid})${v}`);

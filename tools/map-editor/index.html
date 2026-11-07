@@ -60,44 +60,25 @@
     </section>
     <aside id="inspector" class="inspector panel" aria-label="格子属性">
       <div class="pane-heading inspector-heading"><h2 id="tile-title">格子属性</h2><span id="pending" class="badge" hidden>尚未应用</span><button id="toggle-inspector" aria-controls="inspector-content" aria-expanded="false">展开属性</button></div>
-      <div id="inspector-content" class="inspector-content">      <div id="neighbors" class="neighbors" aria-label="当前格的相邻格"><span>相邻格</span><button data-edge="0">0</button><button data-edge="1">1</button><button data-edge="2">2</button><button data-edge="3">3</button><button data-edge="4">4</button><button data-edge="5">5</button></div>
-      <div id="tile-meta" class="meta"></div><p id="mounted-note" class="notice" hidden></p>
+      <div id="inspector-content" class="inspector-content">
+      <div class="identity"><div id="tile-meta" class="meta"></div><div id="neighbors" class="neighbors" role="group" aria-label="跳到相邻格"><button type="button" data-edge="0">0</button><button type="button" data-edge="1">1</button><button type="button" data-edge="2">2</button><button type="button" data-edge="3">3</button><button type="button" data-edge="4">4</button><button type="button" data-edge="5">5</button></div></div>
+      <p id="mounted-note" class="notice" hidden></p>
       <form id="tile-form">
         <fieldset id="tile-fields"><div class="field-pair"><label>类型<select id="tile-type"><option value="0">道路 / 提示</option><option value="1">墙</option><option value="2">门</option><option value="3">奖励</option><option value="4">序数</option></select></label><label>名称<input id="tile-name" autocomplete="off"></label></div>
-          <label>文字格式<select id="text-mode"><option value="plain">通用文字</option><option value="languages">多语言文字</option></select></label>
-          <label id="plain-field">文字<textarea id="text-plain" rows="4" spellcheck="false"></textarea></label>
-          <div id="language-fields" hidden><label>中文 zh<textarea id="text-zh" rows="4" spellcheck="false"></textarea></label><label>English en<textarea id="text-en" rows="4" spellcheck="false"></textarea></label><details><summary>其他语言 JSON</summary><textarea id="text-other" rows="3" aria-label="其他语言 JSON" spellcheck="false">{}</textarea></details></div>
-          <details id="script-section"><summary>地图脚本 <span id="script-summary" class="hint"></span></summary><label>script<textarea id="tile-script" rows="5" spellcheck="false" placeholder="奖励示例：disable axiom a3&#10;give key red&#10;门示例：require key red&#10;enable axiom a3"></textarea></label>
-          <p class="hint">每行一条命令。奖励可写 disable axiom a3 / give key red；门可写 require key red / enable axiom a3。钥匙按模块实例隔离；禁用公理也禁止依赖它的宏和过门证明。</p>
-          <details><summary>脚本命令参考</summary><p class="hint">每行一条命令，也可用分号分隔；// 开头的整行是注释。文字使用 JSON 双引号，ID 不含空格。下列 ID、金额和文字可替换：</p><pre class="script-reference">require key red
-require not-key red
-require flag ready
-require not-flag ready
-require reward prize
-require money &gt;= 10
-require count visits &gt;= 2
-give key red
-take key red
-give money 10
-take money 10
-set flag ready
-clear flag ready
-set count visits 0
-add count visits 1
-disable axiom a3
-enable axiom a3
-unlock reward prize
-unlock layer T-layer
-open gate door
-close gate door
-set tile door road
-set text door "新的文字"
-message "你好"</pre><p class="hint">比较符：&gt;=、&lt;=、==、!=、&gt;、&lt;。格子类型：road / wall / gate / reward / ordinal；层：D-layer / T-layer / P-layer / G-layer。具体语法由公共解析器校验，不支持 JavaScript 或 eval。</p><p class="hint">门的 require 条件每次进入都会检查；效果默认每个具名格执行一次。需要重复效果时，在其他 data JSON 中设置 "scriptRepeat": true。</p></details>
+          <div class="field-head"><span>文字</span><select id="text-mode" aria-label="文字格式"><option value="plain">通用文字</option><option value="languages">多语言文字</option></select></div>
+          <label id="plain-field"><span class="sr-only">文字</span><textarea id="text-plain" rows="3" spellcheck="false"></textarea></label>
+          <div id="language-fields" hidden><label>中文 zh<textarea id="text-zh" rows="3" spellcheck="false"></textarea></label><label>English en<textarea id="text-en" rows="3" spellcheck="false"></textarea></label><details><summary>其他语言 JSON</summary><textarea id="text-other" rows="3" aria-label="其他语言 JSON" spellcheck="false">{}</textarea></details></div>
+          <details id="script-section"><summary>脚本 <span id="script-summary" class="hint"></span></summary>
+          <div class="script-toolbar" role="toolbar" aria-label="脚本工具"><select id="script-insert" aria-label="插入命令或模板"><option value="">插入…</option></select><button id="script-check" type="button">检查</button><button id="script-help-toggle" type="button" aria-controls="script-help" aria-expanded="false">参考</button></div>
+          <div class="code-field"><pre id="script-gutter" aria-hidden="true">1</pre><textarea id="tile-script" wrap="off" rows="6" spellcheck="false" aria-label="地图脚本" aria-describedby="script-error" placeholder="// 每行一条命令，如 give key red"></textarea></div>
+          <p id="script-error" class="field-error" aria-live="polite" hidden><span id="script-error-text"></span> <button id="script-goto" type="button">跳到该行</button></p>
+          <section id="script-help" class="script-help" aria-label="脚本命令参考" hidden></section>
           </details>
-          <details id="data-section"><summary>高级 data JSON <span id="data-summary" class="hint"></span></summary><label>其他 data JSON（script 由上方字段保存）<textarea id="tile-data" rows="7" spellcheck="false">{}</textarea></label>
-          <p class="hint">p / d / t / td / never、getD / payD、unl.layer、dstrTarget / requiresReward 等元数据直接写入 JSON，保留现有字段。</p>
+          <details id="data-section"><summary>高级 data JSON <span id="data-summary" class="hint"></span></summary><label><span class="sr-only">其他 data JSON</span><textarea id="tile-data" rows="7" spellcheck="false" aria-describedby="data-error">{}</textarea></label>
+          <p id="data-error" class="field-error" aria-live="polite" hidden></p>
+          <p class="hint">p/d/t/td/never、getD/payD、unl.layer、dstrTarget/requiresReward；script 在上方编辑。</p>
           </details>
-          <div class="apply-bar actions"><button id="apply-tile" class="primary" type="submit">应用 Apply</button><button id="reset-form" type="button">还原表单</button><details class="tile-actions"><summary aria-label="更多格子操作">更多</summary><button id="remove-tile" class="danger" type="button">删除本格</button></details></div>
+          <div class="apply-bar actions"><button id="apply-tile" class="primary" type="submit">应用 Apply</button><button id="reset-form" type="button">还原表单</button><span id="apply-state" aria-live="polite"></span><details class="tile-actions"><summary aria-label="更多格子操作">更多</summary><button id="remove-tile" class="danger" type="button">删除本格</button></details></div>
         </fieldset>
       </form>
 </div>

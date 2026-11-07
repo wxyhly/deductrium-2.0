@@ -2,7 +2,7 @@ import { activeWorld, activeWorldSaveMode, worldLoadFailure } from "./hy/world-r
 import { migrateWorldSave, worldSaveMeta } from "./hy/world.js";
 import { Rotor } from "./hy/algebra.js";
 import { createCurrencyBalances, CurrencyBalances } from "./hy/economy.js";
-import { openMapBank } from "./hy/bank-ui.js";
+import { lobbyBank, redeemMapBankOffer } from "./hy/bank.js";
 import { initialCreativeRules,initialSurvivalRules } from "./hs/core/initial.js";
 import { HSLayer } from "./hs/main.js";
 import { TTLayer } from "./tt/main.js";
@@ -17,6 +17,7 @@ import { calcMaxReachOrd, cmp, printOrd } from "./hy/ordinal.js";
 import { tileColor, tileTextColor, tileDisplayText } from "./hy/appearance.js";
 import { stringifyDeductriumAmout } from "./format.js";
 import { createMapScriptState, planMapScript, MapScriptPlan } from "./hy/script.js";
+import { createMapScriptEngine } from "./hy/script-engine.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
 // 旧地图的 dstr 是展示文字；目标必须按稳定 ID 查找，不能解析本地化文案。
@@ -207,11 +208,43 @@ class Game {
     private currencyBalances(): CurrencyBalances {
         return createCurrencyBalances(this.deductrium, this.typeDeductrium, this.modBalances);
     }
+    private mapBanks() {
+        return activeWorld?.mode === "standalone" ? activeWorld.banks : {...activeWorld?.banks, "builtin:lobby": lobbyBank};
+    }
+    private redeemBankReward(block: TileBlock, isLoading?: boolean): boolean {
+        if (isLoading) return true;
+        try {
+            const result = redeemMapBankOffer(block.data.exchange, this.mapBanks(), this.currencyBalances());
+            this.deductrium = result.balances.reasoning;
+            this.typeDeductrium = result.balances.type;
+            this.modBalances = Object.fromEntries(Object.entries(result.balances).filter(([id]) => id !== "reasoning" && id !== "type"));
+            const names = this.currencyNames();
+            this.showToast(LangMgr.lang === "en"
+                ? `Exchanged ${result.amount} ${names[result.from] ?? result.from} + ${result.fee} fee → ${result.credit} ${names[result.to] ?? result.to}`
+                : `兑换 ${result.amount} ${names[result.from] ?? result.from}，手续费 ${result.fee}，获得 ${result.credit} ${names[result.to] ?? result.to}`);
+            this.checkEconAchievements();
+            this.updateStats(); this.saveload.notifySave();
+            return true;
+        } catch (error) {
+            this.showToast(error instanceof Error ? error.message : String(error));
+            return false;
+        }
+    }
 
     private restoreMapScript() {
+        for (const reward of this.mapScript.removedRewards) this.gotRewards.delete(reward);
+        createMapScriptEngine(this.hsLayer, this.ttLayer).restore(this.mapScript);
         this.hsLayer.setMapDisabledAxioms?.(this.mapScript.disabledAxioms);
         for (const reward of this.mapScript.rewards) this.hsLayer.applyReward(reward);
         for (const layer of this.mapScript.layers) this.showLayerButton(layer, true);
+        this.restoreMapScriptOrdinal();
+    }
+    private restoreMapScriptOrdinal() {
+        if (this.mapScript.ordinal) {
+            const ordinal = this.mapScript.ordinal;
+            this.maxOrd = ordinal.max.slice(); this.nextOrd = ordinal.next.slice();
+            this.ordBase = ordinal.base; this.hyLayer.world.currentOrd = ordinal.current.slice();
+        }
     }
     private prepareMapScript(block: TileBlock, hash: string): { plan: MapScriptPlan; money: number; id: string } | false | undefined {
         if (typeof block.data?.script !== "string" || !block.data.script.trim()) return;
@@ -219,12 +252,35 @@ class Game {
         // Reserve the legacy toll before planning, so combined costs cannot overdraw.
         const money = this.deductrium - (block.type === TileBlockType.Gate ? block.data.payD ?? 0 : 0);
         try {
+            const engine = createMapScriptEngine(this.hsLayer, this.ttLayer);
             const plan = planMapScript(block.data.script, this.mapScript, {
                 money, typeMoney: this.typeDeductrium, balances: {...this.currencyBalances(), reasoning: money},
-                banks: activeWorld?.banks, rewards: this.gotRewards,
+                banks: this.mapBanks(), rewards: this.gotRewards,
                 hasTile: target => blockMap.has(nameMap.get(target) ?? target),
                 hasAxiom: name => this.hsLayer.hasMapAxiom(name),
-            }, !block.data.scriptRepeat && this.mapScript.done.includes(id));
+                getTileType: target => blockMap.get(nameMap.get(target) ?? target)?.type,
+                engine,
+                metrics: {steps: this.tilesParcour, demolished: this.destructedGates.size,
+                    spent: this.deductriumConsumed, 'ordinal-base': this.ordBase},
+                ordinal: {current: [...(this.hyLayer.world.currentOrd ?? [])], max: [...this.maxOrd], next: [...this.nextOrd], base: this.ordBase},
+                compareOrdinals: (a, b) => cmp([...a], [...b]),
+                nextOrdinal: (max, base, stepw) => calcMaxReachOrd([...max], base, stepw),
+                completed: !block.data.scriptRepeat && this.mapScript.done.includes(id),
+                hasLayer: layer => gameMode === "creative" || layer === "G-layer"
+                    || this.mapScript.layers.includes(layer)
+                    || [...this.gotRewards].some(reward => blockMap.get(nameMap.get(reward) ?? reward)?.data?.unl?.layer === layer),
+            });
+            engine.validateState(plan.state);
+            for (const effect of plan.attemptEffects) {
+                if (effect.op === "remember") {
+                    if (effect.kind === "type") this.ttLayer.getGui().rememberMapScriptGoal?.(effect.text);
+                    else this.hsLayer.rememberGate(new HSParser().parse(effect.text, effect.kind === "rule" ? "rule" : "wff"));
+                } else if (effect.op === "generate-ordinal") {
+                    this.hyLayer.world.onPassOrd(hash, effect.value.slice());
+                    this.hyLayer.needUpdate = true;
+                }
+            }
+            if (plan.status === "blocked" || plan.confirmation && !confirm(plan.confirmation)) return false;
             this.lastScriptError = "";
             return { plan, money, id };
         } catch (error) {
@@ -237,8 +293,16 @@ class Game {
     private commitMapScript(prepared: ReturnType<Game["prepareMapScript"]>) {
         if (!prepared) return;
         const { plan, money, id } = prepared;
-        if (!plan.state.done.includes(id)) plan.state.done.push(id);
+        if (!plan.repeat && !plan.state.done.includes(id)) plan.state.done.push(id);
+        if (plan.consumeReward === false) {
+            plan.state.tileEdits[id] = {...plan.state.tileEdits[id], type: TileBlockType.Reward};
+        } else if (plan.consumeReward === true && plan.state.tileEdits[id]?.type === TileBlockType.Reward) {
+            delete plan.state.tileEdits[id].type;
+        }
         this.mapScript = plan.state;
+        // Legacy ordinal rewards must see the ordinal staged by this same script.
+        this.restoreMapScriptOrdinal();
+        for (const reward of plan.state.removedRewards) this.gotRewards.delete(reward);
         this.deductriumConsumed += plan.spent;
         this.typeDeductriumConsumed += plan.typeSpent;
         this.typeDeductrium = plan.balances.type;
@@ -250,6 +314,23 @@ class Game {
                 this.gotRewards.add(effect.id);
                 this.applyUnlockEffect({ type: TileBlockType.Road, name: effect.id, text: "", data: {} });
             } else if (effect.op === "message") this.showToast(effect.text);
+            else if (effect.op === "achievement") this.finishAchievement(effect.id);
+            else if (effect.op === "info") this.unlockInfo(effect.id);
+            else if (effect.op === "reset") {
+                const hash = nameMap.get(effect.id) ?? effect.id;
+                const tile = blockMap.get(hash)!;
+                this.gotRewards.delete(effect.id); this.gotRewards.delete(hash);
+                if (tile.name) this.gotRewards.delete(tile.name);
+                tile.data ??= {}; tile.data.got = false; tile.data.del = false;
+                tile.type = TileBlockType.Reward;
+                this.destructedGates.delete(effect.id); this.destructedGates.delete(hash);
+            } else if (effect.op === "demolish") this.destructGate(effect.id);
+            else if (effect.op === "language") {
+                try { localStorage.setItem("lang", effect.value); } catch { }
+                this.langMgr = new LangMgr(effect.value);
+                this.progressLayer.refreshAchievements(); this.progressLayer.refreshSymbols(); this.progressLayer.refreshKnowledge();
+                this.hyLayer.needUpdate = true;
+            }
             else if (effect.op === "open" || effect.op === "close" || effect.op === "tile" || effect.op === "text") {
                 const hash = nameMap.get(effect.id) ?? effect.id;
                 const tile = blockMap.get(hash)!;
@@ -261,6 +342,7 @@ class Game {
             }
         }
         this.restoreMapScript();
+        this.checkEconAchievements();
         this.updateStats();
         this.saveload.notifySave();
     }
@@ -298,9 +380,9 @@ class Game {
     }
     // 经济类成就：首次获得/首次消耗/累计获得里程碑（旧版 addDeductriums 中逻辑）
     private checkEconAchievements() {
-        if (this.deductrium > 0) this.finishAchievement("firstEat");
-        if (this.deductriumConsumed > 0) this.finishAchievement("firstPay");
         const totalObtained = this.deductrium + this.deductriumConsumed;
+        if (totalObtained > 0) this.finishAchievement("firstEat");
+        if (this.deductriumConsumed > 0) this.finishAchievement("firstPay");
         if (totalObtained >= 40) this.finishAchievement("vegan40");
         if (totalObtained >= 1e3) this.finishAchievement("dose1mg");
         if (totalObtained >= 1e6) this.finishAchievement("dose1g");
@@ -385,6 +467,9 @@ class Game {
             if (this.gotRewards.has(reward) && cmp(target, this.maxOrd) > 0) this.maxOrd = target.slice();
         }
         this.nextOrd = calcMaxReachOrd(this.maxOrd, this.ordBase, this.gotRewards.has("stepw"));
+        if (this.mapScript.ordinal) this.mapScript.ordinal = {
+            current: (this.hyLayer.world.currentOrd ?? []).slice(), max: this.maxOrd.slice(), next: this.nextOrd.slice(), base: this.ordBase,
+        };
         this.updateStats();
     }
     private restoreOrdinalMap() {
@@ -420,9 +505,11 @@ class Game {
             const hash = nameMap.get(key) ?? key;
             const block = blockMap.get(hash);
             if (!block) continue; // 地图改版后砖块可能不存在
+            if (block.data?.exchange) continue;
             block.data ??= {};
             block.data.got = true;
-            if (block.type === TileBlockType.Reward && !/^JJZ[OI]-[12]$/.test(block.name ?? "")) {
+            if (block.type === TileBlockType.Reward && !/^JJZ[OI]-[12]$/.test(block.name ?? "")
+                && this.mapScript.tileEdits[key]?.type !== TileBlockType.Reward) {
                 block.type = TileBlockType.Road;
             }
             this.applyUnlockEffect(block);
@@ -488,16 +575,22 @@ class Game {
         this.hyLayer.world.onTileColor = (block, highLight) => tileColor(block, highLight, this.gotRewards.has("highlightd"));
         this.hyLayer.world.onTextColor = tileTextColor;
         this.hyLayer.world.onTileText = tileDisplayText;
-        this.hyLayer.world.onEnterRoad = (hash, block) =>
-            this.initialMapState.get(hash)?.type === TileBlockType.Gate || this.runMapScript(block, hash);
+        this.hyLayer.world.onEnterRoad = (hash, block) => {
+            const original = this.initialMapState.get(hash)?.type;
+            return original === TileBlockType.Gate || original === TileBlockType.Reward || this.runMapScript(block, hash);
+        };
         // 获得奖励：记录 data.got=true；type 从 reward 改为 road（非 reward 不动）
         // 游戏中获取推理素（加载存档时直接读存档总量，不重复加钱）
         this.hyLayer.world.onGetReward = (hash, block, isLoading) => {
             block.data ??= {};
+            // Counter rewards stay available; entering their bank or reloading never exchanges money.
+            if (block.data.exchange !== undefined) return this.redeemBankReward(block, isLoading);
             const alreadyGot = this.gotRewards.has(block.name || hash);
+            let keepReward = this.mapScript.tileEdits[block.name || hash]?.type === TileBlockType.Reward;
             if (!isLoading) {
                 const script = this.prepareMapScript(block, hash);
                 if (script === false) return false;
+                if (script?.plan.consumeReward !== undefined) keepReward = !script.plan.consumeReward;
                 // Validate legacy and scripted payouts together before claiming or committing either.
                 const payout = alreadyGot ? 0 : block.data.getD ?? 0;
                 try {
@@ -509,11 +602,13 @@ class Game {
                     return false;
                 }
                 this.commitMapScript(script);
+                const claimed = new Set([hash, block.name || hash]);
+                this.mapScript.removedRewards = this.mapScript.removedRewards.filter(reward => !claimed.has(reward));
             }
             block.data.got = true;
             this.gotRewards.add(block.name || hash);
             this.applyUnlockEffect(block);
-            if (block.type === TileBlockType.Reward) block.type = TileBlockType.Road;
+            if (block.type === TileBlockType.Reward && !keepReward) block.type = TileBlockType.Road;
             // 入口/内部说明牌每次进入都需触发；读档只恢复显示，不改变本轮标记和终点。
             const relief = block.name?.match(/^JJZ([OI])-([12])$/);
             if (relief) {
@@ -549,6 +644,7 @@ class Game {
                         if (cmp(ord, [1, 2, 3, 4, 5]) >= 0) this.finishAchievement("w4");
                     }
                     this.hyLayer.world.currentOrd = ord;
+                    if (this.mapScript.ordinal) this.mapScript.ordinal.current = ord.slice();
                     return true;
                 }
                 if (tile.name === "preord") return this.tilesParcour >= 256;
@@ -590,6 +686,11 @@ class Game {
                     if (ast) this.hsLayer.rememberGate(ast);
                     return ast ? this.hsLayer.checkRuleGate(ast) : false;
                 }
+                if (data.t) {
+                    const text = typeof tile.text === "string" ? tile.text : tile.text[LangMgr.lang] ?? Object.values(tile.text)[0];
+                    try { return createMapScriptEngine(this.hsLayer, this.ttLayer).query({kind: "type", text}, this.mapScript); }
+                    catch { return false; }
+                }
                 return typeof data.script === "string" && !!data.script.trim();
             };
             if (!gateTest()) return false;
@@ -610,16 +711,6 @@ class Game {
             this.updateStats();
             // 方块成就/知识库：踩上路/奖励/门（通过后换格）都算"通过该方块"
             const block = this.hyLayer.world.getBlock(hash);
-            if (block?.data?.bank && activeWorld?.banks[block.data.bank]) {
-                const text = typeof block.text === "string" ? block.text : block.text[LangMgr.lang] ?? "";
-                openMapBank({title: text, bank: activeWorld.banks[block.data.bank], names: this.currencyNames(),
-                    balances: () => this.currencyBalances(), commit: result => {
-                        // Both ledgers commit only after a fresh, complete quote succeeds.
-                        this.deductrium = result.balances.reasoning; this.typeDeductrium = result.balances.type;
-                        this.modBalances = Object.fromEntries(Object.entries(result.balances).filter(([id]) => id !== "reasoning" && id !== "type"));
-                        this.updateStats(); this.saveload.notifySave();
-                    }});
-            }
             if (block?.data?.ac) this.finishAchievement(block.data.ac);
             if (block?.data?.info) this.unlockInfo(block.data.info);
             this.hyLayer.onchange?.(); // 保留存档通知

@@ -34,7 +34,7 @@ for (const text of [initialCreativeRules, initialSurvivalRules]) {
         if (ci <= 0) continue;
         const name = t.slice(0, ci).trim();
         const rest = t.slice(ci + 1).trim();
-        if (/^[ad]/.test(name) && rest.startsWith("ax:")) initRuleDefs.set(name, t);
+        if (rest.startsWith("ax:")) initRuleDefs.set(name, t);
     }
 }
 
@@ -56,8 +56,72 @@ export class HSLayer {
     private survivalAccess: SurvivalAccess | null = null;
     private mapPolicy?: MapAxiomPolicy;
     private mapDisabledAxioms = new Set<string>();
+    private mapScriptRules = new Map<string, Deduction>();
+    getMapScriptSystem() { return this.hilbertSystem; }
+    getMapScriptRuleNames(): string[] {
+        return [...(this.mapScriptRules ?? [])].filter(([, rule]) => this.hilbertSystem.rules.get(rule.name.name) === rule).map(([, rule]) => rule.name.name);
+    }
+    captureMapScriptRules(names: Iterable<string>) {
+        this.mapScriptRules = new Map();
+        for (const name of names) {
+            const rule = this.hilbertSystem.rules.get(name);
+            if (rule) this.mapScriptRules.set(name, rule);
+        }
+    }
+    createMapScriptSnapshot(): HSLayer {
+        this.sheetGui.saveCurrentSheet();
+        const view = Object.create(HSLayer.prototype) as HSLayer;
+        view.hilbertSystem = new HilbertSystem();
+        view.hilbertSystem.rules = new Map(this.hilbertSystem.rules);
+        view.hilbertSystem.renamedSysRule = new Map(this.hilbertSystem.renamedSysRule);
+        view.sheetGui = { sheets: this.sheetGui.sheets, saveCurrentSheet() {} } as SheetGui;
+        view.ruleList = [];
+        view.ruleListView = { refresh() {} } as unknown as TreeListViewer<ListNode>;
+        view.mapScriptRules = new Map(this.mapScriptRules ?? []);
+        return view;
+    }
+    replayMapScriptSheets() {
+        const core = this.hilbertSystem;
+        const saved = core.saveContext();
+        try {
+            this.sheetGui.sheets = this.sheetGui.sheets.map(sheet => {
+                const commands = core.genCmd(sheet.ctx.props);
+                core.loadContext(core.createEmptyContext());
+                try { core.fromCmd(commands.map(text => new HSParser().parse(text, 'cmd'))); }
+                catch { core.clear(); }
+                return { ...sheet, ctx: core.saveContext() };
+            });
+        } finally { core.loadContext(saved); }
+    }
+    isMapScriptRuleAllowed(rule: Deduction): boolean { return !rule.error && (!this.mapPolicy || this.mapPolicy.allowsRule(rule)); }
+    replaceMapScriptRules(rules: ReadonlyMap<string, Deduction>) {
+        const owned = new Set((this.mapScriptRules ?? new Map()).values());
+        for (const [name, rule] of rules) {
+            const previous = this.hilbertSystem.rules.get(name);
+            if (previous && !owned.has(previous) && previous !== rule) throw new Error("地图规则名称已被占用：" + name);
+        }
+        const removed = new Set<string>();
+        for (const [name, rule] of this.hilbertSystem.rules) {
+            if (owned.has(rule)) { this.hilbertSystem.rules.delete(name); removed.add(name); }
+        }
+        const clean = (list: ListNode[]) => {
+            for (let i = list.length - 1; i >= 0; i--) {
+                const node = list[i];
+                if (node.children) clean(node.children);
+                else if (removed.has(node.name)) list.splice(i, 1);
+            }
+        };
+        clean(this.ruleList);
+        this.mapScriptRules = new Map(rules);
+        for (const [name, rule] of rules) {
+            this.hilbertSystem.rules.set(name, rule);
+            this.ruleList.push({ name, uuid: 0 });
+        }
+        this.ruleListView.refresh();
+    }
     hasMapAxiom(name: string): boolean {
-        return [...initialCreativeRules.split("\n"), ...initialSurvivalRules.split("\n")]
+        return (this.getMapScriptRuleNames().includes(name) && !this.hilbertSystem.rules.get(name)?.step)
+            || [...initialCreativeRules.split("\n"), ...initialSurvivalRules.split("\n")]
             .some(line => line.trimStart().startsWith(name + ":ax:"));
     }
     setMapDisabledAxioms(names: Iterable<string>) {

@@ -11,8 +11,9 @@ export const mapData = `
 :%,3$[=getD:1]
 4,1,3,1,3@
 :%,4;2;3;4;4;2@
-:%,2#[zh]前面的区域[n]以后再来探索吧？[en]How about we explore[n]the area ahead of us later?
-:%,2;2;2;2;2;5@
+:%,2@[[bank-entrance]][zh]银行入口[n]前方可以兑换货币[en]Bank entrance[n]Currency exchange ahead
+:%,2@[[bank-lobby]][=bank:"builtin:lobby"][zh]银行[n]推理素 ↔ 类型币[n]双向 1:1，手续费 1%[n]本金之外另扣手续费[n]侧边奖励格标有兑换金额[n]走入一次兑换一次[n]沿道路选择金额，无需逐个兑换[en]Bank[n]Deductrium ↔ Type currency[n]1:1 both ways; 1% fee[n]Fee is charged on top of principal[n]Step into a marked reward to exchange[n]Use the road to choose an amount[n]Each entry makes one exchange
+:%,2;2;2;2;5@
 1,1#[[#ω]]
 2@
 3,2@
@@ -1791,5 +1792,31 @@ export const mapData = `
 :an42,3@[zh]为纪念你来到这里[n]现将终极答案[n]印发给你们[en]To commemorate your arrival here[n]Now print the ultimate answer[n]for you
 :an42,3,3@[zh]向前追寻答案吧！[n](建议保存一下游戏进度[n]再去追寻哦)[en]Go forward in pursuit of the answer![n](Hint: Save your game progress[n] before you set off)
 
+
+// 银行：道路货架旁的兑换奖励，可重复进入；不弹窗、不自动兑换。
+:bank-lobby,1@
+:bank-lobby,1,1$[[bank-r2t-1]][="exchange":{"bank":"builtin:lobby","from":"reasoning","to":"type","amount":1}][zh]推理素 → 类型币[n]兑换本金 1[n]手续费 0.01[n]到账 1[n]走入后兑换，可重复[en]Deductrium → Type[n]Principal 1[n]Fee 0.01[n]Credit 1[n]Enter to exchange; repeatable
+:bank-lobby,1,2@
+:bank-lobby,1,2,1$[[bank-r2t-10]][="exchange":{"bank":"builtin:lobby","from":"reasoning","to":"type","amount":10}][zh]推理素 → 类型币[n]兑换本金 10[n]手续费 0.1[n]到账 10[n]走入后兑换，可重复[en]Deductrium → Type[n]Principal 10[n]Fee 0.1[n]Credit 10[n]Enter to exchange; repeatable
+:bank-lobby,1,2,2@
+:bank-lobby,1,2,2,1$[[bank-r2t-100]][="exchange":{"bank":"builtin:lobby","from":"reasoning","to":"type","amount":100}][zh]推理素 → 类型币[n]兑换本金 100[n]手续费 1[n]到账 100[n]走入后兑换，可重复[en]Deductrium → Type[n]Principal 100[n]Fee 1[n]Credit 100[n]Enter to exchange; repeatable
+:bank-lobby,1,2,2,2@
+:bank-lobby,1,2,2,2,1$[[bank-r2t-1000]][="exchange":{"bank":"builtin:lobby","from":"reasoning","to":"type","amount":1000}][zh]推理素 → 类型币[n]兑换本金 1000[n]手续费 10[n]到账 1000[n]走入后兑换，可重复[en]Deductrium → Type[n]Principal 1000[n]Fee 10[n]Credit 1000[n]Enter to exchange; repeatable
+:bank-lobby,1,2,2,2,2@
+:bank-lobby,1,2,2,2,2,1$[[bank-r2t-1000000]][="exchange":{"bank":"builtin:lobby","from":"reasoning","to":"type","amount":1000000}][zh]推理素 → 类型币[n]兑换本金 1000000[n]手续费 10000[n]到账 1000000[n]走入后兑换，可重复[en]Deductrium → Type[n]Principal 1000000[n]Fee 10000[n]Credit 1000000[n]Enter to exchange; repeatable
+:bank-lobby,1,2,2,2,2,2@
+:bank-lobby,1,2,2,2,2,2,1$[[bank-r2t-1000000000]][="exchange":{"bank":"builtin:lobby","from":"reasoning","to":"type","amount":1000000000}][zh]推理素 → 类型币[n]兑换本金 1000000000[n]手续费 1e+07[n]到账 1000000000[n]走入后兑换，可重复[en]Deductrium → Type[n]Principal 1000000000[n]Fee 1e+07[n]Credit 1000000000[n]Enter to exchange; repeatable
+:bank-lobby,3@
+:bank-lobby,3,3$[[bank-t2r-1]][="exchange":{"bank":"builtin:lobby","from":"type","to":"reasoning","amount":1}][zh]类型币 → 推理素[n]兑换本金 1[n]手续费 0.01[n]到账 1[n]走入后兑换，可重复[en]Type → Deductrium[n]Principal 1[n]Fee 0.01[n]Credit 1[n]Enter to exchange; repeatable
+:bank-lobby,3,2@
+:bank-lobby,3,2,3$[[bank-t2r-10]][="exchange":{"bank":"builtin:lobby","from":"type","to":"reasoning","amount":10}][zh]类型币 → 推理素[n]兑换本金 10[n]手续费 0.1[n]到账 10[n]走入后兑换，可重复[en]Type → Deductrium[n]Principal 10[n]Fee 0.1[n]Credit 10[n]Enter to exchange; repeatable
+:bank-lobby,3,2,2@
+:bank-lobby,3,2,2,3$[[bank-t2r-100]][="exchange":{"bank":"builtin:lobby","from":"type","to":"reasoning","amount":100}][zh]类型币 → 推理素[n]兑换本金 100[n]手续费 1[n]到账 100[n]走入后兑换，可重复[en]Type → Deductrium[n]Principal 100[n]Fee 1[n]Credit 100[n]Enter to exchange; repeatable
+:bank-lobby,3,2,2,2@
+:bank-lobby,3,2,2,2,3$[[bank-t2r-1000]][="exchange":{"bank":"builtin:lobby","from":"type","to":"reasoning","amount":1000}][zh]类型币 → 推理素[n]兑换本金 1000[n]手续费 10[n]到账 1000[n]走入后兑换，可重复[en]Type → Deductrium[n]Principal 1000[n]Fee 10[n]Credit 1000[n]Enter to exchange; repeatable
+:bank-lobby,3,2,2,2,2@
+:bank-lobby,3,2,2,2,2,3$[[bank-t2r-1000000]][="exchange":{"bank":"builtin:lobby","from":"type","to":"reasoning","amount":1000000}][zh]类型币 → 推理素[n]兑换本金 1000000[n]手续费 10000[n]到账 1000000[n]走入后兑换，可重复[en]Type → Deductrium[n]Principal 1000000[n]Fee 10000[n]Credit 1000000[n]Enter to exchange; repeatable
+:bank-lobby,3,2,2,2,2,2@
+:bank-lobby,3,2,2,2,2,2,3$[[bank-t2r-1000000000]][="exchange":{"bank":"builtin:lobby","from":"type","to":"reasoning","amount":1000000000}][zh]类型币 → 推理素[n]兑换本金 1000000000[n]手续费 1e+07[n]到账 1000000000[n]走入后兑换，可重复[en]Type → Deductrium[n]Principal 1000000000[n]Fee 1e+07[n]Credit 1000000000[n]Enter to exchange; repeatable
 `;
 //# sourceMappingURL=map.js.map

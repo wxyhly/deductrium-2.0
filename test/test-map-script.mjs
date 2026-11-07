@@ -29,6 +29,17 @@ const environment = (extra = {}) => ({
     ...extra,
 });
 
+const assertBlocked = (source, state, env, checksOnly = false) => {
+    const result = planMapScript(source, state, env, checksOnly);
+    assert.equal(result.status, 'blocked', source);
+    assert.deepEqual(result.state, state);
+    assert.notEqual(result.state, state);
+    assert.deepEqual(result.balances, env.balances ?? { reasoning: env.money, type: env.typeMoney ?? 0 });
+    assert.equal(result.spent, 0); assert.equal(result.typeSpent, 0);
+    assert.deepEqual(result.effects, []); assert.deepEqual(result.attemptEffects, []);
+    return result;
+};
+
 test('planner simulates commands in order and persists edits without mutating inputs', () => {
     const state = createMapScriptState({ done: ['visited'], tileEdits: { door: { text: 'old' } } });
     const before = JSON.stringify(state);
@@ -52,6 +63,7 @@ set text sign "欢迎; // literal\\n第二行"; message "Hello"
         keys: [], flags: [], counts: { visits: 1 }, disabledAxioms: ['asep'], done: ['visited'],
         tileEdits: { door: { text: 'old', type: 3 }, sign: { text: '欢迎; // literal\n第二行' } },
         rewards: ['custom'], layers: ['D-layer', 'T-layer', 'P-layer', 'G-layer'],
+        engine: { rules: [], axioms: {}, types: [], disabledTypes: [] }, removedRewards: [],
     });
     assert.deepEqual(plan.effects, [
         { op: 'reward', id: 'custom' },
@@ -76,7 +88,8 @@ test('late requirements, missing keys, insufficient money and invalid references
         'set count n 1000000000000\nadd count n 1',
         'give money 1000000000000', 'message "hello"\ngarbage',
     ]) {
-        assert.throws(() => planMapScript(source, state, env), /line \d+/i, source);
+        if (source.includes('require key missing')) assertBlocked(source, state, env);
+        else assert.throws(() => planMapScript(source, state, env), /line \d+/i, source);
         assert.equal(JSON.stringify(state), before);
         assert.deepEqual(env.rewards, new Set(['base']));
         assert.equal(env.money, 20);
@@ -89,12 +102,13 @@ test('checksOnly validates the entire script and requirements but skips every ef
 take money 999; disable axiom apn5; open gate door; set tile sign wall;
 unlock reward custom; unlock layer G-layer; message "skip";
 require key owned; require not-key new; require not-flag changed; require count n == 2; require money == 20`, state, environment(), true);
-    assert.deepEqual(plan, { state, money: 20, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 20, type: 0 }, effects: [] });
+    assert.deepEqual(plan, { state, money: 20, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 20, type: 0 }, effects: [], status: 'pass', attemptEffects: [] });
     assert.notEqual(plan.state, state);
     for (const source of ['give key new; require key new', 'take key owned; require not-key owned',
         'require key owned; set tile missing road', 'require key owned; enable axiom unknown',
         'require key owned; unlock layer X-layer', 'require key owned; set text sign "bad\\q"']) {
-        assert.throws(() => planMapScript(source, state, environment(), true), /line \d+/i);
+        if (source === 'give key new; require key new' || source === 'take key owned; require not-key owned') assertBlocked(source, state, environment(), true);
+        else assert.throws(() => planMapScript(source, state, environment(), true), /line \d+/i);
     }
 });
 
@@ -178,7 +192,8 @@ test('currency and bank failures leave balances, script state and author configu
         'give money 1; exchange missing reasoning 2',
         'give currency type 1; require currency reasoning == 0',
     ]) {
-        assert.throws(() => planMapScript(source, state, env), /line \d+/i, source);
+        if (source.includes('require currency')) assertBlocked(source, state, env);
+        else assert.throws(() => planMapScript(source, state, env), /line \d+/i, source);
         assert.equal(JSON.stringify({ state, env }), before);
     }
     const invalid = bank(); delete invalid.rules[1].feeFixed;
@@ -194,13 +209,13 @@ test('checksOnly validates bank references and all rule data but never performs 
     const env = environment({ money: 0, typeMoney: 0, banks: { central: bank() } });
     const plan = planMapScript(`exchange central reasoning 100; give currency type 8; take currency reasoning 9;
 require currency reasoning == 0; require currency type == 0`, state, env, true);
-    assert.deepEqual(plan, { state, money: 0, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 0, type: 0 }, effects: [] });
+    assert.deepEqual(plan, { state, money: 0, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 0, type: 0 }, effects: [], status: 'pass', attemptEffects: [] });
     assert.throws(() => planMapScript('exchange missing reasoning 2', state, env, true), /Unknown bank/);
     assert.throws(() => planMapScript('exchange central reasoning 1', state, env, true), /minimum/);
     const invalid = bank(); invalid.rules[1].rounding = 'auto';
     assert.throws(() => planMapScript('require currency reasoning == 0; exchange central reasoning 2', state,
         environment({ banks: { central: invalid } }), true), /Invalid rounding/);
-    assert.throws(() => planMapScript('give currency type 5; require currency type == 5', state, env, true), /Requirement not met/);
+    assertBlocked('give currency type 5; require currency type == 5', state, env, true);
 });
 
 test('all currency comparisons observe the correct ledger and amount boundaries', () => {
@@ -210,7 +225,7 @@ require currency type != 20; require currency type > 6; require currency type < 
 give currency type 0; take currency reasoning 0; give currency reasoning 999999999980;
 require currency reasoning == 1e12`, state, env);
     for (const [comparison, amount] of [['>=', 8], ['<=', 6], ['==', 20], ['!=', 7], ['>', 7], ['<', 7]]) {
-        assert.throws(() => planMapScript(`require currency type ${comparison} ${amount}`, state, env), /Requirement not met/);
+        assertBlocked(`require currency type ${comparison} ${amount}`, state, env);
     }
     assert.throws(() => planMapScript('give currency type 1e12; take currency type 1e12; give currency type 8; take currency type 8', state,
         environment({ typeMoney: 0 })), /line 1/i, 'cumulative typeSpent is bounded');
@@ -351,12 +366,13 @@ set count n -3; require count n >= -3; require count n <= -3; require count n ==
 require count n != 0; require count n > -4; require count n < -2`, state, environment());
     for (const requirement of ['require money >= 21', 'require money <= 19', 'require money == 19',
         'require money != 20', 'require money > 20', 'require money < 20', 'require count absent != 0']) {
-        assert.throws(() => planMapScript(requirement, state, environment()), /Requirement not met/);
+        assertBlocked(requirement, state, environment());
     }
 });
 
 test('restore creates independent defaults, normalizes sets and clones nested JSON data', () => {
-    const empty = { keys: [], flags: [], counts: {}, disabledAxioms: [], done: [], tileEdits: {}, rewards: [], layers: [] };
+    const empty = { keys: [], flags: [], counts: {}, disabledAxioms: [], done: [], tileEdits: {}, rewards: [], layers: [],
+        engine: { rules: [], axioms: {}, types: [], disabledTypes: [] }, removedRewards: [] };
     assert.deepEqual(createMapScriptState(), empty);
     assert.deepEqual(createMapScriptState({}), empty);
     const saved = { keys: ['k', 'k'], flags: ['f'], counts: { n: -3 }, disabledAxioms: ['apn5'],
@@ -365,7 +381,7 @@ test('restore creates independent defaults, normalizes sets and clones nested JS
     assert.deepEqual(restored.keys, ['k']);
     restored.keys.push('new'); restored.counts.n = 5; restored.tileEdits.sign.text = 'changed';
     assert.deepEqual(saved.keys, ['k', 'k']); assert.equal(saved.counts.n, -3); assert.equal(saved.tileEdits.sign.text, 'original');
-    assert.deepEqual(createMapScriptState(JSON.parse(JSON.stringify(saved))), { ...saved, keys: ['k'] });
+    assert.deepEqual(createMapScriptState(JSON.parse(JSON.stringify(saved))), { ...empty, ...saved, keys: ['k'] });
     const other = createMapScriptState(); other.keys.push('isolated');
     assert.deepEqual(createMapScriptState(), empty);
 });
@@ -431,11 +447,12 @@ test('JavaScript is rejected as commands and preserved inertly inside JSON strin
     globalThis.__mapScriptExecuted = false;
     try {
         for (const script of ['globalThis.__mapScriptExecuted=true', 'eval("1")', 'while (true) {}',
-            'function f() {}', 'give money (1+2)', 'give key k; globalThis.__mapScriptExecuted=true',
+            'function f() {}', 'give money (1+eval(2))', 'give key k; globalThis.__mapScriptExecuted=true',
             'message `${globalThis.__mapScriptExecuted=true}`', 'give money JSON.parse("2")']) {
             assert.throws(() => planMapScript(script, createMapScriptState(), environment()), /line \d+/i);
         }
         const text = '${globalThis.__mapScriptExecuted=true}; eval("boom"); while(true){}';
+        assert.equal(planMapScript('give money (1+2)', createMapScriptState(), environment()).money, 23);
         const plan = planMapScript(`message ${JSON.stringify(text)}`, createMapScriptState(), environment());
         assert.deepEqual(plan.effects, [{ op: 'message', text }]);
         assert.equal(globalThis.__mapScriptExecuted, false);

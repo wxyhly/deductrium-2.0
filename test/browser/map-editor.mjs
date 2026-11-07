@@ -157,19 +157,176 @@ try {
         }), true, 'external Apply never bypasses tile pending guard');
         await page.locator('#reset-form').click();
 
+        // Property tools operate on the draft and preserve the project's save state.
+        await save(page, '#export-project');
+        const propertiesState = await snapshot(page);
+        const storedProperties = await page.evaluate(() => localStorage.getItem(mapEditor.storageKey));
+        await disclose(page, '#script-section');
+        await page.locator('#script-check').click();
+        assert.equal(await page.evaluate(() => mapEditor.dirty), false, 'checking a clean script stays clean');
+        assert.equal(await snapshot(page), propertiesState);
+        assert.equal(await page.locator('#script-help').isVisible(), false);
+        await page.locator('#script-help-toggle').click();
+        assert.equal(await page.locator('#script-help-toggle').getAttribute('aria-expanded'), 'true');
+        assert.equal(await page.locator('#pending').isVisible(), false, 'help disclosure does not edit the form');
+        const catalogue = await page.evaluate(async () => {
+            const {SCRIPT_GROUPS, supportedScriptGroups} = await import('/tools/map-editor/script-help.mjs');
+            const {parseMapScript} = await import('/js/hy/script.js');
+            const all = SCRIPT_GROUPS.flatMap(group => group.entries);
+            const advertised = supportedScriptGroups(parseMapScript).flatMap(group => group.entries);
+            const ids = [...document.querySelectorAll('#script-insert option[value]')].map(option => option.value).filter(Boolean);
+            const only = all.find(item => item.id === 'require-rule-name');
+            const filtered = supportedScriptGroups(source => {
+                if (source !== only.template) throw new Error('Unsupported syntax');
+            });
+            return {
+                allIds: all.map(item => item.id), ids,
+                advertisedIds: advertised.map(item => item.id),
+                advertisedTemplates: advertised.map(item => { parseMapScript(item.template); return item.template; }),
+                helpTemplates: [...document.querySelectorAll('#script-help dt code')].map(code => code.textContent),
+                placeholdersValid: all.every(item => !item.select || item.template.includes(item.select)),
+                filteredIds: filtered.flatMap(group => group.entries).map(item => item.id),
+                filteredGroups: filtered.length,
+                rejectedGroups: supportedScriptGroups(() => { throw new Error('Unsupported syntax'); }).length
+            };
+        });
+        assert.deepEqual(catalogue.ids, catalogue.advertisedIds, 'insertion menu exposes exactly the templates accepted by the running parser');
+        assert.deepEqual(catalogue.helpTemplates, catalogue.advertisedTemplates, 'reference and insertion menu share the same validated templates');
+        assert.equal(new Set(catalogue.allIds).size, catalogue.allIds.length, 'catalogue IDs are unique');
+        assert.equal(catalogue.placeholdersValid, true, 'every insertion placeholder exists in its template');
+        assert.deepEqual(catalogue.filteredIds, ['require-rule-name'], 'unsupported templates are filtered independently');
+        assert.equal(catalogue.filteredGroups, 1, 'empty command groups are hidden');
+        assert.equal(catalogue.rejectedGroups, 0, 'a parser rejecting all templates exposes no groups');
+        for (const id of [
+            'require-proof', 'require-rule', 'require-type', 'require-rule-name', 'require-rule-present', 'require-type-present',
+            'unlock-achievement', 'unlock-info', 'unlock-rule', 'unlock-type', 'add-axiom', 'remove-axiom', 'disable-type', 'enable-type',
+            'require-metric-steps', 'require-metric-demolished', 'require-metric-spent', 'require-metric-ordinal-base',
+            'number-require-money', 'number-require-currency', 'number-require-count', 'number-require-metric',
+            'number-give-money', 'number-give-currency', 'number-take-currency', 'number-set-count', 'number-add-count', 'number-min', 'number-max', 'number-exchange',
+            'require-ordinal-current', 'require-ordinal-max', 'require-ordinal-next', 'set-ordinal-current', 'set-ordinal-max',
+            'set-ordinal-base', 'raise-ordinal', 'generate-ordinal', 'recompute-ordinal',
+            'event-once', 'event-repeat', 'reward-consume', 'reward-keep', 'allow', 'block', 'confirm', 'remember-proof', 'remember-rule', 'remember-type',
+            'clear-reward', 'reset-reward', 'demolish-gate', 'set-language-zh', 'set-language-en', 'if-engine', 'if-number-ordinal', 'example-repeat-reward', 'example-min-max', 'example-attempt'
+        ]) assert.ok(catalogue.allIds.includes(id), `catalogue covers ${id}`);
+        assert.equal(await snapshot(page), propertiesState, 'catalogue validation and help leave the project untouched');
+        assert.equal(await page.evaluate(() => mapEditor.dirty), false, 'catalogue browsing keeps clean save state');
+        await page.locator('#script-help-toggle').click();
+        await page.locator('#tile-script').fill('message "before"\nmessage "after"');
+        await page.locator('#tile-script').evaluate(field => {
+            const offset = field.value.indexOf('\n') + 1; field.focus(); field.setSelectionRange(offset, offset);
+        });
+        await page.locator('#script-insert').selectOption('give-key');
+        assert.equal(await page.locator('#tile-script').inputValue(), 'message "before"\ngive key red\nmessage "after"', 'insertion respects caret and line boundaries');
+        assert.equal(await page.locator('#tile-script').evaluate(field => field.value.slice(field.selectionStart, field.selectionEnd)), 'red', 'placeholder selected');
+        assert.equal(await page.locator('#script-insert').inputValue(), '');
+        assert.equal(await page.locator('#pending').isVisible(), true);
+        assert.equal(await page.locator('#script-section').getAttribute('data-dirty'), 'true');
+        assert.equal(await page.locator('#data-section').getAttribute('data-dirty'), null, 'only edited section marked');
+        await page.locator('#script-check').click();
+        assert.equal(await page.locator('#pending').isVisible(), true, 'checking never clears draft dirty');
+        assert.equal(await snapshot(page), propertiesState, 'checking never mutates project');
+        assert.equal(await page.evaluate(() => localStorage.getItem(mapEditor.storageKey)), storedProperties, 'checking does not persist draft fields');
+        assert.match(await page.locator('#script-summary').textContent(), /3 条命令.*✓/);
+        assert.equal(await page.locator('#script-gutter span').count(), 3);
+        await page.locator('#tile-script').focus();
+        await page.keyboard.press('Control+z');
+        assert.equal(await page.locator('#tile-script').inputValue(), 'message "before"\nmessage "after"', 'native undo reverses template insertion');
+        await page.locator('#reset-form').click();
+        assert.equal(await page.locator('#script-section').getAttribute('data-dirty'), null);
+
+        await page.locator('#tile-script').fill(Array.from({length: 24}, (_, i) => `message "line ${i + 1}"`).join('\n'));
+        await page.locator('#tile-script').evaluate(field => { field.scrollTop = field.scrollHeight; field.dispatchEvent(new Event('scroll')); });
+        assert.equal(await page.locator('#script-gutter span').count(), 24);
+        assert.equal(await page.evaluate(() => document.getElementById('script-gutter').scrollTop === document.getElementById('tile-script').scrollTop), true, 'gutter follows scrolling');
+        await page.locator('#reset-form').click();
+        const propertiesLayout = await page.evaluate(() => {
+            const inspector = document.getElementById('inspector-content'), bounds = inspector.getBoundingClientRect();
+            return {fits: inspector.scrollWidth <= inspector.clientWidth,
+                neighbors: [...document.querySelectorAll('#neighbors button[data-edge]')].every(button => {
+                    const box = button.getBoundingClientRect();
+                    return box.left >= bounds.left && box.right <= bounds.right && button.hasAttribute('aria-label') && button.dataset.kind === 'empty';
+                })};
+        });
+        assert.deepEqual(propertiesLayout, {fits: true, neighbors: true}, 'compact identity and all six neighbors fit inspector');
+        await page.screenshot({path: join(screenshots, `properties-${viewport.width}.png`)});
+
+        // Applying another property must preserve sparse locales, fallback order,
+        // nested source text and existing actions the property UI does not know.
+        const nestedScript = '// preserve source\nif (key red or flag ready) and not reward prize\n  if currency type >= 2\n    message "中文; // literal"\n  else\n    set flag waiting\n  end\nelif not axiom a3\n  unlock info hint\nelse\n  message "fallback"\nend\n';
+        for (const {text, script} of [
+            {text: {ja: '日本語のみ'}, script: nestedScript},
+            {text: {en: 'English fallback', ja: '日本語'}, script: nestedScript},
+            {text: {zh: '', ja: '日本語'}, script: nestedScript},
+            {text: {fr: 'Français', zh: '中文\r\n第二行', en: 'English\r\nsecond line'}, script: nestedScript.replaceAll('\n', '\r\n')},
+            {text: '通用文字\r\n第二行', script: ''},
+            {text: {ja: '日本語のみ'}, script: ' \r\n\t'}
+        ]) {
+            const data = {script, scriptRepeat: true,
+                info: {zh: '说明', en: 'Info', ja: '情報'}, actions: [{kind: 'unknown-existing-action', args: [1, {keep: [true, null]}]}],
+                unknown: {nested: {preserve: 'value'}}};
+            await page.evaluate(({text, data}) => mapEditor.applyProject(project => project.put('', {type: 3, name: 'roundtrip', text, data}), 'roundtrip fixture'), {text, data});
+            const before = await snapshot(page);
+            await page.locator('#script-check').click();
+            assert.equal(await snapshot(page), before, 'nested Check does not apply anything');
+            assert.equal(await page.locator('#pending').isVisible(), false);
+            await page.locator('#apply-tile').click();
+            assert.deepEqual(await page.evaluate(() => mapEditor.selected.text), text, 'unchanged Apply preserves sparse locales and text');
+            assert.deepEqual(await page.evaluate(() => Object.keys(mapEditor.selected.text)), Object.keys(text), 'unchanged Apply preserves locale fallback order');
+            assert.deepEqual(await page.evaluate(() => mapEditor.selected.data), data, 'unchanged Apply preserves nested script and unknown actions');
+        }
+        await page.locator('#text-zh').fill('新增中文');
+        await page.locator('#apply-tile').click();
+        assert.deepEqual(await page.evaluate(() => mapEditor.selected.text), {ja: '日本語のみ', zh: '新增中文'}, 'editing an absent locale adds that locale only');
+        await page.locator('#text-zh').fill('');
+        await page.locator('#apply-tile').click();
+        assert.deepEqual(await page.evaluate(() => mapEditor.selected.text), {ja: '日本語のみ', zh: ''}, 'clearing an existing locale preserves its explicit empty value');
+        const nestedState = await snapshot(page);
+        await page.locator('#script-check').click();
+        await page.locator('#tile-name').fill('unapplied-nested-edit');
+        await page.locator('#tile-script').fill(nestedScript.trimEnd().replace(/\nend$/, ''));
+        await page.locator('#apply-tile').click({delay: 400});
+        assert.equal(await snapshot(page), nestedState, 'unclosed nested branch never partially applies other fields');
+        assert.equal(await page.locator('#pending').isVisible(), true);
+        assert.equal(await page.locator('#tile-name').inputValue(), 'unapplied-nested-edit');
+        assert.equal(await page.locator('#status').getAttribute('data-error'), 'true', 'invalid nested Apply announces an error on the first click');
+        await page.locator('#reset-form').click();
+
         await applyTile(page, {type: 3, name: 'reward', text: '奖励提示\n第二行', script: 'disable axiom a3\ngive key red', data: '{"getD":3,"scriptRepeat":true,"custom":{"keep":true}}'});
         const rewardState = await snapshot(page);
         assert.equal(await page.evaluate(() => mapEditor.selected.data.script), 'disable axiom a3\ngive key red');
         assert.equal(await page.evaluate(() => mapEditor.selected.data.scriptRepeat), true);
-        await page.locator('#tile-data').fill('{bad JSON');
+        await page.locator('#tile-data').fill('{\n  "broken": }');
         await page.locator('#apply-tile').click();
         assert.equal(await snapshot(page), rewardState, 'invalid JSON has no partial commit');
+        assert.equal(await page.locator('#tile-data').getAttribute('aria-invalid'), 'true');
+        assert.match(await page.locator('#data-error').textContent(), /第 2 行，第 \d+ 列/);
+        assert.equal(await page.locator('#tile-data').evaluate(field => field === document.activeElement), true, 'invalid JSON focuses its field');
+        assert.equal(await page.locator('#data-section').getAttribute('data-dirty'), 'true');
         await page.locator('#reset-form').click();
-        await page.locator('#tile-script').fill('this is not a map command');
+        assert.equal(await page.locator('#data-error').isVisible(), false);
+        assert.equal(await page.locator('#tile-data').getAttribute('aria-invalid'), null);
+        await page.locator('#tile-script').fill('give key red\ninvalid <img src=x onerror=alert(1)>\nmessage "after"');
+        await page.locator('#script-section > summary').click();
         await page.locator('#apply-tile').click();
         assert.equal(await snapshot(page), rewardState, 'invalid DSL has no partial commit');
         assert.equal(await page.locator('#status').getAttribute('data-error'), 'true');
+        assert.equal(await page.locator('#script-section').evaluate(element => element.open), true, 'invalid Apply opens script');
+        assert.equal(await page.locator('#tile-script').getAttribute('aria-invalid'), 'true');
+        assert.match(await page.locator('#script-error').textContent(), /第 2 行：invalid <img/);
+        assert.equal(await page.locator('#script-error img').count(), 0, 'untrusted error source is text');
+        assert.equal(await page.locator('#script-gutter .err').textContent(), '2');
+        const errorSelection = () => page.locator('#tile-script').evaluate(field => ({focused: field === document.activeElement, selected: field.value.slice(field.selectionStart, field.selectionEnd)}));
+        assert.deepEqual(await errorSelection(), {focused: true, selected: 'invalid <img src=x onerror=alert(1)>'});
+        await page.locator('#script-goto').click();
+        assert.deepEqual(await errorSelection(), {focused: true, selected: 'invalid <img src=x onerror=alert(1)>'});
+        assert.match(await page.locator('#apply-state').textContent(), /脚本第 2 行有错误/);
+        assert.equal(await page.locator('#pending').isVisible(), true, 'invalid Apply retains dirty');
+        await page.screenshot({path: join(screenshots, `properties-error-${viewport.width}.png`)});
+        await page.locator('#tile-script').fill('give key red');
+        await page.waitForFunction(() => !document.getElementById('tile-script').hasAttribute('aria-invalid'));
+        assert.equal(await page.locator('#pending').isVisible(), true, 'live validation retains dirty');
         await page.locator('#reset-form').click();
+        assert.equal(await page.locator('#script-error').isVisible(), false);
 
         await page.locator('#neighbors button[data-edge="0"]').click();
         assert.equal(await page.evaluate(() => mapEditor.selectedHash), '0');
@@ -310,7 +467,7 @@ try {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'responsive layout has no horizontal overflow');
         await page.locator('#map').scrollIntoViewIfNeeded(); await page.screenshot({path: join(screenshots, `editor-${viewport.width}.png`)});
         assert.deepEqual(errors, [], 'no uncaught browser errors');
-        console.log(JSON.stringify({viewport, checks: 'progressive disclosure, exclusive panels, mobile drawer/pending fields, confirm cancellation, save protection, checkbox multi-selection, native rendering, Apply, invalid JSON/DSL, history, metadata, language/theme, empty hit, drag, brush/erase, selection/module, collision/mount/move/rotate/detach/remove, import/export, restoration, preview payload, layout'}));
+        console.log(JSON.stringify({viewport, checks: 'progressive disclosure, exclusive panels, mobile drawer/pending fields, confirm cancellation, save protection, checkbox multi-selection, native rendering, Apply, shared script catalogue, caret insertion/native undo, pure checks/dirty retention, gutter scroll, JSON row/column, script error focus/goto/live validation, history, metadata, language/theme, empty hit, drag, brush/erase, selection/module, collision/mount/move/rotate/detach/remove, import/export, restoration, preview payload, layout'}));
         await context.close();
     }
 

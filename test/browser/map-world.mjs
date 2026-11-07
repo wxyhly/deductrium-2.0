@@ -29,8 +29,11 @@ const manifest = {
         {from:'mod:workshop',to:'type',rate:.5,feeRate:0,feeFixed:0,minimum:2,rounding:'floor',precision:0}]}},migrations:[],
     tiles:[{id:'start',hash:'',type:0,text:'入口'},
         {id:'prize',hash:'1',type:3,text:'领取启动资金',data:{script:'give money 100\ngive currency type 5\ngive currency mod:workshop 30\nunlock reward macro\nunlock layer D-layer'}},
-        {id:'bank',hash:'2',type:0,text:'工坊银行',data:{bank:'central'}},
-        {id:'gate',hash:'3',type:2,text:'交 8 工坊币',data:{script:'require currency mod:workshop >= 8\ntake currency mod:workshop 8'}}]
+        {id:'bank',hash:'2',type:0,text:'工坊银行：走到兑换奖励格兑换，费用见各格文字'},
+        {id:'gate',hash:'3',type:2,text:'交 8 工坊币',data:{script:'require currency mod:workshop >= 8\ntake currency mod:workshop 8'}},
+        {id:'buy',hash:'2,1',type:3,text:'支付 10 推理素与 2 手续费，获得 20 工坊币',data:{exchange:{bank:'central',from:'reasoning',to:'mod:workshop',amount:10}}},
+        {id:'sell',hash:'2,3',type:3,text:'10 工坊币 → 5 类型币',data:{exchange:{bank:'central',from:'mod:workshop',to:'type',amount:10}}},
+        {id:'large',hash:'2,2',type:3,text:'大额兑换',data:{exchange:{bank:'central',from:'reasoning',to:'mod:workshop',amount:1000}}}]
 };
 const balances = page => page.evaluate(() => game.saveload.serialize().balances);
 const ready = async page => {await page.waitForFunction(() => window.game || document.getElementById('world-load-error'));};
@@ -60,19 +63,17 @@ try {
         await gamePage.evaluate(()=>{if(!game.hyLayer.world.hitTest([1]))throw Error('prize rejected');});
         assert.deepEqual(await balances(gamePage),{reasoning:100,type:5,'mod:workshop':30});
         await gamePage.evaluate(()=>{if(!game.hyLayer.world.hitTest([2]))throw Error('bank road rejected');game.hyLayer.world.currentTile=[2];game.hyLayer.world.onStepToAnotherTile('2');});
-        await gamePage.locator('#map-bank-dialog').waitFor({state:'visible'});
+        assert.equal(await gamePage.locator('dialog[open]').count(),0);
         assert.deepEqual(await balances(gamePage),{reasoning:100,type:5,'mod:workshop':30});
-        await gamePage.locator('#bank-amount').fill('10');
-        assert.match(await gamePage.locator('#bank-quote').textContent(),/12.*20/);
-        const bankBox=await gamePage.locator('#map-bank-dialog').boundingBox();
-        assert.ok(bankBox.x>=0 && bankBox.x+bankBox.width<=viewport.width);
-        await gamePage.screenshot({path:join(screenshots,`bank-${viewport.width}.png`)});
-        await gamePage.locator('#bank-confirm').click();
+        await gamePage.evaluate(()=>{if(!game.hyLayer.world.hitTest([2,1]))throw Error('bank offer rejected');});
         assert.deepEqual(await balances(gamePage),{reasoning:88,type:5,'mod:workshop':50});
-        await gamePage.locator('#bank-amount').fill('1000');assert.equal(await gamePage.locator('#bank-confirm').isDisabled(),true);
-        await gamePage.locator('#bank-direction').selectOption('1');await gamePage.locator('#bank-amount').fill('10');await gamePage.locator('#bank-confirm').click();
+        assert.equal(await gamePage.evaluate(()=>game.hyLayer.world.getBlock("2,1").type),3);
+        await gamePage.screenshot({path:join(screenshots,`bank-${viewport.width}.png`)});
+        await gamePage.evaluate(()=>{if(game.hyLayer.world.hitTest([2,2]))throw Error('insufficient balance accepted');});
+        assert.deepEqual(await balances(gamePage),{reasoning:88,type:5,'mod:workshop':50});
+        await gamePage.evaluate(()=>{if(!game.hyLayer.world.hitTest([2,3]))throw Error('reverse offer rejected');});
         assert.deepEqual(await balances(gamePage),{reasoning:88,type:10,'mod:workshop':40});
-        await gamePage.locator('#map-bank-dialog button[type=button]').click();
+        assert.equal(await gamePage.locator('dialog[open]').count(),0);
         await gamePage.evaluate(()=>{if(!game.hyLayer.world.hitTest([3]))throw Error('script gate rejected');game.hyLayer.world.currentTile=[3];game.saveload.cancelPendingSave();game.saveload.save();});
         assert.deepEqual(await balances(gamePage),{reasoning:88,type:10,'mod:workshop':32});
         const original=await gamePage.evaluate(()=>localStorage.getItem(game.saveload.saveKey));
@@ -130,6 +131,38 @@ try {
         await gamePage.screenshot({path:join(screenshots,`world-${viewport.width}.png`)});
         assert.deepEqual(errors,[]);console.log(JSON.stringify({viewport,world:'PASS',bank:'PASS',publish:'PASS',migration:'PASS',isolation:'PASS',errors}));
         await context.close();
+
+        // The official lobby uses the same native reward presentation and real map callbacks.
+        const lobbyContext=await browser.newContext({viewport}),lobbyPage=await lobbyContext.newPage(),lobbyErrors=[];
+        let dialogs=0;
+        lobbyPage.on('pageerror',e=>lobbyErrors.push(e.message));
+        lobbyPage.on('dialog',async dialog=>{dialogs++;await dialog.dismiss();});
+        await lobbyPage.goto(origin+'/?survival');await ready(lobbyPage);
+        const lobby=await lobbyPage.evaluate(async()=>{
+            const {blockMap,nameMap}=await import('/js/hy/maploader.js');
+            const {Rotor}=await import('/js/hy/algebra.js');
+            const entry=blockMap.get(nameMap.get('bank-entrance'));
+            const hash=nameMap.get('bank-lobby'),world=game.hyLayer.world;
+            world.currentTile=hash.split(',').map(Number);world.localCamMat=new Rotor();
+            world.atlasTile.generateRotors(world.currentTile);game.hyLayer.needUpdate=true;
+            game.deductrium=101;game.typeDeductrium=0;game.updateStats();
+            const offers=[...blockMap].filter(([,tile])=>tile.data?.exchange);
+            const find=(from,amount)=>offers.find(([,tile])=>tile.data.exchange.from===from&&tile.data.exchange.amount===amount)[0];
+            return {entry:entry.type,offers:offers.length,buy:find('reasoning',100),sell:find('type',10),large:find('reasoning',1e9)};
+        });
+        assert.equal(lobby.entry,0);assert.equal(lobby.offers,12);
+        const lobbyHit=hash=>lobbyPage.evaluate(hash=>game.hyLayer.world.hitTest(hash.split(',').map(Number)),hash);
+        assert.equal(await lobbyHit(lobby.buy),true);assert.deepEqual(await balances(lobbyPage),{reasoning:0,type:100});
+        assert.equal(await lobbyHit(lobby.buy),false);assert.deepEqual(await balances(lobbyPage),{reasoning:0,type:100});
+        assert.equal(await lobbyHit(lobby.sell),true);assert.deepEqual(await balances(lobbyPage),{reasoning:10,type:89.9});
+        assert.equal(await lobbyHit(lobby.large),false);assert.deepEqual(await balances(lobbyPage),{reasoning:10,type:89.9});
+        await lobbyPage.screenshot({path:join(screenshots,`official-bank-${viewport.width}.png`)});
+        await lobbyPage.evaluate(()=>{game.saveload.cancelPendingSave();game.saveload.save();});
+        await lobbyPage.reload();await ready(lobbyPage);assert.deepEqual(await balances(lobbyPage),{reasoning:10,type:89.9});
+        assert.equal(await lobbyPage.evaluate(async hash=>(await import('/js/hy/maploader.js')).blockMap.get(hash).type,lobby.buy),3);
+        assert.equal(dialogs,0);assert.deepEqual(lobbyErrors,[]);
+        console.log(JSON.stringify({viewport,officialBank:'PASS',fee:'PASS',repeat:'PASS',reload:'PASS',dialogs}));
+        await lobbyContext.close();
     }
     console.log('Screenshots: '+screenshots);
 } finally {await browser.close();await new Promise(r=>server.close(r));}

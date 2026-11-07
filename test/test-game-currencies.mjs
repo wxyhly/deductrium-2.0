@@ -17,7 +17,9 @@ const { Rotor } = await import('../js/hy/algebra.js');
 const { tileColor, tileTextColor, tileDisplayText } = await import('../js/hy/appearance.js');
 const { stringifyDeductriumAmout } = await import('../js/format.js');
 const {createCurrencyBalances} = await import('../js/hy/economy.js');
+const {lobbyBank,redeemMapBankOffer} = await import('../js/hy/bank.js');
 const {createMapScriptState, planMapScript} = await import('../js/hy/script.js');
+const {createMapScriptEngine} = await import('../js/hy/script-engine.js');
 
 const quiet = fn => {
     const log = console.log;
@@ -95,14 +97,14 @@ function makeGame(data, mode = 'survival', tiles = []) {
         'HSLayer', 'TTLayer', 'HyLayer', 'blockMap', 'nameMap', 'TileBlockType', 'LangMgr',
         'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd',
         'tileColor', 'tileTextColor', 'tileDisplayText', 'stringifyDeductriumAmout',
-        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'planMapScript',
-        'activeWorld','activeWorldSaveMode','createCurrencyBalances',gameSource)(
+        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'planMapScript', 'createMapScriptEngine',
+        'activeWorld','activeWorldSaveMode','createCurrencyBalances','lobbyBank','redeemMapBankOffer',gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
         ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd,
         tileColor, tileTextColor, tileDisplayText, stringifyDeductriumAmout,
-        false, ()=>'unused', createMapScriptState, planMapScript, undefined,undefined,createCurrencyBalances);
+        false, ()=>'unused', createMapScriptState, planMapScript, createMapScriptEngine, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;
@@ -218,4 +220,207 @@ test('valid combined payout reaches the limit, commits once, and survives save r
     assert.equal(hit(game, prizeName), true);
     assert.deepEqual(game.saveload.serialize().balances, { reasoning: 1e12, type: 8 });
     assert.equal(game.mapScript.done.filter(id => id === prizeName).length, 1);
+});
+
+
+test('native bank counter rewards repeat on entry, never claim or pay again on reload', () => {
+    let game = makeGame(); game.deductrium = 1000;
+    const entry = block('bank-entrance'); assert.equal(entry.type, Type.Road);
+    const before = game.saveload.serialize().balances;
+    assert.equal(hit(game, 'bank-lobby'), true);
+    game.hyLayer.world.onStepToAnotherTile(nameMap.get('bank-lobby'));
+    assert.deepEqual(game.saveload.serialize().balances, before);
+    assert.equal(confirmations, 0);
+    assert.equal(hit(game, 'bank-r2t-10'), true);
+    assert.deepEqual(game.saveload.serialize().balances, {reasoning:989.9,type:10});
+    assert.equal(block('bank-r2t-10').type, Type.Reward);
+    assert(!game.gotRewards.has('bank-r2t-10'));
+    assert.equal(hit(game, 'bank-r2t-10'), true);
+    assert.deepEqual(game.saveload.serialize().balances, {reasoning:979.8,type:20});
+    assert.equal(hit(game, 'bank-t2r-10'), true);
+    assert.deepEqual(game.saveload.serialize().balances, {reasoning:989.8,type:9.9});
+    const saved=structuredClone(game.saveload.serialize()); game=makeGame(saved);
+    assert.deepEqual(game.saveload.serialize().balances, saved.balances);
+    game.hyLayer.world.hitReward(block('bank-r2t-10'),nameMap.get('bank-r2t-10'),true);
+    assert.deepEqual(game.saveload.serialize().balances, saved.balances);
+    const snapshot=game.saveload.serialize();
+    assert.equal(hit(game, 'bank-t2r-10'), false);
+    assert.deepEqual(game.saveload.serialize(), snapshot);
+    assert.equal(game.deductriumConsumed, 0);
+});
+
+
+test('native bank exchanging 101 type for 100 reasoning unlocks economic achievements', () => {
+    const game = makeGame({ ...saveData(), balances: { reasoning: 0, type: 101 } });
+    assert.deepEqual(game.saveload.serialize().ac, []);
+
+    assert.equal(hit(game, 'bank-t2r-100'), true);
+    const result = game.saveload.serialize();
+    assert.deepEqual(result.balances, { reasoning: 100, type: 0 });
+    assert.deepEqual(new Set(result.ac), new Set(['firstEat', 'vegan40']));
+    assert.equal(result.DC, 0);
+    assert.equal(result.TC, 0);
+    assert.equal(block('bank-t2r-100').type, Type.Reward);
+    assert(!result.rw.includes('bank-t2r-100'));
+    assert.equal(confirmations, 0);
+});
+
+test('native bank rejects insufficient type including the fee without debit or achievements', () => {
+    const game = makeGame({ ...saveData(), balances: { reasoning: 0, type: 100 } });
+    const before = structuredClone(game.saveload.serialize());
+    const counterBefore = structuredClone(block('bank-t2r-100'));
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+        assert.equal(hit(game, 'bank-t2r-100'), false);
+        assert.deepEqual(game.saveload.serialize(), before);
+        assert.deepEqual(block('bank-t2r-100'), counterBefore);
+    }
+    assert.equal(confirmations, 0);
+});
+
+test('native bank restore with sufficient funds never exchanges or grants achievements', () => {
+    // Include a legacy claim to exercise applyGotRewards as well as hitReward(isLoading).
+    const data = { ...saveData(['bank-t2r-100']), balances: { reasoning: 0, type: 101 } };
+    let game = makeGame(data);
+    assert.deepEqual(game.saveload.serialize().balances, { reasoning: 0, type: 101 });
+    assert.deepEqual(game.saveload.serialize().ac, []);
+    assert.equal(block('bank-t2r-100').type, Type.Reward);
+    assert.equal(Object.hasOwn(block('bank-t2r-100').data, 'got'), false);
+
+    const before = structuredClone(game.saveload.serialize());
+    for (let replay = 0; replay < 2; replay++) {
+        assert.equal(game.hyLayer.world.hitReward(block('bank-t2r-100'), nameMap.get('bank-t2r-100'), true), true);
+        assert.deepEqual(game.saveload.serialize(), before);
+    }
+    game = makeGame(before);
+    assert.deepEqual(game.saveload.serialize(), before);
+    assert.equal(block('bank-t2r-100').type, Type.Reward);
+    assert.equal(confirmations, 0);
+});
+
+test('actual script callback executes staged branches, unlocks achievement/info and reloads without effects',()=>{
+    const script=`if layer G-layer and axiom a3 and tile branch-door == gate
+        disable axiom a3
+        give key red
+        unlock layer T-layer
+        unlock achievement scripted-branch
+        unlock info mec:scripted-branch
+        open gate branch-door
+        if layer T-layer and not axiom a3 and tile branch-door == road
+            give currency type 7
+            set text branch-sign "Done"
+        else
+            take money 1000
+        end
+    else
+        give money 999
+    end`;
+    const tiles=[['0',{type:Type.Reward,name:'branch-prize',text:'Branch',data:{script}}],
+        ['1',{type:Type.Gate,name:'branch-door',text:'Door',data:{never:true}}],
+        ['2',{type:Type.Road,name:'branch-sign',text:'Before',data:{}}]];
+    let game=makeGame(undefined,'survival',tiles);
+    assert.equal(hit(game,'branch-prize'),true);
+    assert.equal(game.typeDeductrium,7); assert.equal(game.deductrium,0);
+    assert(game.gotAchievements.has('scripted-branch'));assert(game.unlockedInfos.has('mec:scripted-branch'));
+    assert(game.mapScript.layers.includes('T-layer'));assert(game.hsLayer.disabled.includes('a3'));
+    assert.equal(block('branch-door').type,Type.Road); assert.equal(block('branch-sign').text,'Done');
+    const saved=structuredClone(game.saveload.serialize());game=makeGame(saved,'survival',tiles);
+    assert.equal(hit(game,'branch-prize'),true);assert.deepEqual(game.saveload.serialize().balances,saved.balances);
+    assert(game.gotAchievements.has('scripted-branch'));assert(game.unlockedInfos.has('mec:scripted-branch'));
+    assert.equal(block('branch-sign').text,'Done');
+});
+
+test('net-zero script rewards retain both earning and spending achievements without replaying payment',()=>{
+    const tiles=[['0',{type:Type.Reward,name:'balanced-prize',text:'Balanced',data:{script:'give money 40\ntake money 40'}}]];
+    let game=makeGame(undefined,'survival',tiles);
+    assert.equal(hit(game,'balanced-prize'),true);
+    assert.equal(game.deductrium,0);assert.equal(game.deductriumConsumed,40);
+    for(const id of ['firstEat','firstPay','vegan40']) assert(game.gotAchievements.has(id),id);
+    const saved=structuredClone(game.saveload.serialize());game=makeGame(saved,'survival',tiles);
+    assert.equal(hit(game,'balanced-prize'),true);
+    assert.equal(game.deductrium,0);assert.equal(game.deductriumConsumed,40);
+});
+
+test('reset reward can be reclaimed once without duplicate payout after ordinary script commits or reload', () => {
+    const tiles = [
+        ['0', { type: Type.Reward, name: 'reset-prize', text: 'Prize', data: { getD: 4 } }],
+        ['1', { type: Type.Road, name: 'reset-switch', text: 'Reset', data: { script: 'event repeat; reset reward reset-prize' } }],
+        ['2', { type: Type.Road, name: 'ordinary-script', text: 'Ordinary', data: { script: 'event repeat; give key visited' } }],
+    ];
+    let game = makeGame(undefined, 'survival', tiles);
+    const observations = [];
+    const observe = stage => {
+        const save = game.saveload.serialize();
+        observations.push({ stage, balance: save.balances.reasoning, claimed: save.rw.includes('reset-prize') });
+        assert.equal(save.balances.type, 0);
+    };
+
+    assert.equal(hit(game, 'reset-prize'), true);
+    observe('first claim');
+    assert.equal(hit(game, 'reset-switch'), true);
+    assert.equal(block('reset-prize').type, Type.Reward);
+    observe('reset');
+    assert.equal(hit(game, 'reset-prize'), true);
+    observe('reclaimed');
+    assert.equal(hit(game, 'ordinary-script'), true);
+    assert(game.saveload.serialize().ms.keys.includes('visited'));
+    observe('ordinary script committed');
+    assert.equal(hit(game, 'reset-prize'), true);
+    observe('touched after ordinary script');
+
+    const saved = structuredClone(game.saveload.serialize());
+    game = makeGame(saved, 'survival', tiles);
+    observe('reloaded');
+    assert.equal(hit(game, 'reset-prize'), true);
+    observe('touched after reload');
+
+    assert.deepEqual(observations, [
+        { stage: 'first claim', balance: 4, claimed: true },
+        { stage: 'reset', balance: 4, claimed: false },
+        { stage: 'reclaimed', balance: 8, claimed: true },
+        { stage: 'ordinary script committed', balance: 8, claimed: true },
+        { stage: 'touched after ordinary script', balance: 8, claimed: true },
+        { stage: 'reloaded', balance: 8, claimed: true },
+        { stage: 'touched after reload', balance: 8, claimed: true },
+    ]);
+});
+
+test('event repeat reward switches from keep to consume and stays Road without payments or counts on later touches or reload', () => {
+    const script = `event repeat
+give money 2
+add count visits 1
+if flag kept
+    reward consume
+else
+    reward keep
+    set flag kept
+end`;
+    const tiles = [['0', { type: Type.Reward, name: 'consume-prize', text: 'Prize', data: { script } }]];
+    let game = makeGame(undefined, 'survival', tiles);
+    const observations = [];
+    const observe = stage => {
+        const save = game.saveload.serialize();
+        observations.push({ stage, type: block('consume-prize').type,
+            balance: save.balances.reasoning, visits: save.ms.counts.visits });
+    };
+
+    assert.equal(hit(game, 'consume-prize'), true);
+    observe('kept');
+    assert.equal(hit(game, 'consume-prize'), true);
+    observe('consumed');
+    assert.equal(hit(game, 'consume-prize'), true);
+    observe('third touch');
+    const saved = structuredClone(game.saveload.serialize());
+    game = makeGame(saved, 'survival', tiles);
+    observe('reloaded');
+    assert.equal(hit(game, 'consume-prize'), true);
+    observe('touched after reload');
+
+    assert.deepEqual(observations, [
+        { stage: 'kept', type: Type.Reward, balance: 2, visits: 1 },
+        { stage: 'consumed', type: Type.Road, balance: 4, visits: 2 },
+        { stage: 'third touch', type: Type.Road, balance: 4, visits: 2 },
+        { stage: 'reloaded', type: Type.Road, balance: 4, visits: 2 },
+        { stage: 'touched after reload', type: Type.Road, balance: 4, visits: 2 },
+    ]);
 });

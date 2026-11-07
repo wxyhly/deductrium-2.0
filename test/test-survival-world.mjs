@@ -16,7 +16,9 @@ const { Rotor } = await import('../js/hy/algebra.js');
 const { tileColor, tileTextColor, tileDisplayText } = await import('../js/hy/appearance.js');
 const { stringifyDeductriumAmout } = await import('../js/format.js');
 const {createCurrencyBalances} = await import('../js/hy/economy.js');
+const {lobbyBank,redeemMapBankOffer} = await import('../js/hy/bank.js');
 const {createMapScriptState, planMapScript} = await import('../js/hy/script.js');
+const {createMapScriptEngine} = await import('../js/hy/script-engine.js');
 
 const quiet = fn => {
     const log = console.log;
@@ -95,13 +97,13 @@ function makeGame(data, mode = 'survival', tiles = []) {
         'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd',
         'tileColor', 'tileTextColor', 'tileDisplayText', 'stringifyDeductriumAmout',
         'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'planMapScript',
-        'activeWorld','activeWorldSaveMode','createCurrencyBalances',gameSource)(
+        'activeWorld','activeWorldSaveMode','createCurrencyBalances','lobbyBank','redeemMapBankOffer','createMapScriptEngine',gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
         ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd,
         tileColor, tileTextColor, tileDisplayText, stringifyDeductriumAmout,
-        false, ()=>'unused', createMapScriptState, planMapScript, undefined,undefined,createCurrencyBalances);
+        false, ()=>'unused', createMapScriptState, planMapScript, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer,createMapScriptEngine);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;

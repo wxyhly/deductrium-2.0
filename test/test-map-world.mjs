@@ -25,6 +25,45 @@ function atomicReject(data, w, pattern) {
     assert.deepEqual(data, before); assert.deepEqual(w, beforeWorld);
 }
 
+test('legacy script branches resolve reward resets and numeric reads without rewriting proof text', () => {
+    const w = manifest();
+    w.tiles[0].data = {script: [
+        'if money >= currency(type) + count(visits)',
+        '  reset reward Gift',
+        '  clear reward Gift',
+        '  demolish gate Door',
+        '  give money count(visits) + 1',
+        'else',
+        '  require proof "$a→$a"',
+        '  add axiom amod "⊢$a→$a"',
+        'end',
+    ].join('\n')};
+    const source = worldRuntimeTiles(w)[0][1].data.script;
+    assert.match(source, /reset reward mod:room::reward/);
+    assert.match(source, /clear reward mod:room::reward/);
+    assert.match(source, /demolish gate mod:room::gate/);
+    assert.match(source, /count\(mod:room::visits\)/);
+    assert.match(source, /require proof "\$a→\$a"/);
+    assert.match(source, /add axiom amod "⊢\$a→\$a"/);
+    for (const bad of ['reset reward missing', 'demolish gate missing',
+        'if flag ready\n give money currency(mod:other)\nend']) {
+        w.tiles[0].data.script = bad;
+        assert.throws(() => parseWorld(w), /Unknown internal script tile|Unregistered script currency/);
+    }
+});
+
+test('saved local reward ownership and tombstones follow explicit tile identity migrations', () => {
+    const old = manifest(), data = save(old);
+    data.ms.rewards = [sid('reward'), 'macro'];
+    data.ms.removedRewards = [sid('gate'), 'JJZI-1'];
+    const next = clone(old); next.revision = 2;
+    next.tiles[2].id = 'renamed'; next.migrations = [edge(1, 2, {reward:'renamed'})];
+    const result = migrateWorldSave(data, next);
+    assert.deepEqual(result.ms.rewards, [sid('renamed'), 'macro']);
+    assert.deepEqual(result.ms.removedRewards, [sid('gate'), 'JJZI-1']);
+    assert.deepEqual(data.ms.rewards, [sid('reward'), 'macro']);
+});
+
 test('detached manifests, numeric world IDs, stable runtime names and isolated save mode', () => {
     const input = manifest(), w = parseWorld(input);
     assert.deepEqual(w, input); assert.notEqual(w.tiles, input.tiles);
@@ -198,4 +237,32 @@ test('standalone global rewards and extension official progress/positions surviv
     mixed.worldPosition = { hash: '4' };
     const result = migrateWorldSave(mixed, w); assert.deepEqual(result, mixed);
     for (const field of ['rw', 'dg']) { const bad = clone(mixed); bad[field].push('mod:other::tile'); atomicReject(bad, w); }
+});
+
+
+test('nested branches resolve local tile/reward aliases and validate inactive references before publication', () => {
+    const w=manifest();
+    w.tiles[0].data={script:`if not reward Gift and (tile Door == gate or key red)
+        give key red
+        if count visits == 0
+            set flag ready
+            unlock reward Gift
+            open gate Door
+        elif currency type >= 3
+            give currency type 1
+        else
+            message "Door"
+        end
+    end`};
+    const runtime=worldRuntimeTiles(w), source=runtime[0][1].data.script;
+    assert.match(source,/reward mod:room::reward/); assert.match(source,/tile mod:room::gate/);
+    assert.match(source,/key mod:room::red/); assert.match(source,/open gate mod:room::gate/);
+    const plan=planMapScript(source,createMapScriptState(),{money:0,typeMoney:0,rewards:new Set(),
+        hasTile:id=>runtime.some(([,tile])=>tile.name===id),hasAxiom:()=>true,getTileType:id=>runtime.find(([,tile])=>tile.name===id)?.[1].type});
+    assert(plan.state.keys.includes('mod:room::red'));
+    assert(plan.state.rewards.includes(sid('reward')));assert.equal(plan.state.tileEdits[sid('gate')].type,0);
+    for(const body of ['open gate missing','if tile missing == road\nmessage "hi"\nend','give currency mod:other 1','exchange absent reasoning 1']){
+        const bad=clone(w);bad.tiles[0].data.script=`if key red\nmessage "ok"\nelse\n${body}\nend`;
+        assert.throws(()=>parseWorld(bad));
+    }
 });
