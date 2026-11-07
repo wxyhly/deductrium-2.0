@@ -1,6 +1,7 @@
 import {MapDocument, writeText} from './source-text.mjs';
 import {parseTileContent} from '../../js/hy/maploader.js';
 import {parseMapScript, rewriteMapScript} from '../../js/hy/script.js';
+import {halfPlaneContains} from './geometry.mjs';
 
 const clone = value => structuredClone(value);
 const key = path => path.join(',');
@@ -10,6 +11,16 @@ const object = value => value && typeof value === 'object' && !Array.isArray(val
 const MAX_TILES = 20000;
 function identifier(value, label = 'ID') {
     if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(value)) throw Error(`${label} 须为 1～80 位字母、数字、点、下划线或短横线`);
+    return value;
+}
+function tileIdentifier(value) {
+    if (typeof value !== 'string') throw Error('砖块 ID 无效');
+    for (const part of value.split('::')) identifier(part,'砖块 ID');
+    return value;
+}
+function versionValue(value, label) {
+    if (value === undefined) return 1;
+    if (!Number.isSafeInteger(value) || value < 1) throw Error(`${label} 须为大于等于 1 的安全整数`);
     return value;
 }
 function json(value, depth = 0) {
@@ -72,10 +83,11 @@ export function relativePath(path, origin, polygon) {
 }
 function moduleValue(input, polygon) {
     if (!object(input) || input.format !== 'deductrium-map-module-v1' || input.tiling?.p !== 6 || input.tiling?.q !== 4 || !Array.isArray(input.tiles) || input.tiles.length > MAX_TILES) throw Error('请选择有效的 (6,4) 地图模块');
-    const result = {format:input.format, id:identifier(input.id,'模块 ID'), title:String(input.title || input.id), tiling:{p:6,q:4}, tiles:[], ports:clone(input.ports ?? {})};
+    const result = {format:input.format, id:identifier(input.id,'模块 ID'), title:String(input.title || input.id),
+        version:versionValue(input.version,'模块 version'),revision:versionValue(input.revision,'模块 revision'),tiling:{p:6,q:4}, tiles:[], ports:clone(input.ports ?? {})};
     const paths = new Set(), ids = new Set(), names = new Set();
     for (const item of input.tiles) {
-        const id = identifier(item.id,'砖块 ID'), at = canonicalPath(item.at, polygon), hash = key(at), value = tileValue(item);
+        const id = tileIdentifier(item.id), at = canonicalPath(item.at, polygon), hash = key(at), value = tileValue(item);
         if (ids.has(id) || paths.has(hash) || value.name && names.has(value.name)) throw Error('模块内砖块 ID、位置或名称重复');
         ids.add(id); paths.add(hash); if (value.name) names.add(value.name);
         result.tiles.push({id,at,...value});
@@ -87,6 +99,17 @@ function moduleValue(input, polygon) {
     }
     json(result);
     return result;
+}
+function regionValue(input, polygon) {
+    if (input === null) return null;
+    if (!object(input) || !Number.isInteger(input.edge) || input.edge < 0 || input.edge > 5 || ![1,-1].includes(input.side)) throw Error('半平面须包含 hash、edge (0～5) 和 side (±1)');
+    return {hash:key(canonicalPath(input.hash,polygon)),edge:input.edge,side:input.side,
+        ...(input.entrance !== undefined ? {entrance:key(canonicalPath(input.entrance,polygon))} : {})};
+}
+function worldValue(input) {
+    if (input === null) return null;
+    if (!object(input)) throw Error('world 须为普通 JSON 对象或 null');
+    json(input);return clone(input);
 }
 function placementValue(input, polygon) {
     if (!object(input) || !Number.isInteger(input.rotation) || input.rotation < 0 || input.rotation > 5) throw Error('旋转方向须为 0～5');
@@ -104,6 +127,7 @@ export class EditorProject {
     constructor(polygon) {
         if (polygon.p !== 6 || polygon.q !== 4) throw Error('编辑器使用生存模式的 (6,4) 地图');
         this.polygon = polygon; this.id = 'my-map'; this.title = '未命名地图';
+        this.version = 1; this._region = null; this._world = null;
         this.tiles = new Map(); this.modules = new Map(); this.instances = [];
         this._undo = []; this._redo = []; this._nextId = 1; this._source = undefined;
     }
@@ -123,9 +147,12 @@ export class EditorProject {
     static fromJSON(data, polygon) {
         if (!object(data) || data.format !== 'deductrium-map-project-v1' || data.tiling?.p !== 6 || data.tiling?.q !== 4 || !Array.isArray(data.tiles) || data.tiles.length > MAX_TILES || !Array.isArray(data.modules) || !Array.isArray(data.instances) || data.modules.length > 256 || data.instances.length > 256) throw Error('请选择有效地图项目');
         const project = new EditorProject(polygon); project.id = identifier(data.id,'地图 ID'); project.title = String(data.title ?? data.id);
+        project.version=versionValue(data.version,'项目 version');
+        project._region=regionValue(data.region === undefined ? null : data.region,polygon);
+        project._world=worldValue(data.world === undefined ? null : data.world);
         const ids = new Set();
         for (const input of data.tiles) {
-            const hash = key(canonicalPath(input.hash,polygon)), id = identifier(input.id,'砖块 ID');
+            const hash = key(canonicalPath(input.hash,polygon)), id = tileIdentifier(input.id);
             if (project.tiles.has(hash) || ids.has(id) || input.instanceId || input.localId) throw Error('项目包含重复位置或无效实例砖块');
             ids.add(id); project.tiles.set(hash,{id,hash,...tileValue(input)});
         }
@@ -140,23 +167,32 @@ export class EditorProject {
             for (const [hash,tile] of preview.tiles) project.tiles.set(hash,tile);
             project.instances.push({...placementValue(instance,polygon),moduleId:instance.moduleId});
         }
+        project._validateRegion();
         project._nextId = 1;
         while ([...project.tiles.values()].some(t=>t.id === `t${project._nextId}`)) project._nextId++;
         return project;
     }
     toJSON() {
-        return {format:'deductrium-map-project-v1',id:this.id,title:this.title,tiling:{p:6,q:4},
+        return {format:'deductrium-map-project-v1',id:this.id,title:this.title,version:this.version,world:this.world,
+            ...(this._region ? {region:this.region} : {}),tiling:{p:6,q:4},
             tiles:clone([...this.tiles.values()].filter(tile=>!tile.instanceId)),modules:clone([...this.modules.values()]),instances:clone(this.instances)};
     }
-    _snapshot() { return {...this.toJSON(),source:this._source,nextId:this._nextId}; }
+    _snapshot() { return {...this.toJSON(),source:this._source,nextId:this._nextId,tileOrder:[...this.tiles.keys()]}; }
     _restore(snapshot) {
         const next = EditorProject.fromJSON(snapshot,this.polygon);
         this.id=next.id; this.title=next.title; this.tiles=next.tiles; this.modules=next.modules; this.instances=next.instances;
+        this.version=next.version; this._region=next._region; this._world=next._world;
+        this.tiles=new Map(snapshot.tileOrder.map(hash=>[hash,next.tiles.get(hash)]));
         this._source=snapshot.source; this._nextId=snapshot.nextId;
     }
     _change(action) {
         const before = this._snapshot();
-        try { action(); if (this.tiles.size > MAX_TILES) throw Error('地图超过 20000 格'); }
+        try {
+            action();
+            if (this.tiles.size > MAX_TILES) throw Error('地图超过 20000 格');
+            if (this.modules.size > 256 || this.instances.length > 256) throw Error('模块库或实例超过 256 个');
+            this._validateRegion();
+        }
         catch (error) { this._restore(before); throw error; }
         this._undo.push(before); if (this._undo.length > 50) this._undo.shift(); this._redo = []; this._source = undefined;
     }
@@ -164,9 +200,30 @@ export class EditorProject {
     get canRedo() { return this._redo.length > 0; }
     undo() { if (!this.canUndo) return; const before=this._snapshot(); this._restore(this._undo.pop()); this._redo.push(before); }
     redo() { if (!this.canRedo) return; const before=this._snapshot(); this._restore(this._redo.pop()); this._undo.push(before); }
-    setInfo(id, title) {
+    get region() { return clone(this._region); }
+    get world() { return clone(this._world); }
+    _regionError(hash) {
+        const region=this._region;
+        if (!region || hash===region.entrance || halfPlaneContains(relativePath(hash,region.hash,this.polygon),region.edge,region.side,this.polygon)) return;
+        return `砖块 ${hash || '原点'} 超出半平面编辑范围`;
+    }
+    _validateRegion() {
+        for (const hash of this.tiles.keys()) { const error=this._regionError(hash); if (error) throw Error(error); }
+    }
+    // {hash: string|number[], edge: 0..5, side: 1|-1, entrance?: string|number[]}
+    // +1 contains the boundary tile's center; entrance exempts one fixed hash.
+    setRegion(input) {
+        const region=regionValue(input,this.polygon); this._change(()=>{this._region=region;});
+    }
+    // Authoring metadata only. The world publisher validates its manifest.
+    setWorld(input) {
+        const world=worldValue(input); this._change(()=>{this._world=world;});
+    }
+    setInfo(id, title, options = {}) {
         identifier(id,'地图 ID'); if (typeof title !== 'string' || title.length > 240) throw Error('地图标题最多 240 字');
-        this._change(()=>{ this.id=id; this.title=title; });
+        if (!object(options)) throw Error('项目信息选项须为对象');
+        const version=own(options,'version') ? versionValue(options.version,'项目 version') : this.version;
+        this._change(()=>{ this.id=id; this.title=title; this.version=version; });
     }
     put(path, input) {
         const hash = key(canonicalPath(path,this.polygon)), value = tileValue(input), old = this.tiles.get(hash);
@@ -188,17 +245,43 @@ export class EditorProject {
     exportModule(hashes, originHash, options) {
         const origin=canonicalPath(originHash,this.polygon), unique=[...new Set(hashes.map(h=>key(canonicalPath(h,this.polygon))))];
         if (!unique.length) throw Error('请先选择需要导出的砖块');
-        const tiles=unique.map((hash,i)=>{
+        const tiles=unique.map(hash=>{
             const tile=this.tiles.get(hash); if (!tile) throw Error('选区包含空格');
-            return {id:`t${i+1}`,at:relativePath(hash,origin,this.polygon),...tileValue(tile)};
+            return {id:tile.id,at:relativePath(hash,origin,this.polygon),...tileValue(tile)};
         });
-        return moduleValue({format:'deductrium-map-module-v1',id:options.id,title:options.title,tiling:{p:6,q:4},tiles,ports:options.ports ?? {}},this.polygon);
+        return moduleValue({format:'deductrium-map-module-v1',id:options.id,title:options.title,version:options.version,revision:options.revision,tiling:{p:6,q:4},tiles,ports:options.ports ?? {}},this.polygon);
     }
     registerModule(input) {
         const module=moduleValue(input,this.polygon), previous=this.modules.get(module.id);
         if (previous && JSON.stringify(previous)!==JSON.stringify(module)) throw Error('同名模块已存在，请更换模块 ID');
         if (!previous) this._change(()=>this.modules.set(module.id,module));
         return module.id;
+    }
+    // Removed IDs are an explicit identity decision; this diff is for authoring,
+    // not an implicit migration of puzzle completion or runtime save progress.
+    updateModule(input, options = {}) {
+        const module=moduleValue(input,this.polygon), previous=this.modules.get(module.id);
+        if (!previous) throw Error('模块不存在，不能更新未知模块');
+        if (module.revision <= previous.revision) throw Error('模块 revision 必须比已注册版本更新');
+        if (!object(options) || !Array.isArray(options.deletedTileIds ?? [])) throw Error('deletedTileIds 须为砖块 ID 数组');
+        const oldIds=new Set(previous.tiles.map(t=>t.id)), newIds=new Set(module.tiles.map(t=>t.id));
+        const deletedTileIds=[...oldIds].filter(id=>!newIds.has(id)), declared=options.deletedTileIds ?? [];
+        const declaredIds=new Set(declared);
+        if (declared.some(id=>typeof id!=='string') || declaredIds.size!==declared.length || declared.length!==deletedTileIds.length || deletedTileIds.some(id=>!declaredIds.has(id))) throw Error('deletedTileIds 必须准确声明本次删除的砖块 ID');
+        const instances=this.instances.filter(instance=>instance.moduleId===module.id);
+        const instanceIds=new Set(instances.map(instance=>instance.id));
+        const diff={moduleId:module.id,fromRevision:previous.revision,toRevision:module.revision,
+            retainedTileIds:[...oldIds].filter(id=>newIds.has(id)),addedTileIds:[...newIds].filter(id=>!oldIds.has(id)),deletedTileIds,instanceIds:[...instanceIds]};
+        this._change(()=>{
+            for (const [hash,tile] of this.tiles) if (instanceIds.has(tile.instanceId)) this.tiles.delete(hash);
+            this.modules.set(module.id,module);
+            for (const instance of instances) {
+                const preview=this.previewMount(module.id,instance,instance.id);
+                if (preview.errors.length) throw Error(preview.errors.join('；'));
+                for (const [hash,tile] of preview.tiles) this.tiles.set(hash,tile);
+            }
+        });
+        return diff;
     }
     previewMount(moduleId, input, ignoreInstanceId) {
         const tiles=new Map(), errors=[];
@@ -208,6 +291,7 @@ export class EditorProject {
             if (this.instances.some(i=>i.id===placement.id && i.id!==ignoreInstanceId)) throw Error('实例 ID 已存在');
             const ignored = tile => ignoreInstanceId !== undefined && tile.instanceId===ignoreInstanceId;
             const names=new Set([...this.tiles.values()].filter(t=>!ignored(t)).map(t=>t.name).filter(Boolean));
+            const ids=new Set([...this.tiles.values()].filter(t=>!ignored(t)).map(t=>t.id));
             const localNames=new Map(module.tiles.filter(t=>t.name).map(t=>[t.name,`${placement.id}::${t.name}`]));
             for (const item of module.tiles) {
                 const hash=key(transport(item.at,placement.at,placement.rotation,this.polygon).at), value=tileValue(item);
@@ -218,6 +302,8 @@ export class EditorProject {
                 if (existing && !ignored(existing)) errors.push(`位置 ${hash || '原点'} 已有砖块`);
                 if (value.name && names.has(value.name)) errors.push(`名称 ${value.name} 已存在`);
                 if (tiles.has(hash)) errors.push('模块几何位置重叠');
+                if (ids.has(`${placement.id}::${item.id}`)) errors.push('砖块 ID 已存在');
+                const regionError=this._regionError(hash); if (regionError) errors.push(regionError);
                 tiles.set(hash,{id:`${placement.id}::${item.id}`,hash,...value,instanceId:placement.id,localId:item.id});
             }
             if (this.tiles.size - [...this.tiles.values()].filter(ignored).length + tiles.size > MAX_TILES) errors.push('地图超过 20000 格');

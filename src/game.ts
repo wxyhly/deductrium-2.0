@@ -1,3 +1,8 @@
+import { activeWorld, activeWorldSaveMode, worldLoadFailure } from "./hy/world-runtime.js";
+import { migrateWorldSave, worldSaveMeta } from "./hy/world.js";
+import { Rotor } from "./hy/algebra.js";
+import { createCurrencyBalances, CurrencyBalances } from "./hy/economy.js";
+import { openMapBank } from "./hy/bank-ui.js";
 import { initialCreativeRules,initialSurvivalRules } from "./hs/core/initial.js";
 import { HSLayer } from "./hs/main.js";
 import { TTLayer } from "./tt/main.js";
@@ -34,6 +39,9 @@ class Game {
     unlockedInfos = new Set<string>;
     // 经济/进度数据（仅生存模式；单位 µg）
     deductrium = 0;          // 拥有推理素
+    typeDeductrium = 0;
+    typeDeductriumConsumed = 0;
+    private modBalances: Record<string, number> = {};
     deductriumConsumed = 0;  // 累计消耗推理素
     tilesParcour = 0;        // 总方块步数
     maxOrd: number[] = [];
@@ -50,7 +58,7 @@ class Game {
     private initialMapState = new Map(Array.from(blockMap, ([hash, block]) =>
         [hash, { ...block, data: { ...block.data } }] as const));
     private initialMapNames = new Map(nameMap);
-    saveload = new SaveLoad(editorPreview ? editorPreviewSaveMode() : gameMode, () => {
+    saveload = new SaveLoad(activeWorldSaveMode ?? (editorPreview ? editorPreviewSaveMode() : gameMode), () => {
         // 创造模式目前只有推理层（hs）+ 类型层（tt）；几何层/奖励/成就/经济仅生存模式
         if (gameMode === "creative") return { hs: this.hsLayer.serialize(), tt: this.ttLayer.serialize(), ly: this.getCurrentLayer() };
         return {
@@ -64,6 +72,12 @@ class Game {
             in: Array.from(this.unlockedInfos),
             D: this.deductrium,
             DC: this.deductriumConsumed,
+            balances: this.currencyBalances(),
+            TC: this.typeDeductriumConsumed,
+            ...(activeWorld ? { world: worldSaveMeta(activeWorld), worldPosition: {
+                tileId: activeWorld.tiles.find(tile => tile.hash === this.hyLayer.world.currentTile.join(","))?.id,
+                hash: this.hyLayer.world.currentTile.join(","),
+            } } : {}),
             tp: this.tilesParcour,
             mo: this.maxOrd.slice(),
             ob: this.ordBase,
@@ -81,6 +95,18 @@ class Game {
             this.unlockedInfos = new Set(data.in);
             this.deductrium = data.D ?? 0;
             this.deductriumConsumed = data.DC ?? 0;
+            const balances = this.validateBalances(data.balances ?? {reasoning: data.D ?? 0, type: 0});
+            this.deductrium = balances.reasoning; this.typeDeductrium = balances.type;
+            this.modBalances = Object.fromEntries(Object.entries(balances).filter(([id]) => id !== "reasoning" && id !== "type"));
+            this.typeDeductriumConsumed = data.TC ?? 0;
+            if (activeWorld && data.worldPosition?.tileId) {
+                const tile = activeWorld.tiles.find(tile => tile.id === data.worldPosition.tileId);
+                if (tile) {
+                    this.hyLayer.world.currentTile = tile.hash ? tile.hash.split(",").map(Number) : [];
+                    if (data.worldPosition.hash !== tile.hash) this.hyLayer.world.localCamMat = new Rotor();
+                    this.hyLayer.world.atlasTile.generateRotors(this.hyLayer.world.currentTile);
+                }
+            }
             this.tilesParcour = data.tp ?? 0;
             // 接线前的存档没有 mo/ob，仍可从当前位置和奖励恢复已有进度。
             this.maxOrd = [...(data.mo ?? this.hyLayer.world.currentOrd ?? [])];
@@ -99,7 +125,27 @@ class Game {
     constructor() {
         this.initHyGUI();
         this.initLayerGUI();
+        if (activeWorld) {
+            const world = activeWorld;
+            this.saveload.beforeLoad = data => {
+                const migrated = migrateWorldSave(data, world);
+                this.validateBalances(migrated.balances ?? {reasoning: migrated.D ?? 0, type: 0});
+                return migrated;
+            };
+        }
         const firstLoad = !this.saveload.load();
+        if (activeWorld && this.saveload.lastLoadError) {
+            worldLoadFailure(this.saveload.lastLoadError, this.saveload.saveKey);
+            return;
+        }
+        if (firstLoad && activeWorld) {
+            const world = activeWorld;
+            const spawn = world.tiles.find(tile => tile.id === world.spawn.tileId)!;
+            this.hyLayer.world.currentTile = spawn.hash ? spawn.hash.split(",").map(Number) : [];
+            this.hyLayer.world.localCamMat = Rotor.rotate(activeWorld.spawn.rotation * Math.PI / 3);
+            this.hyLayer.world.atlasTile.generateRotors(this.hyLayer.world.currentTile);
+            this.modBalances = activeWorld.currency ? {[activeWorld.currency.id]: 0} : {};
+        }
         if (gameMode === "creative") {
             this.showLayerButton("T-layer", true);
             this.showLayerButton("D-layer", true);
@@ -145,6 +191,23 @@ class Game {
         }
     }
 
+    private currencyNames(): Record<string,string> {
+        return {reasoning: LangMgr.lang === "en" ? "Deductrium" : "推理素", type: LangMgr.lang === "en" ? "Type currency" : "类型币",
+            ...(activeWorld?.currency ? {[activeWorld.currency.id]: activeWorld.currency.name} : {})};
+    }
+    private validateBalances(input: unknown): CurrencyBalances {
+        if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid currency ledger");
+        const allowed = new Set(["reasoning", "type", ...(activeWorld?.currency ? [activeWorld.currency.id] : [])]);
+        const values = input as Record<string,number>;
+        if (!Object.hasOwn(values, "reasoning") || !Object.hasOwn(values, "type")) throw new Error("Currency ledger must include reasoning and type");
+        for (const [id,value] of Object.entries(values)) if (!allowed.has(id) || typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1e12) throw new Error(`Invalid or unregistered currency: ${id}`);
+        return createCurrencyBalances(values.reasoning ?? 0, values.type ?? 0,
+            Object.fromEntries([...allowed].filter(id => id !== "reasoning" && id !== "type").map(id => [id,values[id] ?? 0])));
+    }
+    private currencyBalances(): CurrencyBalances {
+        return createCurrencyBalances(this.deductrium, this.typeDeductrium, this.modBalances);
+    }
+
     private restoreMapScript() {
         this.hsLayer.setMapDisabledAxioms?.(this.mapScript.disabledAxioms);
         for (const reward of this.mapScript.rewards) this.hsLayer.applyReward(reward);
@@ -157,7 +220,8 @@ class Game {
         const money = this.deductrium - (block.type === TileBlockType.Gate ? block.data.payD ?? 0 : 0);
         try {
             const plan = planMapScript(block.data.script, this.mapScript, {
-                money, rewards: this.gotRewards,
+                money, typeMoney: this.typeDeductrium, balances: {...this.currencyBalances(), reasoning: money},
+                banks: activeWorld?.banks, rewards: this.gotRewards,
                 hasTile: target => blockMap.has(nameMap.get(target) ?? target),
                 hasAxiom: name => this.hsLayer.hasMapAxiom(name),
             }, !block.data.scriptRepeat && this.mapScript.done.includes(id));
@@ -176,6 +240,9 @@ class Game {
         if (!plan.state.done.includes(id)) plan.state.done.push(id);
         this.mapScript = plan.state;
         this.deductriumConsumed += plan.spent;
+        this.typeDeductriumConsumed += plan.typeSpent;
+        this.typeDeductrium = plan.balances.type;
+        this.modBalances = Object.fromEntries(Object.entries(plan.balances).filter(([id]) => id !== "reasoning" && id !== "type"));
         const delta = plan.money - money;
         if (delta) this.addDeductrium(delta);
         for (const effect of plan.effects) {
@@ -298,6 +365,8 @@ class Game {
             if (el) el.textContent = v;
         };
         setText("pg-stat-deductrium", stringifyDeductriumAmout(this.deductrium));
+        const ledger = document.getElementById("pg-currency-balances");
+        if (ledger) ledger.textContent = Object.entries(this.currencyBalances()).map(([id,value]) => `${this.currencyNames()[id] ?? id}: ${value}`).join(" · ");
         setText("pg-stat-consumed", stringifyDeductriumAmout(this.deductriumConsumed));
         setText("pg-stat-parcours", String(this.tilesParcour));
         setText("pg-stat-max-ord", printOrd(this.maxOrd));
@@ -426,7 +495,21 @@ class Game {
         this.hyLayer.world.onGetReward = (hash, block, isLoading) => {
             block.data ??= {};
             const alreadyGot = this.gotRewards.has(block.name || hash);
-            if (!isLoading && !this.runMapScript(block, hash)) return false;
+            if (!isLoading) {
+                const script = this.prepareMapScript(block, hash);
+                if (script === false) return false;
+                // Validate legacy and scripted payouts together before claiming or committing either.
+                const payout = alreadyGot ? 0 : block.data.getD ?? 0;
+                try {
+                    if (typeof payout !== "number" || !Number.isFinite(payout) || payout < 0) throw new Error("Invalid reward currency amount");
+                    const balances = script ? script.plan.balances : this.currencyBalances();
+                    this.validateBalances({...balances, reasoning: balances.reasoning + payout});
+                } catch (error) {
+                    this.showToast(error instanceof Error ? error.message : String(error));
+                    return false;
+                }
+                this.commitMapScript(script);
+            }
             block.data.got = true;
             this.gotRewards.add(block.name || hash);
             this.applyUnlockEffect(block);
@@ -527,6 +610,16 @@ class Game {
             this.updateStats();
             // 方块成就/知识库：踩上路/奖励/门（通过后换格）都算"通过该方块"
             const block = this.hyLayer.world.getBlock(hash);
+            if (block?.data?.bank && activeWorld?.banks[block.data.bank]) {
+                const text = typeof block.text === "string" ? block.text : block.text[LangMgr.lang] ?? "";
+                openMapBank({title: text, bank: activeWorld.banks[block.data.bank], names: this.currencyNames(),
+                    balances: () => this.currencyBalances(), commit: result => {
+                        // Both ledgers commit only after a fresh, complete quote succeeds.
+                        this.deductrium = result.balances.reasoning; this.typeDeductrium = result.balances.type;
+                        this.modBalances = Object.fromEntries(Object.entries(result.balances).filter(([id]) => id !== "reasoning" && id !== "type"));
+                        this.updateStats(); this.saveload.notifySave();
+                    }});
+            }
             if (block?.data?.ac) this.finishAchievement(block.data.ac);
             if (block?.data?.info) this.unlockInfo(block.data.info);
             this.hyLayer.onchange?.(); // 保留存档通知

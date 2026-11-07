@@ -15,6 +15,7 @@ const { Serde: HySerde } = await import('../js/hy/serde.js');
 const { Rotor } = await import('../js/hy/algebra.js');
 const { tileColor, tileTextColor, tileDisplayText } = await import('../js/hy/appearance.js');
 const { stringifyDeductriumAmout } = await import('../js/format.js');
+const {createCurrencyBalances} = await import('../js/hy/economy.js');
 const {createMapScriptState, planMapScript} = await import('../js/hy/script.js');
 
 const quiet = fn => {
@@ -93,13 +94,14 @@ function makeGame(data, mode = 'survival', tiles = []) {
         'HSLayer', 'TTLayer', 'HyLayer', 'blockMap', 'nameMap', 'TileBlockType', 'LangMgr',
         'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd',
         'tileColor', 'tileTextColor', 'tileDisplayText', 'stringifyDeductriumAmout',
-        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'planMapScript', gameSource)(
+        'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'planMapScript',
+        'activeWorld','activeWorldSaveMode','createCurrencyBalances',gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
         ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd,
         tileColor, tileTextColor, tileDisplayText, stringifyDeductriumAmout,
-        false, ()=>'unused', createMapScriptState, planMapScript);
+        false, ()=>'unused', createMapScriptState, planMapScript, undefined,undefined,createCurrencyBalances);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;
@@ -279,7 +281,7 @@ test('ordinary dG gates, save callback, and constructor restore are idempotent',
     const data = game.saveload.serialize();
     data.rw.push('neg', 'del<>', 'JJZO-1', 'JJZI-1', 'JJZ-1', 'missing-old-reward');
     data.hs.rules.push(['.i', 'player-macro']);
-    data.D = 18;
+    data.D = 18; data.balances.reasoning = 18;
     game = makeGame(data);
     assert.equal(game.deductrium, 18);
     assert.equal(block('宏门').type, Type.Road); assert.equal(block('宏门').data.del, true);

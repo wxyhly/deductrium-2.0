@@ -3,6 +3,8 @@ import {readFile} from 'node:fs/promises';
 import {Polygon} from '../js/hy/tiling.js';
 import {EditorProject, canonicalPath, relativePath, transport} from '../tools/map-editor/model.mjs';
 import {parseMapScript} from '../js/hy/script.js';
+import {Hvec,Rotor} from '../js/hy/algebra.js';
+import {tileVertices,halfPlaneContains} from '../tools/map-editor/geometry.mjs';
 
 const polygon=new Polygon(6,4), key=path=>path.join(','), tile=(text='',data={})=>({type:0,text,data});
 let checks=0;
@@ -12,7 +14,7 @@ const loaderSource=await readFile(new URL('../js/hy/maploader.js',import.meta.ur
 function runtime(source) {
     // Only trusted test fixtures/generated output are executed, never editor imports.
     const data=new Function(source.replace('export const mapData =','return '))();
-    const loader=new Function('mapData','genOrdTiles',loaderSource.replace(/^import .*$/gm,'').replace(/\bexport /g,'')+'\nreturn {initMap,blockMap,nameMap};')(data,()=>{});
+    const loader=new Function('mapData','genOrdTiles','activeWorld','worldRuntimeTiles',loaderSource.replace(/^import .*$/gm,'').replace(/\bexport /g,'')+'\nreturn {initMap,blockMap,nameMap};')(data,()=>{},undefined,()=>[]);
     const log=console.log; console.log=()=>{};
     try {loader.initMap(new Polygon(6,4));} finally {console.log=log;}
     return loader;
@@ -139,5 +141,120 @@ check('copied modules isolate script keys and targets while preserving global ax
     }
     assert.deepEqual(EditorProject.fromJSON(project.toJSON(),polygon).toJSON(),project.toJSON());
     const before=project.toJSON();assert.throws(()=>project.put('5',tile('',{script:'eval bad'})),/line 1/i);assert.deepEqual(project.toJSON(),before);
+});
+function state(project) {return {json:project.toJSON(),tiles:structuredClone([...project.tiles]),source:project.exportSource(),undo:structuredClone(project._undo),redo:structuredClone(project._redo),nextId:project._nextId};}
+function rejectsAtomically(project,action,pattern) {const before=state(project);assert.throws(action,pattern);assert.deepEqual(state(project),before);}
+function nearby(depth) {
+    const paths=[[]],seen=new Set(['']);
+    for(let cursor=0;cursor<paths.length;cursor++) {
+        const path=paths[cursor];if(path.length>=depth)continue;
+        for(let d=0;d<6;d++) {const next=polygon.getNeighborAndDir(path,d,true)[0],hash=key(next);if(!seen.has(hash)) {seen.add(hash);paths.push(next);}}
+    }
+    return paths;
+}
+check('integer Lorentz vertices agree with actual game rotors and six polygon edges',()=>{
+    polygon.generateRotors();
+    for(const [hash,rotor] of polygon.rotors) {
+        const vertices=tileVertices(hash?hash.split(',').map(Number):[],polygon);
+        for(let i=0;i<6;i++) {
+            const [z,x,y]=vertices[i].map(Number),actual=rotor.mul(Rotor.rotate(i*Math.PI/3)).apply(polygon.vertex);
+            assert.ok(Math.abs(x/z/Math.sqrt(6)-actual.x/actual.z)<1e-10,hash);
+            assert.ok(Math.abs(y/z/Math.sqrt(2)-actual.y/actual.z)<1e-10,hash);
+        }
+    }
+    for(let edge=0;edge<6;edge++) {
+        assert.equal(halfPlaneContains([],edge,1,polygon),true);
+        assert.equal(halfPlaneContains([],edge,-1,polygon),false);
+        assert.equal(halfPlaneContains([edge],edge,-1,polygon),true);
+        assert.equal(halfPlaneContains([edge],edge,1,polygon),false);
+    }
+});
+check('six-vertex membership agrees with Lorentz normals and is independent of Euclidean x',()=>{
+    const paths=nearby(3);let touching=0,negativeX=0;
+    for(const path of paths) for(let edge=0;edge<6;edge++) {
+        const vertices=tileVertices(path,polygon),normal=Rotor.rotate(edge*Math.PI/3).apply(polygon.n3);
+        const dots=vertices.map(([z,x,y])=>new Hvec(Math.sqrt(3)*Number(z),Number(x)/Math.sqrt(2),Math.sqrt(1.5)*Number(y)).dot(normal));
+        const expected=dots.every(value=>value>=-1e-8);
+        assert.equal(halfPlaneContains(path,edge,1,polygon),expected,`${key(path)} edge ${edge}`);
+        if(expected&&dots.some(value=>Math.abs(value)<1e-8)) touching++;
+        if(expected&&vertices.every(([,x])=>x<0n)) negativeX++;
+    }
+    assert.ok(touching>0);assert.ok(negativeX>0);
+});
+check('translated boundaries and rotated modules use the same half-plane membership',()=>{
+    const anchors=[[],[2,1,4,3]],paths=nearby(2);
+    for(const anchor of anchors) for(let rotation=0;rotation<6;rotation++) for(let edge=0;edge<6;edge++) {
+        const project=new EditorProject(polygon),frame=transport([],anchor,rotation,polygon);
+        project.setRegion({hash:anchor,edge:(edge+frame.rotation)%6,side:1});
+        for(const path of paths) {
+            const at=transport(path,anchor,rotation,polygon).at,expected=halfPlaneContains(path,edge,1,polygon);
+            if(expected) {project.put(at,tile());project.remove(at);}
+            else rejectsAtomically(project,()=>project.put(at,tile()),/半平面/);
+        }
+    }
+});
+check('setting, clearing, importing and undoing regions are atomic and preserve boundary tiles',()=>{
+    const project=new EditorProject(polygon);project.put('',tile());
+    project.setRegion({hash:[],edge:0,side:1});assert.deepEqual(project.region,{hash:'',edge:0,side:1});
+    const copy=project.region;copy.edge=3;assert.equal(project.region.edge,0);
+    rejectsAtomically(project,()=>project.put('0',tile()),/半平面/);
+    rejectsAtomically(project,()=>project.setRegion({hash:'',edge:0,side:-1}),/半平面/);
+    for(const bad of [{hash:'',edge:6,side:1},{hash:'',edge:0,side:0},{hash:'',edge:0,side:'1'},{hash:'bad',edge:0,side:1},{hash:'',edge:0,side:1,entrance:'bad'}]) {
+        rejectsAtomically(project,()=>project.setRegion(bad));
+    }
+    const before=project.toJSON();project.setRegion(null);project.put('0',tile());
+    project.undo();project.undo();assert.deepEqual(project.toJSON(),before);project.redo();assert.equal(project.region,null);
+    assert.deepEqual(EditorProject.fromJSON(before,polygon).toJSON(),before);
+    assert.throws(()=>EditorProject.fromJSON({...before,tiles:[...before.tiles,{...before.tiles[0],id:'outside',hash:'0'}]},polygon),/半平面/);
+    const legacy={...before};delete legacy.region;delete legacy.version;delete legacy.world;
+    const restored=EditorProject.fromJSON(legacy,polygon);assert.equal(restored.region,null);assert.equal(restored.version,1);assert.equal(restored.world,null);
+});
+check('only the explicit entrance hash bypasses the full tile constraint',()=>{
+    const project=new EditorProject(polygon);project.setRegion({hash:'',edge:0,side:1,entrance:[0]});project.put('0',tile('entrance'));
+    rejectsAtomically(project,()=>project.put('0,3',tile()),/半平面/);
+    rejectsAtomically(project,()=>project.setRegion({hash:'',edge:0,side:1,entrance:'0,3'}),/半平面/);
+    assert.equal(EditorProject.fromJSON(project.toJSON(),polygon).tiles.get('0').text,'entrance');
+    project.remove('0');project.put('0',tile('replacement'));assert.equal(project.tiles.size,1);
+});
+check('mount preview, mounting, moving, rotating and project instance imports reject outside tiles',()=>{
+    const project=new EditorProject(polygon);project.setRegion({hash:'',edge:0,side:1});project.registerModule(room);
+    const bad={id:'bad',at:[0],rotation:0};assert.match(project.previewMount('room',bad).errors.join(),/半平面/);
+    rejectsAtomically(project,()=>project.mount('room',bad),/半平面/);
+    project.mount('room',{id:'good',at:[],rotation:0});
+    rejectsAtomically(project,()=>project.moveInstance('good',{at:[0],rotation:0}),/半平面/);
+    rejectsAtomically(project,()=>project.moveInstance('good',{at:[],rotation:5}),/半平面/);
+    assert.throws(()=>EditorProject.fromJSON({...project.toJSON(),instances:[{...bad,moduleId:'room'}]},polygon),/半平面/);
+    assert.deepEqual(EditorProject.fromJSON(project.toJSON(),polygon).toJSON(),project.toJSON());
+});
+check('512-step geometry retains exact boundary contact and rejects the far forbidden side',()=>{
+    const anchor=[2,...Array(511).fill(3)],project=new EditorProject(polygon);
+    project.setRegion({hash:anchor,edge:0,side:1});project.put(anchor,tile());
+    const across=polygon.getNeighborAndDir(anchor,0,true)[0];rejectsAtomically(project,()=>project.put(across,tile()),/半平面/);
+    assert.equal(halfPlaneContains([0,...Array(511).fill(3)],0,1,polygon),false);
+    assert.equal(halfPlaneContains([3,...Array(511).fill(3)],0,1,polygon),true);
+    // Walk a tiling wall far beyond the reliable range of floating-point
+    // subtraction; the two contact vertices must remain exactly on its plane.
+    let along=[];
+    for(let step=0;step<80;step++) {
+        const candidates=Array.from({length:6},(_,edge)=>polygon.getNeighborAndDir(along,edge,true)[0]);
+        const next=candidates.find(path=>path.length>along.length&&halfPlaneContains(path,0,1,polygon)&&tileVertices(path,polygon).filter(([z,,y])=>z===y).length===2);
+        assert.ok(next,`boundary walk ${step}`);along=next;
+    }
+    assert.equal(halfPlaneContains(along,0,1,polygon),true);assert.equal(halfPlaneContains(along,0,-1,polygon),false);
+});
+check('world plain JSON, empty migrations and project version survive copies and history',()=>{
+    const project=new EditorProject(polygon);assert.equal(project.world,null);
+    const config={revision:1,mode:'standalone',spawn:{tileId:'t1',rotation:0},banks:{},migrations:[]};
+    project.setWorld(config);config.spawn.rotation=5;assert.equal(project.world.spawn.rotation,0);
+    const copy=project.world;copy.migrations.push({});assert.deepEqual(project.world.migrations,[]);
+    project.setInfo('world-map','World',{version:3});project.setInfo('world-map','Renamed');assert.equal(project.version,3);
+    const saved=project.toJSON(),restored=EditorProject.fromJSON(JSON.parse(JSON.stringify(saved)),polygon);assert.deepEqual(restored.toJSON(),saved);
+    project.setWorld(null);assert.equal(project.world,null);project.undo();assert.deepEqual(project.toJSON(),saved);project.redo();assert.equal(project.world,null);
+    for(const bad of [[],1,'world',{value:undefined},{value:Infinity},{value:()=>{}},new Date(),JSON.parse('{"__proto__":1}')]) rejectsAtomically(project,()=>project.setWorld(bad));
+    const cyclic={};cyclic.self=cyclic;rejectsAtomically(project,()=>project.setWorld(cyclic));
+    for(const version of [0,-1,1.5,'1',null]) rejectsAtomically(project,()=>project.setInfo('ok','Title',{version}));
+    assert.throws(()=>EditorProject.fromJSON({...saved,world:{value:undefined}},polygon));
+    // Manifest business validation belongs to the publishing module.
+    project.setWorld({migrations:null,custom:{extra:true}});assert.equal(project.world.migrations,null);
 });
 console.log(`${checks} map editor checks passed`);

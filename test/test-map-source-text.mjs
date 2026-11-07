@@ -61,7 +61,7 @@ check('a trailing backslash preserves both languages in the model and real game 
     assert.deepEqual(parsed.values(row.id),values);
     // Run the shipped loader on the exported map, with ordinal generation irrelevant here.
     const data = new Function(exported.replace('export const mapData =','return '))();
-    const loader = new Function('mapData','genOrdTiles',runtimeLoader.replace(/^import .*$/gm,'').replace(/\bexport /g,'')+'\nreturn {initMap,blockMap};')(data,()=>{});
+    const loader = new Function('mapData','genOrdTiles','activeWorld','worldRuntimeTiles',runtimeLoader.replace(/^import .*$/gm,'').replace(/\bexport /g,'')+'\nreturn {initMap,blockMap};')(data,()=>{},undefined,()=>[]);
     const log = console.log; console.log=()=>{};
     try { loader.initMap(new Polygon(6,4)); } finally { console.log=log; }
     assert.deepEqual(loader.blockMap.get(row.hash).text,values);

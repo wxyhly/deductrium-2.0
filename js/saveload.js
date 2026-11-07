@@ -15,6 +15,21 @@ export class SaveLoad {
     compressor;
     deserialize;
     serialize;
+    /** Pure preflight: reject/migrate world data before storage or game mutation. */
+    beforeLoad;
+    lastLoadError = null;
+    blockedWrite = false;
+    applyingLoad = false;
+    get saveMode() { return this.mode; }
+    get saveKey() { return this.storageKey; }
+    get writesBlocked() { return this.blockedWrite; }
+    slotKey(index) {
+        if (!Number.isInteger(index) || index < 0 || index > 3)
+            throw new Error('Invalid save slot');
+        // ':' is not allowed in world IDs, so slots cannot alias a world's main key.
+        return this.mode.startsWith('world-')
+            ? `${this.storageKey}:slot${index}` : `deductrium2_slot${index}`;
+    }
     static getSavedLang() {
         const savedLang = localStorage.getItem("lang");
         if (savedLang === "zh" || savedLang === "en")
@@ -30,10 +45,13 @@ export class SaveLoad {
     stateChangeTimer = false;
     timeOut = 2000;
     notifySave() {
+        if (this.blockedWrite || this.applyingLoad)
+            return;
         if (this.stateChangeTimer === false) {
             this.stateChangeTimer = setTimeout(() => {
-                this.save();
                 this.stateChangeTimer = false;
+                if (!this.blockedWrite)
+                    this.save();
             }, this.timeOut);
         }
     }
@@ -49,6 +67,10 @@ export class SaveLoad {
     }
     // ---------- 保存 ----------
     save() {
+        if (this.applyingLoad)
+            throw new Error('Cannot save during a load transaction');
+        if (this.blockedWrite)
+            throw this.lastLoadError ?? new Error("Save is blocked until world recovery");
         // 1. 序列化（抽取数据）
         const rawData = this.serialize();
         // 2. 打包元数据
@@ -67,30 +89,74 @@ export class SaveLoad {
     }
     // ---------- 加载 ----------
     load() {
-        const raw = localStorage.getItem(this.storageKey);
-        if (!raw)
-            return false;
         try {
-            // 1. 解压
-            const decompressed = this.compressor.decompress(raw);
-            const pkg = JSON.parse(decompressed);
-            // 2. ★ 模式校验：存档模式与当前 URL 不符时跳转到对应模式（确保模式正确），不在此新建进度
-            if (pkg.mode !== this.mode) {
-                console.warn(`存档模式(${pkg.mode}) 与当前模式(${this.mode}) 不符，跳转到 ${pkg.mode} 模式`);
-                this.redirectToMode(pkg.mode);
-                return true; // 已处理（页面即将跳转，避免调用方继续执行 firstLoad 逻辑）
-            }
-            // 3. ★ 版本迁移（如果旧版本，在这里修正数据结构）
-            let dataToLoad = pkg.data;
-            // 4. 反序列化注入逻辑层（内部自动触发全局同步）
-            this.deserialize(dataToLoad);
+            const raw = localStorage.getItem(this.storageKey);
+            if (!raw)
+                return false;
+            this.applyPrepared(this.prepare(raw, true));
             console.log(`[Load] 模式 ${this.mode} 加载成功`);
             return true;
         }
         catch (e) {
+            this.recordLoadError(e);
+            if (this.beforeLoad || this.mode.startsWith('world-'))
+                this.blockedWrite = true;
             console.error('[Load] 加载失败:', e);
             return false;
         }
+    }
+    recordLoadError(error) {
+        this.lastLoadError = error instanceof Error ? error : new Error(String(error));
+    }
+    // Everything here is detached from the live game and storage.
+    prepare(compressed, allowRedirect) {
+        const pkg = JSON.parse(this.compressor.decompress(compressed));
+        if (!pkg || typeof pkg.mode !== 'string' || !pkg.mode)
+            throw new Error('Invalid save package');
+        if (pkg.mode !== this.mode) {
+            if (!allowRedirect || this.beforeLoad || this.mode.startsWith('world-') || pkg.mode.startsWith('world-')) {
+                throw new Error(`Save mode mismatch: ${pkg.mode} / ${this.mode}`);
+            }
+            return { mode: pkg.mode, data: undefined };
+        }
+        return { mode: pkg.mode, data: this.beforeLoad ? this.beforeLoad(pkg.data) : pkg.data };
+    }
+    applyPrepared(prepared, compressed) {
+        if (this.applyingLoad)
+            throw new Error('Load transaction already in progress');
+        if (prepared.mode !== this.mode) {
+            // Preserve legacy creative/survival navigation, including current unsaved progress.
+            if (compressed !== undefined)
+                this.save();
+            this.redirectToMode(prepared.mode);
+            this.cancelPendingSave();
+            this.lastLoadError = null;
+            return;
+        }
+        const previous = structuredClone(this.serialize());
+        this.applyingLoad = true;
+        try {
+            this.deserialize(prepared.data);
+            // Storage.setItem is atomic: failed quota/security checks retain the original raw save.
+            if (compressed !== undefined)
+                localStorage.setItem(this.storageKey, compressed);
+        }
+        catch (error) {
+            try {
+                this.deserialize(previous);
+            }
+            catch (rollbackError) {
+                this.blockedWrite = true;
+                throw new AggregateError([error, rollbackError], 'Load failed and live state could not be restored');
+            }
+            throw error;
+        }
+        finally {
+            this.applyingLoad = false;
+        }
+        this.cancelPendingSave();
+        this.blockedWrite = false;
+        this.lastLoadError = null;
     }
     // 跳转到存档对应的模式 URL：creative → ?creative；survival → 去掉 query 参数
     redirectToMode(mode) {
@@ -112,26 +178,15 @@ export class SaveLoad {
     }
     // ---------- 导入（用户上传文件） ----------
     importSave(compressedData) {
-        try {
-            // 先做元数据校验（不解压无法知道模式，这里必须解压）
-            const decompressed = this.compressor.decompress(compressedData);
-            const pkg = JSON.parse(decompressed);
-            if (pkg.mode !== this.mode) {
-                console.error('导入失败：模式不匹配');
-                return false;
-            }
-            // 校验通过，存入 localStorage 并加载
-            localStorage.setItem(this.storageKey, compressedData);
-            return this.load();
-        }
-        catch (e) {
-            console.error('导入失败:', e);
-            return false;
-        }
+        return this.importPrepared(compressedData, false);
     }
     // ---------- 进度槽位（单独 key 保存压缩存档） ----------
     // 序列化当前状态并压缩保存到指定 key（槽位）
     saveToKey(key) {
+        if (this.applyingLoad)
+            throw new Error('Cannot save during a load transaction');
+        if (this.blockedWrite)
+            throw this.lastLoadError ?? new Error("Save is blocked until world recovery");
         const rawData = this.serialize();
         const pkg = {
             version: CURRENT_VERSION,
@@ -163,17 +218,15 @@ export class SaveLoad {
     }
     // 从压缩字符串加载（槽位/导入共用）：模式不符时跳转到对应模式 URL（与 load 一致）
     loadFromString(compressed) {
+        return this.importPrepared(compressed, true);
+    }
+    importPrepared(compressed, allowRedirect) {
         try {
-            const pkg = JSON.parse(this.compressor.decompress(compressed));
-            if (pkg.mode !== this.mode) {
-                console.warn(`槽位/导入存档模式(${pkg.mode}) 与当前模式(${this.mode}) 不符，跳转到 ${pkg.mode} 模式`);
-                this.redirectToMode(pkg.mode);
-                return true; // 已处理（页面即将跳转）
-            }
-            localStorage.setItem(this.storageKey, compressed);
-            return this.load();
+            this.applyPrepared(this.prepare(compressed, allowRedirect), compressed);
+            return true;
         }
         catch (e) {
+            this.recordLoadError(e);
             console.error('加载失败:', e);
             return false;
         }

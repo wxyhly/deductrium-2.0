@@ -1,3 +1,5 @@
+import {installUI} from './ui.mjs';
+
 const $ = id => document.getElementById(id);
 const STORAGE_KEY = 'deductrium-map-editor-project-v1';
 const TYPES = ['道路', '墙', '门', '奖励', '序数'];
@@ -6,7 +8,9 @@ const hashLabel = hash => hash || '[]（原点）';
 let EditorProject, Hvec, Rotor, LangMgr, parseMapScript, blockMap, nameMap, world, project;
 let selectedHash = '', group = new Set(), dirty = false, fieldDirty = false, infoDirty = false;
 let blockedDraft = null, preview = null, visibleLimit = 150, filePurpose = 'auto', drag = null;
-let renderFrame = 0, importBusy = false;
+let renderFrame = 0, importBusy = false, ui;
+const pendingGuards = new Set();
+const externalPending = () => [...pendingGuards].some(check => check());
 
 function say(message, error = false) {
     $('status').textContent = message;
@@ -38,20 +42,32 @@ function textFor(tile) {
     return typeof tile.text === 'string' ? tile.text : tile.text[LangMgr.lang] ?? Object.values(tile.text)[0] ?? '';
 }
 function updateDirty() {
-    const pending = fieldDirty || infoDirty;
+    const pending = fieldDirty || infoDirty || externalPending();
     $('dirty-indicator').textContent = dirty || pending ? '●' : '';
     $('dirty-indicator').title = dirty || pending ? '有尚未保存到项目文件的更改' : '已保存 / 尚无更改';
     $('pending').hidden = !fieldDirty;
+    document.querySelector('.apply-bar').dataset.pending = String(fieldDirty);
     $('apply-project').textContent = infoDirty ? '应用项目信息 *' : '应用项目信息';
 }
 function discardFields() {
     return !fieldDirty || confirm('本格属性尚未 Apply。放弃表单中的修改并继续？');
 }
 function discardAll() {
-    return !(dirty || fieldDirty || infoDirty) || confirm('当前有未保存到项目文件的修改。继续切换项目？建议先取消并保存项目 JSON。');
+    return !(dirty || fieldDirty || infoDirty || externalPending()) || confirm('当前有未保存到项目文件的修改。继续切换项目？建议先取消并保存项目 JSON。');
 }
-function requireApplied() {
-    if (fieldDirty || infoDirty) throw Error('请先 Apply 格子属性 / 应用项目信息，或还原表单，再执行此操作。');
+function requireApplied({allowExternalPending = false} = {}) {
+    if (fieldDirty || infoDirty) {
+        if (infoDirty) ui.openPanel('project');
+        else {
+            ui.openPanel(null, false);
+            if (matchMedia('(max-width:700px)').matches && $('inspector').dataset.expanded !== 'true') $('toggle-inspector').click();
+        }
+        throw Error('请先 Apply 格子属性 / 应用项目信息，或还原表单，再执行此操作。');
+    }
+    if (!allowExternalPending && externalPending()) {
+        ui.openPanel('project'); $('publish-settings').open = true;
+        throw Error('请先应用世界设置。');
+    }
 }
 function persist() {
     if (blockedDraft !== null) {
@@ -128,7 +144,7 @@ function renderList() {
         const button = document.createElement('button'); button.type = 'button';
         const meta = document.createElement('small'); meta.textContent = `${TYPES[tile.type]} · ${tile.name || hashLabel(hash)}${tile.instanceId ? ' · 模块' : ''}`;
         const excerpt = document.createElement('span'); excerpt.className = 'excerpt'; excerpt.textContent = textFor(tile).replaceAll('\n', ' ') || '（无文字）';
-        button.append(meta, excerpt); button.onclick = event => selectHash(hash, {jump: true, toggle: event.shiftKey});
+        button.append(meta, excerpt); button.onclick = event => selectHash(hash, {jump: true, toggle: event.shiftKey || $('multi-select').checked});
         row.append(checkbox, button); fragment.append(row);
     }
     $('tiles').replaceChildren(fragment);
@@ -138,6 +154,7 @@ function renderList() {
 function renderSelection() {
     $('coordinate').textContent = `当前格 ${hashLabel(selectedHash)}`;
     $('selection-count').textContent = `选区 ${group.size} 格`;
+    $('selection-bar').hidden = group.size === 0;
 }
 function renderTextMode() {
     const multilingual = $('text-mode').value === 'languages';
@@ -155,9 +172,12 @@ function fillForm() {
     $('text-other').value = JSON.stringify(typeof text === 'string' ? {} : Object.fromEntries(Object.entries(text).filter(([key]) => key !== 'zh' && key !== 'en')), null, 2);
     const data = clone(tile?.data ?? {});
     $('tile-script').value = typeof data.script === 'string' ? data.script : '';
+    $('script-summary').textContent = data.script ? '已配置' : '可选';
     delete data.script;
     $('tile-data').value = JSON.stringify(data, null, 2);
+    $('data-summary').textContent = `${Object.keys(data).length} 个字段`;
     $('tile-fields').disabled = !!tile?.instanceId;
+    $('tile-form').hidden = !!tile?.instanceId;
     $('remove-tile').disabled = !tile;
     $('mounted-note').hidden = !tile?.instanceId;
     $('mounted-note').replaceChildren();
@@ -165,7 +185,9 @@ function fillForm() {
         const label = document.createElement('span'); label.textContent = `来自实例 ${tile.instanceId}。先分离整个实例才能逐格编辑。`;
         const button = document.createElement('button'); button.type = 'button'; button.textContent = '分离实例 detach';
         button.onclick = () => guard(() => { requireApplied(); change(() => project.detachInstance(tile.instanceId), '实例已分离，可编辑本格'); });
-        $('mounted-note').append(label, button);
+        const open = document.createElement('button'); open.type = 'button'; open.textContent = '在模块面板中打开';
+        open.onclick = () => ui.openPanel('modules');
+        $('mounted-note').append(label, open, button);
     }
     fieldDirty = false; renderTextMode(); updateDirty(); renderSelection();
 }
@@ -176,7 +198,9 @@ function selectHash(hash, options = {}) {
         selectedHash = canonical;
         if (options.toggle) { if (group.has(canonical)) group.delete(canonical); else group.add(canonical); }
         if (options.jump) jump(canonical);
-        fillForm(); renderList(); draw(); return true;
+        fillForm(); renderList(); draw();
+        window.dispatchEvent(new CustomEvent('map-editor-project-change'));
+        return true;
     });
 }
 function clearPreview(message = '先选择模块并预览。') {
@@ -229,8 +253,10 @@ function refresh() {
     for (const hash of group) if (!project.tiles.has(hash)) group.delete(hash);
     $('undo').disabled = !project.canUndo; $('redo').disabled = !project.canRedo;
     $('project-id').value = project.id; $('project-title').value = project.title;
+    $('project-heading-title').textContent = project.title || '地图编辑器';
     infoDirty = false;
     fillForm(); renderLibrary(); renderInstances(); renderList(); renderSelection(); updateDirty(); draw();
+    window.dispatchEvent(new CustomEvent('map-editor-project-change'));
 }
 function change(action, message) {
     const value = action();
@@ -291,9 +317,14 @@ async function importFile(file, purpose) {
             $('module-library').value = id;
             return;
         }
-        const next = json ? EditorProject.fromJSON(data, world.atlasTile) : EditorProject.fromSource(text, world.atlasTile);
+        let next;
+        const publishedWorld = data?.format === 'deductrium-world-v1';
+        if (publishedWorld) {
+            const {projectFromWorld} = await import('./publish.mjs');
+            next = projectFromWorld(data, world.atlasTile);
+        } else next = json ? EditorProject.fromJSON(data, world.atlasTile) : EditorProject.fromSource(text, world.atlasTile);
         if (!discardAll()) return;
-        load(next, {modified: true, message: `已导入 ${file.name}`}); persist();
+        load(next, {modified: !publishedWorld, message: publishedWorld ? '已导入发布世界；稳定砖块ID保留' : `已导入 ${file.name}`}); persist();
     } catch (error) { say(`导入失败：${error.message}`, true); }
     finally { importBusy = false; }
 }
@@ -307,6 +338,7 @@ function hashAtPoint(clientX, clientY) {
     return null;
 }
 function useTool(hash, shift) {
+    shift ||= $('multi-select').checked;
     if (!selectHash(hash, {toggle: shift})) return;
     const mode = $('mode').value;
     if (shift || mode === 'select') return;
@@ -320,6 +352,9 @@ function useTool(hash, shift) {
     });
 }
 function wireUI() {
+    ui = installUI();
+    document.addEventListener('input', updateDirty);
+    document.addEventListener('change', updateDirty);
     $('tile-form').oninput = () => { fieldDirty = true; updateDirty(); };
     $('tile-form').onchange = () => { fieldDirty = true; updateDirty(); };
     $('text-mode').onchange = renderTextMode;
@@ -431,10 +466,16 @@ function wireUI() {
     };
     canvas.onpointercancel = canvas.onlostpointercapture = () => { drag = null; };
     window.addEventListener('keydown', event => {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+            event.preventDefault(); $('export-project').click(); return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && $('tile-form').contains(event.target)) {
+            event.preventDefault(); if (!$('tile-fields').disabled) $('tile-form').requestSubmit(); return;
+        }
         if (!(event.ctrlKey || event.metaKey) || !['z', 'y'].includes(event.key.toLowerCase()) || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable) return;
         event.preventDefault(); $(event.key.toLowerCase() === 'y' || event.shiftKey ? 'redo' : 'undo').click();
     });
-    window.addEventListener('beforeunload', event => { if (dirty || fieldDirty || infoDirty) { event.preventDefault(); event.returnValue = ''; } });
+    window.addEventListener('beforeunload', event => { if (dirty || fieldDirty || infoDirty || externalPending()) { event.preventDefault(); event.returnValue = ''; } });
     window.addEventListener('deductrium-theme-change', draw);
     new ResizeObserver(resize).observe(canvas);
 }
@@ -474,10 +515,15 @@ try {
     Object.defineProperty(window, 'mapEditor', {configurable: true, value: Object.freeze({
         get project() { return project; }, get world() { return world; }, get selectedHash() { return selectedHash; },
         get selected() { return project.tiles.get(selectedHash); }, get selection() { return Object.freeze([...group]); },
-        get dirty() { return dirty || fieldDirty || infoDirty; }, get preview() { return preview; },
+        get dirty() { return dirty || fieldDirty || infoDirty || externalPending(); }, get preview() { return preview; },
         storageKey: STORAGE_KEY, selectHash, hashAtPoint,
+        registerPendingGuard(check) { pendingGuards.add(check); return () => pendingGuards.delete(check); },
+        applyProject(action, message = '项目已更新', options = {}) { requireApplied(options); return change(() => action(project), message); },
         mount(moduleId, placement) { return guard(() => { requireApplied(); return change(() => project.mount(moduleId, placement), '模块已挂载'); }); }
     })});
+    try {
+        await import('./world-settings.mjs').then(m => m.installWorldSettings(window.mapEditor));
+    } catch (error) { console.warn('世界设置模块未加载', error); }
 } catch (error) {
     $('fatal').hidden = false;
     $('fatal').textContent = `地图编辑器加载失败：${error.message}\n请从仓库根目录通过 HTTP 打开，确认 model.mjs 和已编译的 js/hy/appearance.js、js/hy/script.js 可用。`;

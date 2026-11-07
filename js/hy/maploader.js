@@ -1,3 +1,5 @@
+import { activeWorld } from "./world-runtime.js";
+import { worldRuntimeTiles } from "./world.js";
 import { mapData } from "./map.js";
 import { genOrdTiles } from "./ordinal.js";
 export var TileBlockType;
@@ -284,6 +286,21 @@ export function parseTileContent(content) {
     return { name: nameMatched?.[1], data, text: parseText(rest) };
 }
 export function initMap(p) {
+    const customTiles = activeWorld ? worldRuntimeTiles(activeWorld) : undefined;
+    if (customTiles && activeWorld.mode === "standalone") {
+        blockMap.clear();
+        nameMap.clear();
+        for (const [hash, tile] of customTiles) {
+            blockMap.set(hash, tile);
+            if (tile.name)
+                nameMap.set(tile.name, hash);
+        }
+        return;
+    }
+    if (activeWorld) {
+        blockMap.clear();
+        nameMap.clear();
+    }
     const preview = editorPreviewTiles();
     if (preview) {
         blockMap.clear();
@@ -393,6 +410,17 @@ export function initMap(p) {
         if (parentMarker !== "%*")
             prevTilehash = t;
     });
+    if (customTiles) {
+        // Validate the whole overlay before installing any tile.
+        for (const [hash] of customTiles)
+            if (blockMap.has(hash))
+                throw new Error(`世界扩展与主世界重叠：${hash || '[]'}`);
+        for (const [hash, tile] of customTiles) {
+            blockMap.set(hash, tile);
+            if (tile.name)
+                nameMap.set(tile.name, hash);
+        }
+    }
     // console.log(Array.from(blockMap.values()).filter(e=>e.type!=TileBlockType.Ordinal&&(e.text.startsWith("["))));
     // console.log(JSON.stringify(Array.from(blockMap.values()).filter(e=>(/[\u4e00-\u9fa5]/.test(e.text))).map(e=>e.text)));
     // console.log(JSON.stringify(Array.from(blockMap.values()).map(e=>langMgr.trc1(langMgr.trc(e.text))).filter(e=>(/[\u4e00-\u9fa5]/.test(e)))));

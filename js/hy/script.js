@@ -1,3 +1,5 @@
+/** A bounded, data-only map language. This module has no game or DOM dependencies. */
+import { createCurrencyBalances, exchange, validateBankConfig, validateCurrencyBalances, validateCurrencyId } from './economy.js';
 const MAX_SOURCE = 16_384;
 const MAX_COMMANDS = 256;
 const MAX_ID = 128;
@@ -40,6 +42,21 @@ function parseCommand(tokens, line) {
             fail(line, 'Invalid comparison');
         return words[at];
     };
+    const currency = (at) => {
+        try {
+            return validateCurrencyId(words[at]);
+        }
+        catch {
+            return fail(line, 'Invalid currency ID');
+        }
+    };
+    if (op === 'exchange') {
+        shape(tokens.length === 5 ? 5 : 4);
+        const command = { line, op, bankId: id(1), currency: currency(2), value: number(3, false) };
+        if (tokens.length === 5)
+            command.to = currency(4);
+        return command;
+    }
     if (op === 'require') {
         if (kind === 'key' || kind === 'not-key' || kind === 'flag' || kind === 'not-flag' || kind === 'reward') {
             shape(3);
@@ -48,6 +65,10 @@ function parseCommand(tokens, line) {
         if (kind === 'money') {
             shape(4);
             return { line, op, kind, comparison: comparison(2), value: number(3, false) };
+        }
+        if (kind === 'currency') {
+            shape(5);
+            return { line, op, kind, currency: currency(2), comparison: comparison(3), value: number(4, false) };
         }
         if (kind === 'count') {
             shape(5);
@@ -62,6 +83,10 @@ function parseCommand(tokens, line) {
         if (kind === 'money') {
             shape(3);
             return { line, op, kind, value: number(2, false) };
+        }
+        if (kind === 'currency') {
+            shape(4);
+            return { line, op, kind, currency: currency(2), value: number(3, false) };
         }
     }
     if ((op === 'set' || op === 'clear') && kind === 'flag') {
@@ -183,15 +208,21 @@ export function formatMapScript(commands) {
     const source = commands.map(command => {
         if (command.op === 'message')
             return `message ${JSON.stringify(command.text)}`;
+        if (command.op === 'exchange')
+            return `exchange ${command.bankId} ${command.currency} ${command.value}${command.to === undefined ? '' : ` ${command.to}`}`;
         if (command.op === 'require') {
             if (command.kind === 'money')
                 return `require money ${command.comparison} ${command.value}`;
+            if (command.kind === 'currency')
+                return `require currency ${command.currency} ${command.comparison} ${command.value}`;
             if (command.kind === 'count')
                 return `require count ${command.id} ${command.comparison} ${command.value}`;
             return `require ${command.kind} ${command.id}`;
         }
         if (command.kind === 'money')
             return `${command.op} money ${command.value}`;
+        if (command.kind === 'currency')
+            return `${command.op} currency ${command.currency} ${command.value}`;
         if (command.kind === 'count')
             return `${command.op} count ${command.id} ${command.value}`;
         if (command.kind === 'tile')
@@ -316,10 +347,46 @@ export function planMapScript(source, state, env, checksOnly = false) {
     if (!env || typeof env.hasTile !== 'function' || typeof env.hasAxiom !== 'function'
         || !env.rewards || typeof env.rewards.has !== 'function')
         fail(1, 'Invalid environment');
-    let money = validValue(env.money, false, 1);
+    const money = validValue(env.money, false, 1);
     let spent = 0;
+    const typeMoney = validValue(env.typeMoney === undefined ? 0 : env.typeMoney, false, 1);
+    let typeSpent = 0;
+    const banks = new Map();
+    const economyAtLine = (line, calculate) => {
+        try {
+            return calculate();
+        }
+        catch (error) {
+            return fail(line, error instanceof Error ? error.message : 'Invalid bank operation');
+        }
+    };
+    let balances = economyAtLine(1, () => env.balances === undefined
+        ? createCurrencyBalances(money, typeMoney) : validateCurrencyBalances(env.balances));
+    if (!Object.hasOwn(balances, 'reasoning') || !Object.hasOwn(balances, 'type')
+        || balances.reasoning !== money || balances.type !== typeMoney)
+        fail(1, 'Balances must match money/typeMoney');
     const effects = [];
     for (const command of commands) {
+        if ('currency' in command && !Object.hasOwn(balances, command.currency))
+            fail(command.line, `Unregistered currency: ${command.currency}`);
+        if (command.op === 'exchange') {
+            if (command.to !== undefined && !Object.hasOwn(balances, command.to))
+                fail(command.line, `Unregistered currency: ${command.to}`);
+            if (!banks.has(command.bankId)) {
+                const descriptor = env.banks && Object.getOwnPropertyDescriptor(env.banks, command.bankId);
+                if (!descriptor || !('value' in descriptor))
+                    fail(command.line, `Unknown bank: ${command.bankId}`);
+                banks.set(command.bankId, economyAtLine(command.line, () => validateBankConfig(descriptor.value, balances)));
+            }
+            const candidates = banks.get(command.bankId).rules.filter(rule => rule.from === command.currency && (command.to === undefined || rule.to === command.to));
+            if (candidates.length > 1)
+                fail(command.line, `Ambiguous bank direction: ${command.currency}; specify target currency`);
+            const rule = candidates[0];
+            if (!rule)
+                fail(command.line, `Unsupported bank direction: ${command.currency}`);
+            if (command.value === 0 || command.value < rule.minimum)
+                fail(command.line, 'Exchange amount must be positive and meet minimum');
+        }
         if ('kind' in command && 'id' in command) {
             if (['gate', 'tile', 'text'].includes(command.kind) && !env.hasTile(command.id)) {
                 fail(command.line, `Unknown tile: ${command.id}`);
@@ -355,7 +422,10 @@ export function planMapScript(source, state, env, checksOnly = false) {
                     met = next.rewards.includes(command.id) || env.rewards.has(command.id);
                     break;
                 case 'money':
-                    met = compare(money, command.comparison, command.value);
+                    met = compare(balances.reasoning, command.comparison, command.value);
+                    break;
+                case 'currency':
+                    met = compare(balances[command.currency], command.comparison, command.value);
                     break;
                 case 'count':
                     met = compare(count(command.id), command.comparison, command.value);
@@ -367,6 +437,11 @@ export function planMapScript(source, state, env, checksOnly = false) {
         }
         if (checksOnly)
             continue;
+        if (command.op === 'exchange') {
+            const result = economyAtLine(line, () => exchange(balances, banks.get(command.bankId), command.currency, command.value, command.to));
+            balances = result.balances;
+            continue;
+        }
         if (command.op === 'message') {
             effects.push({ op: 'message', text: command.text });
             continue;
@@ -384,12 +459,24 @@ export function planMapScript(source, state, env, checksOnly = false) {
                 put(next.counts, command.id, validValue(op === 'add' ? count(command.id) + command.value : command.value, true, line));
                 break;
             case 'money':
-                if (op === 'take' && money < command.value)
+                if (op === 'take' && balances.reasoning < command.value)
                     fail(line, 'Insufficient money');
-                money = validValue(money + (op === 'give' ? command.value : -command.value), false, line);
+                balances.reasoning = validValue(balances.reasoning + (op === 'give' ? command.value : -command.value), false, line);
                 if (op === 'take')
                     spent = validValue(spent + command.value, false, line);
                 break;
+            case 'currency': {
+                const balance = balances[command.currency];
+                if (op === 'take' && balance < command.value)
+                    fail(line, `Insufficient ${command.currency} currency`);
+                const updated = validValue(balance + (op === 'give' ? command.value : -command.value), false, line);
+                balances[command.currency] = updated;
+                if (op === 'take' && command.currency === 'reasoning')
+                    spent = validValue(spent + command.value, false, line);
+                if (op === 'take' && command.currency === 'type')
+                    typeSpent = validValue(typeSpent + command.value, false, line);
+                break;
+            }
             case 'axiom':
                 changeMember(next.disabledAxioms, command.id, op === 'disable');
                 break;
@@ -420,6 +507,6 @@ export function planMapScript(source, state, env, checksOnly = false) {
                 break;
         }
     }
-    return { state: next, money, spent, effects };
+    return { state: next, money: balances.reasoning, spent, typeMoney: balances.type, typeSpent, balances, effects };
 }
 //# sourceMappingURL=script.js.map

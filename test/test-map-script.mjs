@@ -89,13 +89,217 @@ test('checksOnly validates the entire script and requirements but skips every ef
 take money 999; disable axiom apn5; open gate door; set tile sign wall;
 unlock reward custom; unlock layer G-layer; message "skip";
 require key owned; require not-key new; require not-flag changed; require count n == 2; require money == 20`, state, environment(), true);
-    assert.deepEqual(plan, { state, money: 20, spent: 0, effects: [] });
+    assert.deepEqual(plan, { state, money: 20, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 20, type: 0 }, effects: [] });
     assert.notEqual(plan.state, state);
     for (const source of ['give key new; require key new', 'take key owned; require not-key owned',
         'require key owned; set tile missing road', 'require key owned; enable axiom unknown',
         'require key owned; unlock layer X-layer', 'require key owned; set text sign "bad\\q"']) {
         assert.throws(() => planMapScript(source, state, environment(), true), /line \d+/i);
     }
+});
+
+// Explicit example policy for tests, not a gameplay default. Fee is extra source currency.
+const bank = () => ({ rules: [
+    { from: 'reasoning', to: 'type', rate: 2, feeRate: 0.1, feeFixed: 1, minimum: 2, rounding: 'floor', precision: 2 },
+    { from: 'type', to: 'reasoning', rate: 0.5, feeRate: 0, feeFixed: 0, minimum: 1, rounding: 'none', precision: 0 },
+] });
+
+test('currency and exchange commands round-trip with physical lines and strict syntax', () => {
+    const source = '\ngive currency reasoning 3; take currency type .25\nrequire currency type >= 1; exchange 中央银行 reasoning 2';
+    const commands = parseMapScript(source);
+    assert.deepEqual(commands, [
+        { line: 2, op: 'give', kind: 'currency', currency: 'reasoning', value: 3 },
+        { line: 2, op: 'take', kind: 'currency', currency: 'type', value: 0.25 },
+        { line: 3, op: 'require', kind: 'currency', currency: 'type', comparison: '>=', value: 1 },
+        { line: 3, op: 'exchange', bankId: '中央银行', currency: 'reasoning', value: 2 },
+    ]);
+    assert.deepEqual(parseMapScript(formatMapScript(commands)).map(({ line, ...rest }) => rest),
+        commands.map(({ line, ...rest }) => rest));
+    for (const source of [
+        'give currency __proto__ 2', 'take currency constructor 2', 'give currency "type" 2',
+        'require currency type => 1', 'require currency type 1', 'exchange b type',
+        'exchange "b" reasoning 2', 'exchange b reasoning type 2', 'exchange b __proto__ 2',
+        'give currency type -1', 'take currency type Infinity', 'require currency type >= NaN',
+        'give currency type 1e12 extra', 'exchange b type 1e999', 'exchange b type -1',
+        'exchange b type 1000000000001',
+    ]) assert.throws(() => parseMapScript(`\n${source}`), /line 2/i, source);
+});
+
+test('legacy money aliases only reasoning and missing type balance stays zero for old saves', () => {
+    const state = createMapScriptState();
+    const initial = planMapScript('', state, environment());
+    assert.equal(initial.money, 20);
+    assert.equal(initial.typeMoney, 0);
+    assert.equal(initial.typeSpent, 0);
+    const plan = planMapScript(`give money 5; give currency reasoning 2; take currency reasoning 3;
+require money == 24; require currency reasoning == 24; take money 4;
+give currency type 10; take currency type 3; require currency type == 7`, state, environment());
+    assert.equal(plan.money, 20);
+    assert.equal(plan.spent, 7);
+    assert.equal(plan.typeMoney, 7);
+    assert.equal(plan.typeSpent, 3);
+    const legacy = planMapScript('give money 3; take money 2; require money == 21', state, environment({ typeMoney: 12 }));
+    assert.equal(legacy.money, 21);
+    assert.equal(legacy.spent, 2);
+    assert.equal(legacy.typeMoney, 12);
+    assert.equal(legacy.typeSpent, 0);
+    for (const typeMoney of [null, '0', NaN, Infinity, -1, 1e12 + 1]) {
+        assert.throws(() => planMapScript('', state, environment({ typeMoney })), /line 1/i);
+    }
+});
+
+test('script exchanges share both ledgers sequentially without inflating spending counters', () => {
+    const state = createMapScriptState();
+    const env = environment({ money: 100, typeMoney: 3, banks: { central: bank() } });
+    const snapshot = JSON.stringify(env);
+    const plan = planMapScript(`exchange central reasoning 10;
+require money == 88; require currency type == 23;
+exchange central type 4; take currency type 3; take money 1;
+require currency reasoning == 89; require currency type == 16`, state, env);
+    assert.equal(plan.money, 89);
+    assert.equal(plan.typeMoney, 16);
+    assert.equal(plan.spent, 1);
+    assert.equal(plan.typeSpent, 3);
+    assert.deepEqual(plan.effects, []);
+    assert.equal(JSON.stringify(env), snapshot);
+    assert.deepEqual(state, createMapScriptState());
+});
+
+test('currency and bank failures leave balances, script state and author configuration intact', () => {
+    const state = createMapScriptState({ keys: ['owned'], tileEdits: { door: { text: 'old' } } });
+    const env = environment({ typeMoney: 3, banks: { central: bank() } });
+    const before = JSON.stringify({ state, env });
+    for (const source of [
+        'take key owned; exchange central reasoning 10; require currency type > 100',
+        'open gate door; exchange central reasoning 20',
+        'give currency type 2; take currency type 6',
+        'give currency reasoning 1e12', 'give currency type 1e12',
+        'exchange central reasoning 1', 'exchange central type 0',
+        'give money 1; exchange missing reasoning 2',
+        'give currency type 1; require currency reasoning == 0',
+    ]) {
+        assert.throws(() => planMapScript(source, state, env), /line \d+/i, source);
+        assert.equal(JSON.stringify({ state, env }), before);
+    }
+    const invalid = bank(); delete invalid.rules[1].feeFixed;
+    assert.throws(() => planMapScript('require key absent; exchange broken reasoning 2', state,
+        environment({ banks: { broken: invalid } })), /line 1:.*missing feeFixed/);
+    assert.throws(() => planMapScript('require key absent\nexchange missing reasoning 2', state, env), /line 2: Unknown bank/);
+    const oneWay = { rules: [bank().rules[0]] };
+    assert.throws(() => planMapScript('exchange b type 2', state, environment({ banks: { b: oneWay } })), /Unsupported bank direction/);
+});
+
+test('checksOnly validates bank references and all rule data but never performs exchanges', () => {
+    const state = createMapScriptState();
+    const env = environment({ money: 0, typeMoney: 0, banks: { central: bank() } });
+    const plan = planMapScript(`exchange central reasoning 100; give currency type 8; take currency reasoning 9;
+require currency reasoning == 0; require currency type == 0`, state, env, true);
+    assert.deepEqual(plan, { state, money: 0, spent: 0, typeMoney: 0, typeSpent: 0, balances: { reasoning: 0, type: 0 }, effects: [] });
+    assert.throws(() => planMapScript('exchange missing reasoning 2', state, env, true), /Unknown bank/);
+    assert.throws(() => planMapScript('exchange central reasoning 1', state, env, true), /minimum/);
+    const invalid = bank(); invalid.rules[1].rounding = 'auto';
+    assert.throws(() => planMapScript('require currency reasoning == 0; exchange central reasoning 2', state,
+        environment({ banks: { central: invalid } }), true), /Invalid rounding/);
+    assert.throws(() => planMapScript('give currency type 5; require currency type == 5', state, env, true), /Requirement not met/);
+});
+
+test('all currency comparisons observe the correct ledger and amount boundaries', () => {
+    const state = createMapScriptState(), env = environment({ typeMoney: 7 });
+    planMapScript(`require currency type >= 7; require currency type <= 7; require currency type == 7;
+require currency type != 20; require currency type > 6; require currency type < 8;
+give currency type 0; take currency reasoning 0; give currency reasoning 999999999980;
+require currency reasoning == 1e12`, state, env);
+    for (const [comparison, amount] of [['>=', 8], ['<=', 6], ['==', 20], ['!=', 7], ['>', 7], ['<', 7]]) {
+        assert.throws(() => planMapScript(`require currency type ${comparison} ${amount}`, state, env), /Requirement not met/);
+    }
+    assert.throws(() => planMapScript('give currency type 1e12; take currency type 1e12; give currency type 8; take currency type 8', state,
+        environment({ typeMoney: 0 })), /line 1/i, 'cumulative typeSpent is bounded');
+});
+
+test('bank IDs and currency names remain global during module rewriting', () => {
+    const source = 'give key k; exchange central reasoning 2; give currency type 3; require currency reasoning >= 0; take currency type 1';
+    assert.equal(rewriteMapScript(source, id => `instance::${id}`),
+        'give key instance::k\nexchange central reasoning 2\ngive currency type 3\nrequire currency reasoning >= 0\ntake currency type 1');
+    const state = createMapScriptState();
+    for (const bankId of ['__proto__', 'constructor', 'toString']) {
+        assert.throws(() => planMapScript(`exchange ${bankId} reasoning 2`, state, environment({ banks: {} })), /Unknown bank/);
+        const banks = JSON.parse(`{"${bankId}":${JSON.stringify(bank())}}`);
+        assert.equal(planMapScript(`exchange ${bankId} reasoning 2`, state, environment({ banks })).typeMoney, 4);
+    }
+    let reads = 0;
+    const banks = Object.defineProperty({}, 'central', { get() { reads++; return bank(); } });
+    assert.throws(() => planMapScript('exchange central reasoning 2', state, environment({ banks })), /Unknown bank/);
+    assert.equal(reads, 0);
+});
+
+const modEnvironment = (extra = {}) => environment({
+    typeMoney: 7,
+    balances: { reasoning: 20, type: 7, 'mod:alpha': 10, 'mod:beta': 10 },
+    ...extra,
+});
+const modBank = () => ({ rules: [
+    { ...bank().rules[0], to: 'mod:alpha', rate: 3, feeRate: 0, feeFixed: 0 },
+    { ...bank().rules[0], to: 'mod:beta', rate: 4, feeRate: 0, feeFixed: 0 },
+    { ...bank().rules[1], from: 'mod:alpha', to: 'mod:beta', rate: 2 },
+] });
+
+test('registered mod currencies keep equal-valued ledgers isolated from each other and legacy fields', () => {
+    const env = modEnvironment(), before = JSON.stringify(env);
+    const plan = planMapScript(`require currency mod:alpha == 10; require currency mod:beta == 10;
+give currency mod:alpha 4; take currency mod:beta 3;
+require currency mod:alpha == 14; require currency mod:beta == 7;
+take money 2; take currency type 1; require currency reasoning == 18`, createMapScriptState(), env);
+    assert.deepEqual(plan.balances, { reasoning: 18, type: 6, 'mod:alpha': 14, 'mod:beta': 7 });
+    assert.equal(plan.money, 18); assert.equal(plan.typeMoney, 6);
+    assert.equal(plan.spent, 2); assert.equal(plan.typeSpent, 1);
+    plan.balances['mod:alpha'] = 99;
+    assert.equal(JSON.stringify(env), before);
+});
+
+test('mod registration is mandatory even for skipped effects and late commands', () => {
+    const state = createMapScriptState(), env = modEnvironment(), before = JSON.stringify(env);
+    for (const source of [
+        'give currency mod:missing 1', 'take currency mod:missing 0', 'require currency mod:missing == 0',
+        'require key absent\ngive currency mod:missing 1',
+        'give key k; exchange central reasoning 2 mod:missing',
+    ]) {
+        for (const checksOnly of [false, true]) {
+            assert.throws(() => planMapScript(source, state, { ...env, banks: { central: modBank() } }, checksOnly), /Unregistered currency/);
+        }
+        assert.deepEqual(state, createMapScriptState());
+        assert.equal(JSON.stringify(env), before);
+    }
+    assert.throws(() => planMapScript('give currency mod:alpha 1', state, environment()), /Unregistered currency/);
+});
+
+test('registered balance maps must agree with both built-in compatibility balances', () => {
+    for (const balances of [
+        { reasoning: 19, type: 7 }, { reasoning: 20, type: 8 }, { reasoning: 20 }, { type: 7 }, {},
+        { reasoning: 20, type: 7, 'mod:alpha': -1 }, { reasoning: 20, type: 7, 'mod:alpha': Infinity },
+        JSON.parse('{"reasoning":20,"type":7,"__proto__":4}'),
+    ]) assert.throws(() => planMapScript('', createMapScriptState(), modEnvironment({ balances })), /line 1/i);
+    assert.throws(() => planMapScript('', createMapScriptState(), environment({ balances: { reasoning: 20, type: 7 } })), /match money\/typeMoney/);
+    assert.deepEqual(planMapScript('', createMapScriptState(), modEnvironment()).balances,
+        { reasoning: 20, type: 7, 'mod:alpha': 10, 'mod:beta': 10 });
+});
+
+test('multi-target script exchanges require explicit targets and preserve four-token single-target syntax', () => {
+    const state = createMapScriptState(), env = modEnvironment({ banks: { central: modBank() } });
+    const source = 'exchange central reasoning 2 mod:beta; exchange central mod:alpha 2';
+    const plan = planMapScript(source, state, env);
+    assert.deepEqual(plan.balances, { reasoning: 18, type: 7, 'mod:alpha': 8, 'mod:beta': 22 });
+    assert.equal(plan.spent, 0); assert.equal(plan.typeSpent, 0);
+    assert.deepEqual(parseMapScript(source)[0], { line: 1, op: 'exchange', bankId: 'central', currency: 'reasoning', value: 2, to: 'mod:beta' });
+    assert.equal(rewriteMapScript(source, id => `instance::${id}`), 'exchange central reasoning 2 mod:beta\nexchange central mod:alpha 2');
+    for (const checksOnly of [false, true]) {
+        assert.throws(() => planMapScript('require key missing; exchange central reasoning 2', state, env, checksOnly), /Ambiguous bank direction/);
+        assert.throws(() => planMapScript('exchange central reasoning 2 type', state, env, checksOnly), /Unsupported bank direction/);
+        const check = planMapScript(source, state, env, true);
+        assert.deepEqual(check.balances, env.balances);
+    }
+    const unregisteredRule = modBank(); unregisteredRule.rules.push({ ...bank().rules[0], from: 'mod:missing' });
+    assert.throws(() => planMapScript('exchange central mod:alpha 2', state,
+        modEnvironment({ banks: { central: unregisteredRule } }), true), /Unregistered currency: mod:missing/);
 });
 
 test('module rewriting scopes local references on both sides and preserves global identifiers and text', () => {
