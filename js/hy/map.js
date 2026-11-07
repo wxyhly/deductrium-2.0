@@ -25,7 +25,7 @@ export const mapData = `
 // 玩家反馈后补充的入门教程
 
 :dL,5@[zh][D]表中推理规则都是这样的形式：[n]( A1, A2, ...An ⊢ C )[n]它代表若A1、A2、... An[n]都是[P]定理表中的定理[n]则执行该规则后[n]就能把C加入到定理表[P]中[en]Deduction rules in table [D][n]have the following form:[n]( A1, A2, ...An ⊢ C )[n]This means that if A1, A2, ... An[n]are all theorems in theorem table [P][n]then after applying the rule[n]C can be added to theorem table [P]
-:%*,3@[zh]$开头的东西叫替换变量[n]它可以替换成任何合法表达式[n]元公式变量只能替换为公式[n]元项变量亦然[n]系统会根据你选择的条件[n]尝试自动匹配出它们的值[n]无法确定时会让你直接输入表达式[en]Items beginning with $[n]are called substitution variables[n]They may be replaced by any expression[n]The system will try to infer their values[n]automatically from the premises you select[n]If it cannot determine them[n]you will be asked to enter an expression manually
+:%*,3@[zh]$开头的东西叫替换变量[n]它可以替换成任何合法表达式[n]元公式变量只能替换为公式[n]元项变量亦然[n]系统会根据你选择的条件[n]尝试自动匹配出它们的值[n]无法确定时会让你直接输入表达式[en]Items beginning with $[n]are called substitution variables.[n]They may be replaced by any legal expression.[n]Formula metavariables can only take formulas,[n]and term metavariables can only take terms.[n]The system tries to infer their values[n]from the premises you select.[n]If a value cannot be determined,[n]you will be asked to enter an expression.
 :%*,3,2@[zh]请尝试使用某个推理规则[n]得到定理A>(A>A)[n]从而可以通过门[n]A>(A>A)[n]#p[en]Try using a deduction rule[n]to derive the theorem A>(A>A)[n]so that you can pass the gate[n]A>(A>A)[n]#p
 :%*,3,4@[zh]提示：系统等待你输入表达式时[n]可以点击定理中的表达式[n]来快速复制插入到命令框[en]Hint: When the system is waiting[n]for you to enter an expression[n]you can click an expression[n]inside a theorem[n]to quickly copy it into the command box
 :%,5@[zh]要执行某个推理规则[n]可在底部命令框中输入规则名[n]或直接点击[D]表中的推理规则[n]然后系统将提示你[n]在[P]定理表中选择条件定理[en]To apply a deduction rule[n]you may enter its name[n]in the command box at the bottom[n]or click the rule directly in table [D][n]The system will then prompt you[n]to select premise theorems[n]from theorem table [P]
@@ -34,7 +34,7 @@ export const mapData = `
 
 // A>A 与推理宏引导
 
-:dL,3@[zh]#p闸门开启方法：[n]当推理层的定理表之一中[n]包含闸门上的字符串时[n]才能通过闸门[en]Method to unlock Gate #p:[n] you can pass through it[n]When the \\[P\\] list in the deduct layer[n]contains the string on the gate
+:dL,3@[zh]#p闸门开启方法：[n]当推理层的定理表之一中[n]包含闸门上的字符串时[n]才能通过闸门[en]To open a #p gate:[n]one of the theorem tables[n]in the deduction layer must contain[n]the string shown on the gate.
 :dL,4#[[aa]][=ac:"aa"][p]A→A
 :%,4#[p]B→B
 :%*,1$[=getD:1]
@@ -45,7 +45,7 @@ export const mapData = `
 :%,2$[[macro]][=unl:true][zh]使用推理宏[n]（即“录制宏”按钮）[n]提示：前往⊢($0>$0)[n]后方以解锁假设[en]deduction macros[n](ie, the "Record Macro" button)[n]Hint: Pass through of ⊢($0>$0)[n]to unlock hypotheses
 :%*,4#[d]⊢$0→(($0→$1)→$0)
 :%*,4,1$[=getD:2]
-:%,1@[[nd]][zh]#d闸门开启方法：[n]当推理层的推理规则表中[n]包含闸门上的字符串时[n]才能通过闸门[en]Method to unlock Gate #d:[n] you can pass through it[n]When the \\[D\\] list in the deduct layer[n]contains the string on the gate
+:%,1@[[nd]][zh]#d闸门开启方法：[n]当推理层的推理规则表中[n]包含闸门上的字符串时[n]才能通过闸门[en]To open a #d gate:[n]the deduction rule table[n]in the deduction layer must contain[n]the string shown on the gate.
 :%*,3$[=getD:1]
 :aa,1#[p]A→(C→(B→A))
 :%,2$[=getD:8]
@@ -205,7 +205,7 @@ export const mapData = `
 // mct
 
 :hyp,5;5;0;5;0;4;1;2@
-:%,1@[zh]条件演绎元定理[n]将自动帮你生成[n]带条件的推理宏[n]除了c前缀还可以用cond[en]Conditional Deduction Metatheorem[n]will automatically generate[n]conditional macros for you
+:%,1@[zh]条件演绎元定理[n]将自动帮你生成[n]带条件的推理宏[n]除了c前缀还可以用cond[en]The Conditional Deduction Metatheorem[n]automatically generates[n]conditional deduction macros.[n]Besides the c prefix, you can also use cond.
 :%,0#[[ccmp]][d]($0→($1→$2)),($0→($1→($2→$3)))⊢($0→($1→$3))
 :%,3$[[mct]][=unl:true][zh]条件演绎元定理[en]Conditional[n]Deduction Metatheorem
 :%,5#[d]($0→¬¬$1)⊢($0→$1)
@@ -310,22 +310,22 @@ export const mapData = `
 :%*,1$[[midt]][=unl:true][zh]逆演绎元定理[en]inverse deduction metatheorem
 :%*,5$[[mcmt]][=unl:true][zh]组合元定理[en]combination metatheorem
 :%*,4@[zh]逆演绎元定理其实就是[n]相应公理与mp规则的简单组合[n]但组合后的条件自动匹配[n]如推理规则“<a1”为[n]$1⊢$2>$1[en]Inverse deduction metatheorem is [n]simple combination of corresponding axioms and mp rule[n]but conditions automatically match[n]E.g., deduction rule “<a1” is $1⊢$2>$1
-:%*,2@[zh]组合元定理将两个[n]带条件的推理规则a与b[n]自动匹配组合成[n]一条规则“b(a)”[n]比如推理规则[n]“<a1(a7)”将自动得到[n]⊢ $1 > ($a=$a)[en]Combination metatheorem [n]automatically matches 2 [n]conditional deduction rules[n] a and b into one rule ":a,b"[n]E.g., deduction rule":a7,<a1”[n] will be ⊢ $1 > ($0=$0)
+:%*,2@[zh]组合元定理将两个[n]带条件的推理规则a与b[n]自动匹配组合成[n]一条规则“b(a)”[n]比如推理规则[n]“<a1(a7)”将自动得到[n]⊢ $1 > ($a=$a)[en]The Combination Metatheorem[n]automatically matches two conditional rules[n]a and b into a single rule b(a).[n]For example, the rule <a1(a7)[n]automatically gives[n]⊢ $1 > ($a=$a).
 :%*,2,3@[zh]往前走，还有更高级的[n]组合元定理用法[n]（仅限快捷执行元规则）[en]Further on, there are more advanced uses[n]of the combination metatheorem[n](for execution of fast-meta-rules only).
 :%*,2,3,3#[=payD:50]
 :%*,2,3,3,3#[=payD:100]
-:%*,2,3,3,3,3@[zh]组合元定理可以嵌套[n]如c(b(a))相当于[n]令m = b(a)[n]则c(b(a)) = c(m)[en]Combination rules can be nested.[n]For example, ::a,b,c is equivalent to[n]let m = :a,b[n]then ::a,b,c = :m,c.
-:%*,2,3,3,3,3,1@[zh]第二个参数同理[n]如c(b)(a)相当于[n]令m = c(b)[n]则c(b)(a) = m(a)[en]The second parameter can also be nested.[n]For example, :a,:b,c is equivalent to[n]let m = :b,c[n]then :a,:b,c = :a,m.
-:%*,2,3,3,3,3,2@[zh]第二个参数规则[n]也可以有多个条件[n]如c(b)(a)表示[n]先执行推理规则a与b[n]然后把它们的结论[n]分别作为规则c的条件[n]再执行c[en]The second parameter rule[n]can also have multiple conditions.[n]For example, :a:b,c means[n]first execute rules a and b[n]and then use their conclusions[n]as conditions for rule c,[n]and then execute c.
-:%*,2,3,3,3,3,3@[zh]条件放在规则名后的括号里[n]多个条件用逗号分隔[n]“#”为放入默认条件[n]条件没写够则默认为“#”[en]Conditions are separated by “:”.[n]Conditions and conclusions are separated by “,”.[n]“#” represents the insertion of the default condition.[n]If not enough conditions are written,[n] it defaults to “#”.
-:%*,2,3,3,3,3,4@[zh]你可以输入这几个规则体会一下：[n]c.t(<a1)[n]c.t(#)(<a1)[n]c.t(<a1)(#)[en]You can input these rules to experience it:[n]:<a1,c.t[n]:<a1:#,c.t[n]:#:<a1,c.t
-:%*,2,3,3,3,3,5@[zh]定理.t($a>$b,$b>$c⊢$a>$c)[n]可以输入规则名直接生成：[n]<<a2(<a1)[n](虽然两个条件顺序反了)[en]The theorem .t($a>$b,$b>$c⊢$a>$c)[n]can be generated directly by entering the rule name:[n]<:<a1,<a2[n](although the order of the two conditions is reversed).
+:%*,2,3,3,3,3@[zh]组合元定理可以嵌套[n]如c(b(a))相当于[n]令m = b(a)[n]则c(b(a)) = c(m)[en]Combinations can be nested.[n]For example, in c(b(a)),[n]let m = b(a).[n]Then c(b(a)) = c(m).
+:%*,2,3,3,3,3,1@[zh]第二个参数同理[n]如c(b)(a)相当于[n]令m = c(b)[n]则c(b)(a) = m(a)[en]The same applies to the second parameter.[n]For example, in c(b)(a),[n]let m = c(b).[n]Then c(b)(a) = m(a).
+:%*,2,3,3,3,3,2@[zh]第二个参数规则[n]也可以有多个条件[n]如c(b)(a)表示[n]先执行推理规则a与b[n]然后把它们的结论[n]分别作为规则c的条件[n]再执行c[en]The rule in the second parameter[n]can also have multiple premises.[n]For example, c(b)(a) means[n]first applying rules a and b,[n]then using their conclusions[n]as the respective premises of c,[n]and finally applying c.
+:%*,2,3,3,3,3,3@[zh]条件放在规则名后的括号里[n]多个条件用逗号分隔[n]“#”为放入默认条件[n]条件没写够则默认为“#”[en]Put premises in parentheses[n]after the rule name.[n]Separate multiple premises with commas.[n]# inserts the default premise.[n]Omitted premises default to #.
+:%*,2,3,3,3,3,4@[zh]你可以输入这几个规则体会一下：[n]c.t(<a1)[n]c.t(#)(<a1)[n]c.t(<a1)(#)[en]Try entering these rules:[n]c.t(<a1)[n]c.t(#)(<a1)[n]c.t(<a1)(#)
+:%*,2,3,3,3,3,5@[zh]定理.t($a>$b,$b>$c⊢$a>$c)[n]可以输入规则名直接生成：[n]<<a2(<a1)[n](虽然两个条件顺序反了)[en]The theorem .t ($a>$b,$b>$c⊢$a>$c)[n]can be generated directly[n]by entering the rule name:[n]<<a2(<a1)[n](although the two premises are in reverse order).
 :%*,3@[zh]快捷执行元规则：[n]可输入元规则名字前方括号内[n]的字符前缀加上推理规则名[n]来执行元规则。该方式生成的新规则[n]不列入推理规则表中[en]Quick execute metarule:[n]Enter prefix between '[' and ']' [n]before metarule name, then follow[n] deduction rule name[n]to execute metarule.[n]New rules generated this way[n]will not  be added to [D] rule table
 // 一阶逻辑断言函数教程
 
 :1st,5#[p](∀$2:$0)→((∀$2:$1)→(∀$2:$0))
 :%,0#[p]∀$2:($0→($1→$0))
-:%*,2@[zh]提示：对某个[n]命题逻辑的公理使用[n]元推理规则mq或var[n]来打开这扇门[en]Hint: Use metadeduction rule mq on[n]some propositional logic axiom[n]to open this gate
+:%*,2@[zh]提示：对某个[n]命题逻辑的公理使用[n]元推理规则mq或var[n]来打开这扇门[en]Hint: Apply the metadeduction rule mq[n]or var to a propositional logic axiom[n]to open this gate.
 :%,5#[p](∀$2:$0) → ∀$2:($1→$0)
 :%,0@[zh]公理a6解读：[n]#nf($0,$1)的值为$0[n]外加验证变量$1不在[n]表达式$0中自由出现[n](nf为not free缩写)[en]Axiom a6 interpretation:[n]Value of #nf($0,$1) is $0[n]with verifying variable $1 not free [n]in expression $0[n]('nf' is for not free)
 :%,5@[zh]若$0中没有一阶逻辑量词[n]则自由出现指$0中含有$1[n][en]If $0 has no first-order logic quantifiers[n]free occurrence means $0 contains $1[n]
@@ -347,13 +347,13 @@ export const mapData = `
 :%,2$[=getD:3e3]
 
 // 可替换教程
-:1st,3@[zh]公理a4解读：[n]#sb($0,$1,$2)的值[n]为将$0中自由出现的$1[n]全替换为$2后的新值[n](即substitute)[en]Axiom a4 interpretation:[n]Value of #rp($0,$1,$2)[n]is to replace all free $1 in $0[n]with $2[n]('rp' is for replace)
-:%*,5@[zh]假设中若有未化简的#sb函数[n]会导致匹配机制失效[n]因此会被系统禁止[en]If an unreduced #rp function[n] occurs in hypotheses,[n] the matching mechanism will fail.[n]This will not be allowed
-:1st,2@[[crp]][zh]公理a4解读：[n]#sb($0,$1,$2)执行替换前[n]还会外加验证$0中[n]可将$1替换为$2[en]Axiom a4 interpretation:[n]Expression #rp($0,$1,$2)[n]will verify that[n]All $1 in $0 can be replaced with $2[n]Before replacement execution
+:1st,3@[zh]公理a4解读：[n]#sb($0,$1,$2)的值[n]为将$0中自由出现的$1[n]全替换为$2后的新值[n](即substitute)[en]Axiom a4 explained:[n]The value of #sb($0,$1,$2)[n]is obtained by substituting $2[n]for every free occurrence of $1 in $0.[n]Here sb stands for substitute.
+:%*,5@[zh]假设中若有未化简的#sb函数[n]会导致匹配机制失效[n]因此会被系统禁止[en]If an unreduced #sb function[n]occurs in a hypothesis,[n]the matching mechanism fails,[n]so the system forbids it.
+:1st,2@[[crp]][zh]公理a4解读：[n]#sb($0,$1,$2)执行替换前[n]还会外加验证$0中[n]可将$1替换为$2[en]Axiom a4 explained:[n]Before carrying out the substitution,[n]#sb($0,$1,$2) also checks[n]that $1 can be replaced by $2 in $0.
 :%,2@[zh]若本来自由出现的变量[n]替换后被量词约束[n]则不可替换[en]If free variable becomes bound[n] by quantifier after replacement[n] this replacement can't be allowed
 :%*,2#[p]∀x:(¬∀y:(x=y)) → ¬∀y:(y=y)
 :%*,2,1$[never]
-:%,3@[zh]例如#sb(~Vy:(x=y),x,y)[n]系统将验证失败[n][en]E.g., #rp(~Vy:(x=y),x,y)[n]#rp verification will fail[n]
+:%,3@[zh]例如#sb(~Vy:(x=y),x,y)[n]系统将验证失败[n][en]For example, #sb(~Vy:(x=y),x,y)[n]fails the system check.[n]
 :%*,1#[p]¬(∀x:(¬∀y:(x=y)) → ¬∀y:(y=y))
 :%*,2,1$[[sysrule]][zh]获取关于系统函数#nf、#rp[n]自动化简规则的提示[en]Get hints about the system functions #nf, #rp,[n]and the automated simplification rules.
 :%*,3@[zh]道理是这个道理[n]但否定挪进去后[n]真相就又变了[n](这边是附加题)[en]The rule is clear, but[n]once the negation is moved in[n]the truth changes again.[n](This part is an extra question)
@@ -362,12 +362,12 @@ export const mapData = `
 :%*,1,4$[=getD:30]
 :%*,3,1,5$[never]
 :1st,3,1#[[rp]][=ac:"rp"][p](∀$0:$1)→$1
-:%,4@[zh]想要用#sb函数替换部分变量？[n]在第三个参数"$"[n]把想替换的部分写成另一个变量[n]然后在"$x"输入那个变量[en]#rp functions allow partial [n]replacement with fourth parameter[n]Enter number to specify replacing only the[n]nth occurrence of variable[n]0 means replace all[n]Negative numbers mean nth from end
+:%,4@[zh]想要用#sb函数替换部分变量？[n]在第三个参数"$"[n]把想替换的部分写成另一个变量[n]然后在"$x"输入那个变量[en]Want to use #sb to replace only some variables?[n]In the third parameter "$",[n]write the parts you want to replace[n]using another variable,[n]then enter that variable in "$x".
 :%,1$[[a8]][=unl:true][zh]等词公理a8[en]equational axiom a8
 
 // 谓词、变量、项教程
 
-:1st,5@[zh]“∀”(\\a)叫做量词[n]量词后紧跟的叫变量[n]冒号后的公式叫[n]该量词的管辖范围[n]整个V$0:$1是公式[en]“∀” (V) is called quantifier symbol[n]After quantifier is variable[n]Formula after colon is called[n]scope of this quantifier[n]Whole expression V$0:$1 is formula
+:1st,5@[zh]“∀”(\\a)叫做量词[n]量词后紧跟的叫变量[n]冒号后的公式叫[n]该量词的管辖范围[n]整个V$0:$1是公式[en]“∀” (\\a) is called a quantifier.[n]It is followed by a variable.[n]The formula after the colon[n]is the scope of that quantifier.[n]The whole expression V$0:$1 is a formula.
 :%*,5@[zh]注意：变量都是“项”[n]不能说某项为真或假[n]只有公式才能讨论其真假[n]纯命题逻辑都是公式[n]即都可判断真假[en]Note: Variables are all "terms"[n]We can't say term is true/false[n]Only formulas can be assigned[n] with True or False[n]Pure propositional logic are all formulas[n]ie, all can be judged true/false
 :%*,0,3#[p](∀$2:($0↔$1))→((∀$2:$0)↔(∀$2:$1))
 :%*,0,3,5$[[I1]][=unl:true][zh]门#I1[en]gate #I1
@@ -384,8 +384,8 @@ export const mapData = `
 // 等词性质
 
 :a8,1#[d]$0=$1⊢$1=$0
-:%*,4,5@[zh]a8公理使用提示1[n]如果$x是普通的变量或替换变量[n]有些#sb无法化简[n]需要使用#开头的局部变量[n][en]Axiom a8 usage tip 1[n]To replace $b with $c in $a=$b[n]you'll find that system cannot execute [n]replacement expression “#rp($a=$b,$b,$c,0)”[n]Because value of $a is uncertain[n] it may participates in replacement[n] if it also contains $b
-:%*,4@[zh]a8公理使用提示2[n]局部变量在参与#nf时[n]会无条件判断成立[n]但结论中不能有局部变量[en]Axiom a8 usage tip 2[n]To replace $a with $c in $a=$b[n]we can write “#rp($a=$b,$a,$c,1)”,[n] because $a occurs first so it must be replaced[n] Therefore let system replace only first variable[n]and ignore latter variables
+:%*,4,5@[zh]a8公理使用提示1[n]如果$x是普通的变量或替换变量[n]有些#sb无法化简[n]需要使用#开头的局部变量[n][en]Axiom a8, tip 1:[n]If $x is an ordinary variable[n]or a substitution variable,[n]some #sb expressions cannot be simplified.[n]Use a local variable beginning with #.[n]
+:%*,4@[zh]a8公理使用提示2[n]局部变量在参与#nf时[n]会无条件判断成立[n]但结论中不能有局部变量[en]Axiom a8, tip 2:[n]Local variables unconditionally satisfy[n]the check when used in #nf.[n]However, local variables must not[n]appear in the conclusion.
 :%*,2$[=getD:30]
 :%,1@[zh]导航提示：[n]1.这里离解锁皮亚诺公理[n]ZFC公理与类型层[n]仅有三个方块距离了，[n]2.旁边有着#nf与<>的门后[n]可解锁一阶逻辑大礼包[en]Navigation tips:[n]1. Here is only 3 blocks away from unlocking [n]Peano axioms, ZFC axioms and type layers[n]2. Behind gate with #nf and <>, you can[n]unlock useful 1st-order logic toolkit
 :%*,2#[[terr1]][=ac:"terr1"][d]#nf($2,$0) ⊢ (∃$0:($1∨$2)) ↔ ((∃$0:$1)∨$2)
@@ -437,7 +437,7 @@ export const mapData = `
 :%,5$[=getD:70]
 :mcvt,0#[p](∀$0:($1∧$2)) ↔ ((∀$0:$1) ∧ (∀$0:$2))
 :%,2$[=getD:40]
-:mcvt,3@[zh]条件概括元定理可把[n]定理的所有条件和结论[n]都加上相同的量词[n]同时加强var[en]Conditional generalization metatheorem[n] can add same quantifier to all conditions [n]and conclusions of a given deduction rule
+:mcvt,3@[zh]条件概括元定理可把[n]定理的所有条件和结论[n]都加上相同的量词[n]同时加强var[en]The Conditional Generalization Metatheorem[n]adds the same quantifier[n]to all premises and the conclusion[n]of a theorem.[n]It also strengthens var.
 :mvt,0@[zh]概括元定理是说[n]若定理的所有条件[n]都没自由出现$0[n]则可单独在结论中[n]加上量词V$0[en]Generalization metatheorem states that[n]if all conditions of a rule[n]have no free occurrence of $0[n]then quantifier V$0 can be added to conclusion
 // 分离公理与空集
 
