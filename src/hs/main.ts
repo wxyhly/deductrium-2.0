@@ -1352,9 +1352,12 @@ export class HSLayer {
                 const assertions = ast.nodes.filter(e => e.type === NodeType.ASSERT).map(e => AtomSolver.fromAST(e));
                 ast.nodes = ast.nodes.filter(e => e.type !== NodeType.ASSERT);
                 const rule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), assertions, ast.nodes, ast.nodes.pop()!);
-                this.hilbertSystem.rules.set(name, rule);
                 container.push({ name, uuid });
                 if (!ax) {
+                    // Mask any same-name preloaded rule until this proof is checked.
+                    const pending = new Deduction(new Set, rule.name, [], [], new AST(NodeType.ATOM_WFF, "?"));
+                    pending.error = { cause: HSError.dname404(name), cmds: steps };
+                    this.hilbertSystem.rules.set(name, pending);
                     // 步骤重放失败只标记 error（保留原始cmd供调试），不中断
                     try {
                         // 自动补 hyp：从断言和条件推导（与serde存档逻辑一致，step中无需写hyp）
@@ -1363,7 +1366,12 @@ export class HSLayer {
                         for (const n of rule.conditions) hyps.push(new HSParser().parse("hyp " + n, "cmd"));
                         this.hilbertSystem.fromCmd(hyps);
                         this.hilbertSystem.fromCmd(steps.split(";").filter(e => e).map(e => new HSParser().parse(e, "cmd")));
-                        if (!this.hilbertSystem.checkConclusionInPropList().conclusion.equal(rule.conclusion)) {
+                        const proof = this.hilbertSystem.checkConclusionInPropList();
+                        if (!proof.conclusion.equal(rule.conclusion)
+                            || proof.conditions.length !== rule.conditions.length
+                            || proof.conditions.some((condition, index) => !condition.equal(rule.conditions[index]))
+                            || proof.asserts.length !== rule.assertions.length
+                            || proof.asserts.some((assertion, index) => AtomSolver.print(assertion) !== AtomSolver.print(rule.assertions[index]))) {
                             rule.error = { cause: HSError.replayConclusionMismatch, cmds: steps };
                         } else {
                             rule.step = this.hilbertSystem.props.slice(0);
@@ -1374,6 +1382,7 @@ export class HSLayer {
                         this.hilbertSystem.clear();
                     }
                 }
+                this.hilbertSystem.rules.set(name, rule);
             } catch (e) {
                 // 规则头解析失败：注册占位规则，仅保留 error 供调试
                 const errRule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), [], [], new AST(NodeType.ATOM_WFF, "?"));

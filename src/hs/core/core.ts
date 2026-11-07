@@ -69,6 +69,7 @@ export class HilbertSystem {
                 } else d = generateNumberProof(this, dname.name) ?? generateIntegerProof(this, dname.name);
             }
             if (!d) throw HSError.dname404(dname.name);
+            if (d.error) throw HSError.expandFail(HSError.errRuleUsed(d.name.toString(), d.error.cause));
             return d;
         }
         if (dname.type === NodeType.NODE_DNAME) {

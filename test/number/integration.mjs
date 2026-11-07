@@ -282,7 +282,9 @@ test('signed replacement parameters survive command and saved-rule replay', () =
         replay(system, commands);
         assert.ok(system.props.at(-1).ast.equal(expected), `${literal}: command replay`);
         assert.deepEqual(system.genCmd(), commands, `${literal}: stable commands`);
-        layer.addRules(`signedReplay:∀x:x=x⊢${literal}=${literal};${commands.join(';')};`);
+        // Match Serde: the header restores hypotheses, so the body omits them.
+        const body = commands.filter(command => !command.startsWith('hyp '));
+        layer.addRules(`signedReplay:∀x:x=x⊢${literal}=${literal};${body.join(';')};`);
         assert.equal(system.rules.get('signedReplay').error, undefined, `${literal}: saved rule replay`);
         assert.ok(system.rules.get('signedReplay').step?.length);
         const serde = new Serde(layer, system, layer.ruleList, layer.propListView, layer.ruleListView);
