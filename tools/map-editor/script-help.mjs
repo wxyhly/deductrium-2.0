@@ -1,4 +1,12 @@
 // One catalogue supplies both the insertion menu and the reference panel.
+export const SCRIPT_TRIGGER_TIMINGS = [
+    ['道路', '玩家尝试走入时'],
+    ['奖励', '玩家尝试领取时'],
+    ['门', '检查脚本条件，并满足原有过门条件后执行效果'],
+    ['起点', '新试玩存档首次启动时'],
+    ['墙', '不触发']
+];
+
 const entry = (id, label, template, note, select) => ({id, label, template, note, select});
 export const SCRIPT_GROUPS = [
     {label: '条件检查', entries: [

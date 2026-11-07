@@ -1,4 +1,4 @@
-import {SCRIPT_RULES, supportedScriptGroups} from './script-help.mjs';
+import {SCRIPT_RULES, SCRIPT_TRIGGER_TIMINGS, supportedScriptGroups} from './script-help.mjs';
 
 // Some browsers omit the offset in JSON.parse errors. Scan only on failure to
 // locate the first invalid token; JSON.parse remains the authoritative parser.
@@ -142,6 +142,19 @@ export function installScriptEditor({parse, say, refresh}) {
         $('script-insert').value = '';
     }
     const entries = new Map(), help = document.createDocumentFragment();
+    const timings = document.createElement('table'); timings.className = 'script-trigger-timings';
+    const caption = document.createElement('caption'); caption.textContent = '触发时机'; timings.append(caption);
+    const head = timings.createTHead().insertRow();
+    for (const label of ['格子类型', '触发时机']) {
+        const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = label; head.append(cell);
+    }
+    const body = timings.createTBody();
+    for (const [type, timing] of SCRIPT_TRIGGER_TIMINGS) {
+        const row = body.insertRow(), label = document.createElement('th');
+        label.scope = 'row'; label.textContent = type; row.append(label);
+        row.insertCell().textContent = timing;
+    }
+    help.append(timings);
     const rules = document.createElement('p'); rules.className = 'hint'; rules.textContent = SCRIPT_RULES; help.append(rules);
     for (const group of supportedScriptGroups(parse)) {
         const options = document.createElement('optgroup'); options.label = group.label;
