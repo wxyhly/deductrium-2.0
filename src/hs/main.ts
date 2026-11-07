@@ -1177,7 +1177,7 @@ export class HSLayer {
     private msbtExec(args: AST[]) {
         this.hilbertSystem.msbt(args);
     }
-    addRules(data: string) {
+    addRules(data: string, options: { keepRules?: ReadonlySet<string>; refresh?: boolean; builtin?: boolean } = {}) {
         const context = this.hilbertSystem.saveContext();
         this.hilbertSystem.loadContext(this.hilbertSystem.createEmptyContext());
         // a/d 公理占位符恢复：存档行 (uuid)name:ax:. → 替换为 init 定义行（保留 uuid 与文件夹位置）
@@ -1221,6 +1221,12 @@ export class HSLayer {
             }
             const name = content.slice(0, content.indexOf(":")).trim();
             const container = stack[stack.length - 1];
+            // Creative refresh already loaded these rules from the current library.
+            // Keep the saved tree position/UUID without replaying an obsolete body.
+            if (options.keepRules?.has(name)) {
+                container.push({ name, uuid });
+                continue;
+            }
             try {
                 let rest = content.slice(content.indexOf(":") + 1).trim();
                 let ax = false;
@@ -1268,12 +1274,13 @@ export class HSLayer {
             }
         }
         this.hilbertSystem.loadContext(context);
-        this.ruleListView.refresh();
+        if (options.builtin) this.serde.captureBuiltins();
+        if (options.refresh !== false) this.ruleListView.refresh();
     }
     refresh() {
         this.propListView.refresh();
         this.ruleListView.refresh();
     }
     serialize() { return this.serde.serialize() }
-    deserialize(data: any) { this.navigator.close(); return this.serde.deserialize(data) }
+    deserialize(data: any, builtinRules?: string) { this.navigator.close(); return this.serde.deserialize(data, builtinRules) }
 }

@@ -65,7 +65,7 @@ class Game {
             ob: this.ordBase,
         };
     }, (data) => {
-        if (data.hs) this.hsLayer.deserialize(data.hs);
+        if (data.hs) this.hsLayer.deserialize(data.hs, gameMode === "creative" ? initialCreativeRules : undefined);
         if (data.tt) this.ttLayer.deserialize(data.tt);
         if (gameMode === "survival") {
             if (data.hy) this.hyLayer.deserialize(data.hy);
@@ -98,7 +98,7 @@ class Game {
             this.showLayerButton("D-layer", true);
             this.showLayerButton("P-layer", true);
             if (firstLoad) {
-                this.hsLayer.addRules(initialCreativeRules);
+                this.hsLayer.addRules(initialCreativeRules, { builtin: true });
                 this.switchLayer("P-layer");
             }
             this.hsLayer.unlockBasicPropCmd();
