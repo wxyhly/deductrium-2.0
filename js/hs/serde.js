@@ -48,6 +48,7 @@ export class Serde {
                 name: s.name,
                 pe: s.pe,
                 cmds: this.hs.genCmd(s.ctx.props).join(";"),
+                ...(s.rerecord ? { rerecord: { ...s.rerecord } } : {}),
             })),
             activeIndex: gui.activeIndex,
         };
@@ -65,7 +66,10 @@ export class Serde {
                 // 单个sheet解析失败则留空，不阻断整个加载
                 this.hs.clear();
             }
-            gui.sheets.push({ name: d.name, pe: d.pe ?? [], ctx: this.hs.saveContext() });
+            const target = d.rerecord;
+            gui.sheets.push({ name: d.name, pe: d.pe ?? [], ctx: this.hs.saveContext(),
+                ...(target && typeof target.name === "string" && typeof target.schema === "string"
+                    ? { rerecord: { name: target.name, schema: target.schema } } : {}) });
         }
         this.hs.loadContext(saved);
         gui.activeIndex = Math.min(s.activeIndex ?? 0, gui.sheets.length - 1);
@@ -128,6 +132,9 @@ export class Serde {
             this.ruleList.length = 0;
         }
         this.hsLayer.addRules(data);
+        // Repaired dependencies may occur later in the saved UI order. Resolve
+        // them before replaying sheets that already use those valid macros.
+        this.hsLayer.retryFailedRules();
     }
 }
 //# sourceMappingURL=serde.js.map

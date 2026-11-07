@@ -10,6 +10,7 @@ export interface PropSheet {
     name: string;
     ctx: HSContext;
     pe: number[];
+    rerecord?: { name: string; schema: string };
 }
 
 // sheet页签UI：负责tab栏渲染与全部sheet操作逻辑（切换/新建/删除/重命名/保存）

@@ -279,11 +279,13 @@ test('full serde restores map dependencies before replaying recorded user macros
     assert.equal(second.hs.hilbertSystem.rules.has('d/\\i'),false,'restored ownership supports removal');
 });
 
-test('map dependency preload preserves errors and ordinary forward-reference semantics', () => {
+test('map dependency preload resolves genuine forward references and preserves failed proofs', () => {
     const hs = layer('');
     const serde = new Serde(hs,hs.hilbertSystem,hs.ruleList,hs.propListView,hs.ruleListView);
     serde.deserializeRulelist('qForward:⊢P;qLater;\nqBroken:⊢P;notThere;\nqLater:ax:⊢P;\nqUsesBad:⊢P;qMapBad;\nqMapBad:⊢P;notThere;\nqMap:ax:⊢Q;', ['qMap','qMapBad']);
-    for (const id of ['qForward','qBroken','qUsesBad','qMapBad']) {
+    assert.equal(hs.hilbertSystem.rules.get('qForward').error, undefined);
+    assert.equal(ruleProvenance(hs.hilbertSystem,hs.hilbertSystem.rules.get('qForward')).valid, true);
+    for (const id of ['qBroken','qUsesBad','qMapBad']) {
         assert.ok(hs.hilbertSystem.rules.get(id).error,id);
         assert.equal(ruleProvenance(hs.hilbertSystem,hs.hilbertSystem.rules.get(id)).valid,false);
     }

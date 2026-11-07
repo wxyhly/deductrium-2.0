@@ -713,6 +713,17 @@ body {
     box-sizing: border-box;
     overflow-wrap: anywhere;
 }
+.rule-rerecord[hidden] { display: none; }
+.rule-rerecord {
+    padding: 8px 12px;
+    border-bottom: 1px solid #8896a5;
+    background: color-mix(in srgb, currentColor 5%, transparent);
+    overflow-wrap: anywhere;
+    flex-shrink: 0;
+}
+.rule-rerecord .rerecord-goal { margin: 4px 0; }
+.rule-rerecord .rerecord-help { font-size: 12px; margin: 4px 0 8px; }
+.rule-rerecord .rerecord-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .proof-tag[data-proof-tag="classical"] { color: #9d4d27; }
 .proof-tag[data-proof-tag="intuitionistic"] { color: #287558; }
 .proof-tag[data-proof-tag="custom"], .proof-tag[data-proof-tag="unknown"] { color: #a34562; }

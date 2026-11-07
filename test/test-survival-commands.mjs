@@ -13,6 +13,7 @@ Object.assign(layer, {
     hilbertSystem: new HilbertSystem(), ruleList: [], activeRuleFolder: null,
     propListView: { refresh() {} }, ruleListView: { refresh() {} },
     cmdInput: { setParserArgs() {} }, cmdUIMgr: { insertText() {} },
+    sheetGui: { sheets: [{}], activeIndex: 0 },
     cmdEngine: { run() {} }, survivalAccess: null,
 });
 layer.addRules(initialCreativeRules);

@@ -23,6 +23,7 @@ import { ProofNavigator } from "./proof-navigation.js";
 import { MapAxiomPolicy } from "./map-policy.js";
 import { permitsProvenance, ruleProvenance, stepProvenance } from "./provenance.js";
 import { PROOF_TAGS } from "./proof-tags.js";
+import { rerecordRule } from "./rerecord.js";
 function appendProofTags(host, value) {
     const labels = document.createElement('span');
     labels.className = 'proof-tags';
@@ -303,6 +304,7 @@ export class HSLayer {
                 this.hilbertSystem.renameDnameInProps(sheet.ctx.props, r.name, name);
             }
             this.propListView.refresh();
+            this.refreshRerecord();
             return true;
         };
         this.ruleListView.menuItems = r => {
@@ -321,6 +323,9 @@ export class HSLayer {
                 return arr;
             }
             const rule = this.hilbertSystem.rules.get(r.name);
+            if (rule && (rule.error || (rule.step && !ruleProvenance(this.hilbertSystem, rule).valid)) && getCommand("m")) {
+                arr.push({ label: LangMgr.text.rerecordRule, action: "rerecord", icon: '🔴' });
+            }
             if (rule?.error) {
                 arr.push({ label: LangMgr.text.errorRule, action: "errorInfo", icon: '⚠️' });
                 arr.push({ label: LangMgr.text.delete, action: "delete", icon: '🗑️', danger: true });
@@ -359,7 +364,15 @@ export class HSLayer {
                 this.ruleListView.refresh();
                 return;
             }
-            if (action === "errorInfo") {
+            if (action === "rerecord") {
+                try {
+                    this.startRerecord(r.name);
+                }
+                catch (e) {
+                    this.cmdEngine.reportError(e);
+                }
+            }
+            else if (action === "errorInfo") {
                 const rule = this.hilbertSystem.rules.get(r.name);
                 if (!rule?.error)
                     return;
@@ -716,7 +729,10 @@ export class HSLayer {
             if (this.navigator.active && name !== "entr")
                 throw HSError.cmdIsRunning;
         };
-        this.sheetGui.onRefresh = () => this.propListView.setData(this.hilbertSystem.props);
+        this.sheetGui.onRefresh = () => {
+            this.propListView.setData(this.hilbertSystem.props);
+            this.refreshRerecord();
+        };
         this.sheetGui.onChange = () => this.onchange?.();
         // 展开状态：expandedFolders按uuid存储，持久化用逻辑id（uuid为listview内部生成，不入存档）
         this.sheetGui.captureExpanded = () => {
@@ -749,6 +765,154 @@ export class HSLayer {
         };
         this.sheetGui.render();
         this.refreshRewardUI();
+        this.refreshRerecord();
+    }
+    rerecordViewer;
+    startRerecord(name) {
+        if (!getCommand("m"))
+            throw HSError.lockedFeature("macro");
+        const rule = this.hilbertSystem.rules.get(name);
+        if (!rule || (!rule.error && (!rule.step || ruleProvenance(this.hilbertSystem, rule).valid)))
+            throw HSError.atomicStep(new AST(NodeType.ATOM_DNAME, name));
+        // Parse the original header before opening a draft, so malformed headers leave every sheet intact.
+        const check = new HilbertSystem();
+        for (const assertion of rule.assertions)
+            check.hyp(new HSParser().parse(AtomSolver.print(assertion), "assert"));
+        for (const condition of rule.conditions)
+            check.hyp(condition.clone());
+        rule.conclusion.checkWFF();
+        const commands = check.genCmd().map(text => new HSParser().parse(text, "cmd"));
+        this.survivalAccess?.checkReplay(commands, this.hilbertSystem);
+        const existing = this.sheetGui.sheets.findIndex(sheet => sheet.rerecord?.name === name && sheet.rerecord.schema === rule.toString());
+        if (existing >= 0) {
+            this.sheetGui.switchSheet(existing);
+            this.refreshRerecord();
+            return;
+        }
+        this.sheetGui.addSheet(false);
+        const sheet = this.sheetGui.sheets[this.sheetGui.activeIndex];
+        sheet.name = LangMgr.text.rerecordTitle + name;
+        sheet.rerecord = { name, schema: rule.toString() };
+        this.hilbertSystem.loadContext(check.saveContext());
+        this.sheetGui.saveCurrentSheet();
+        this.sheetGui.render();
+        this.propListView.setData(this.hilbertSystem.props);
+        this.refreshRerecord();
+        this.cmdInput.setValue("");
+        this.onchange?.();
+    }
+    refreshRerecord() {
+        if (typeof document === "undefined")
+            return;
+        const host = document.getElementById("rule-rerecord");
+        if (!host)
+            return;
+        this.rerecordViewer?.destroy();
+        this.rerecordViewer = undefined;
+        host.replaceChildren();
+        const sheet = this.sheetGui.sheets[this.sheetGui.activeIndex];
+        const target = sheet?.rerecord;
+        host.hidden = !target || this.navigator.active;
+        if (!target || this.navigator.active)
+            return;
+        const title = document.createElement("strong");
+        title.textContent = LangMgr.text.rerecordTitle + target.name;
+        const goal = document.createElement("div");
+        goal.className = "rerecord-goal";
+        this.rerecordViewer = new SyntaxViewer(goal, new HSParser(), target.schema, "rule");
+        const help = document.createElement("div");
+        help.className = "rerecord-help";
+        const rule = this.hilbertSystem.rules.get(target.name);
+        const stale = !rule || rule.toString() !== target.schema;
+        help.textContent = LangMgr.text[stale ? "rerecordStale" : "rerecordHelp"];
+        const actions = document.createElement("div");
+        actions.className = "rerecord-actions";
+        const finish = document.createElement("button");
+        finish.className = "btn-sm primary";
+        finish.dataset.action = "rerecord-finish";
+        finish.textContent = LangMgr.text.rerecordFinish;
+        finish.disabled = stale || !getCommand("m");
+        finish.addEventListener("click", () => {
+            if (this.cmdEngine.isExecuting() || this.navigator.active) {
+                this.cmdEngine.reportError(HSError.cmdIsRunning);
+                return;
+            }
+            this.cmdEngine.run("m " + target.name);
+        });
+        const cancel = document.createElement("button");
+        cancel.className = "btn-sm";
+        cancel.dataset.action = "rerecord-cancel";
+        cancel.textContent = LangMgr.text.rerecordCancel;
+        cancel.addEventListener("click", () => {
+            if (this.cmdEngine.isExecuting() || this.navigator.active) {
+                this.cmdEngine.reportError(HSError.cmdIsRunning);
+                return;
+            }
+            delete sheet.rerecord;
+            sheet.name = target.name;
+            this.sheetGui.render();
+            this.refreshRerecord();
+            this.onchange?.();
+        });
+        actions.append(finish, cancel);
+        host.append(title, goal, help, actions);
+    }
+    finishRerecord() {
+        const sheet = this.sheetGui.sheets[this.sheetGui.activeIndex];
+        const target = sheet.rerecord;
+        if (!target)
+            throw HSError.emptyValue;
+        const original = this.hilbertSystem.rules.get(target.name);
+        if (!original || original.toString() !== target.schema)
+            throw LangMgr.text.rerecordStale;
+        const commands = this.hilbertSystem.genCmd().map(text => new HSParser().parse(text, "cmd"));
+        this.survivalAccess?.checkReplay(commands, this.hilbertSystem);
+        if (this.mapPolicy) {
+            const last = this.hilbertSystem.getLastChildP(null);
+            if (!last || !this.mapPolicy.allowsStep(last))
+                throw new Error("此推导依赖已禁用的公理");
+        }
+        const replacement = rerecordRule(this.hilbertSystem, original);
+        if (this.mapScriptRules.get(target.name) === original)
+            this.mapScriptRules.set(target.name, replacement);
+        this.retryFailedRules();
+        delete sheet.rerecord;
+        sheet.name = target.name;
+        this.sheetGui.saveCurrentSheet();
+        this.sheetGui.render();
+        this.propListView.refresh();
+        this.ruleListView.refresh();
+        this.refreshRerecord();
+        this.onchange?.();
+    }
+    retryFailedRules() {
+        const view = Object.create(HSLayer.prototype);
+        view.hilbertSystem = new HilbertSystem();
+        view.hilbertSystem.rules = new Map(this.hilbertSystem.rules);
+        view.hilbertSystem.renamedSysRule = new Map(this.hilbertSystem.renamedSysRule);
+        view.ruleList = [];
+        view.ruleListView = { refresh() { } };
+        const pending = new Set([...this.hilbertSystem.rules].filter(([, rule]) => rule.error).map(([name]) => name));
+        for (;;) {
+            let changed = false;
+            for (const name of pending) {
+                const original = this.hilbertSystem.rules.get(name);
+                try {
+                    view.addRules(`${name}:${original.toString()};${original.error.cmds}`);
+                    const rule = view.hilbertSystem.rules.get(name);
+                    if (rule.error)
+                        continue;
+                    this.hilbertSystem.rules.set(name, rule);
+                    if (this.mapScriptRules?.get(name) === original)
+                        this.mapScriptRules.set(name, rule);
+                    pending.delete(name);
+                    changed = true;
+                }
+                catch { /* Keep unrelated broken rules and their original error information. */ }
+            }
+            if (!changed)
+                break;
+        }
     }
     executeCmd(cmd) {
         this.cmdEngine.run(cmd);
@@ -772,6 +936,7 @@ export class HSLayer {
         for (const reward of rewards)
             this.applyReward(reward);
         this.refreshRewardUI();
+        this.refreshRerecord();
     }
     applyReward(reward) {
         // Creative mode already exposes the full library and command set.
@@ -810,6 +975,7 @@ export class HSLayer {
         this.propListView.onRowClick = this.navigator.active ? p => this.cmdEngine.run("entr " + p.id) : () => { };
         this.ruleListView.onRowClick = r => { if (!r.children)
             this.cmdEngine.run((this.navigator.active ? "entr " : "") + r.name); };
+        this.refreshRerecord();
     }
     editingChoices = new WeakMap();
     editingConfirmations = new WeakMap();
@@ -943,6 +1109,7 @@ export class HSLayer {
         this.hilbertSystem.updatePropIdx();
         this.propListView.refresh();
         this.ruleListView.refresh();
+        this.refreshRerecord();
     }
     unlockEditingCommands() {
         defineCommand("del", args => {
@@ -1180,7 +1347,7 @@ export class HSLayer {
                         i++;
                     }
                     return {
-                        prompt: LangMgr.text.plsEnterNewRule, default: "s" + i, parse: e => {
+                        prompt: LangMgr.text.plsEnterNewRule, default: this.sheetGui.sheets[this.sheetGui.activeIndex].rerecord?.name ?? "s" + i, parse: e => {
                             let ast;
                             try {
                                 ast = new HSParser().parse(e, "dname");
@@ -1196,6 +1363,10 @@ export class HSLayer {
             }, async (args) => {
                 if (!args[0])
                     throw HSError.emptyValue;
+                if (this.sheetGui.sheets[this.sheetGui.activeIndex].rerecord?.name === args[0].name) {
+                    this.finishRerecord();
+                    return;
+                }
                 this.hilbertSystem.m(args[0].name);
                 // 新规则添加到活动文件夹末尾（无活动则为根目录末尾）
                 const node = { name: args[0].name, uuid: 0 };
@@ -1206,6 +1377,8 @@ export class HSLayer {
                 this.propListView.refresh();
                 this.ruleListView.refresh();
             });
+        if (!command || command === "m")
+            this.refreshRerecord();
         if (!command || command === "hyp")
             defineCommand('hyp', (args) => {
                 if (args.length === 0) {
@@ -1662,6 +1835,7 @@ export class HSLayer {
     refresh() {
         this.propListView.refresh();
         this.ruleListView.refresh();
+        this.refreshRerecord();
     }
     serialize() { return this.serde.serialize(); }
     deserialize(data) { this.navigator.close(); return this.serde.deserialize(data); }
