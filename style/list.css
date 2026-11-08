@@ -691,34 +691,39 @@ body {
 #propListWrapper .item-row.row-dep-after:nth-of-type(2n) {
     background-color: #dfe9fb;
 }
-.proof-rule-meta, .proof-tags {
+.proof-rule-meta, .proof-step-meta, .proof-tags {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 3px;
 }
-.proof-tags { margin-inline-start: 4px; vertical-align: middle; }
+.proof-tags { vertical-align: middle; }
 #ruleListWrapper .cell-extra .extra-text,
 #propListWrapper .cell-extra .extra-text {
     width: 100%;
     min-width: 0;
     white-space: normal;
 }
-#ruleListWrapper .proof-rule-meta {
+#ruleListWrapper .proof-rule-meta,
+#propListWrapper .proof-step-meta {
     display: flex;
     flex-wrap: nowrap;
-    align-items: flex-start;
+    align-items: center;
+    min-width: 0;
 }
 #ruleListWrapper .proof-rule-meta > .extra-rule { flex-shrink: 0; }
 #ruleListWrapper .proof-tags {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
 }
 #propListWrapper .cell-extra .extra-text { overflow-wrap: anywhere; }
 #propListWrapper .proof-tags {
-    display: flex;
-    margin-inline-start: 0;
-    margin-top: 2px;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+#propListWrapper .proof-step-command {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 .proof-tag {
     display: inline-block;

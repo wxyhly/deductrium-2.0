@@ -450,6 +450,9 @@ export class HSLayer {
         }
         this.propListView.renderExtra = item => {
             const span = document.createElement('span');
+            span.className = 'proof-step-meta';
+            const command = document.createElement('span');
+            command.className = 'proof-step-command';
             let val = "";
             if (item.from.type === "h" || item.from.type === "a") val = "hyp";
             if (item.from.type === "c") val = "cond";
@@ -459,7 +462,8 @@ export class HSLayer {
                 const data = item.from.data;
                 val = `${data.deduction} ${data.conditions.map(p => p.name || p.id).join(" ")}`;
             }
-            new SyntaxViewer(span, new HSParser, val, "cmd");
+            new SyntaxViewer(command, new HSParser, val, "cmd");
+            span.appendChild(command);
             if (item.from.type === 'd') appendProofTags(span, stepProvenance(this.hilbertSystem, item));
             return span;
         };
