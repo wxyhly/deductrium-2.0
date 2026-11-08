@@ -443,11 +443,13 @@ export class TTGui {
                 clearAll(this.tableData);
                 node.active = true;
                 this.tableView.refresh();
+                this.onchange?.();
             }
             else if (action === "clearActiveFolder") {
                 this.activeFolder = null;
                 delete node.active;
                 this.tableView.refresh();
+                this.onchange?.();
             }
             else if (action === "delete") {
                 this.tableView.deleteNode(node.uuid);
@@ -475,6 +477,7 @@ export class TTGui {
         // 活动文件夹折叠时：active 移到 root（TreeListViewer 已清 active 标记，这里同步 activeFolder）
         this.tableView.onFolderActiveCancel = () => {
             this.activeFolder = null;
+            this.onchange?.();
         };
     }
     // 添加命题到定理表（默认添加到活动文件夹底部），返回新节点

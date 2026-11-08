@@ -410,10 +410,12 @@ export class TTGui {
                 clearAll(this.tableData);
                 (node as any).active = true;
                 this.tableView.refresh();
+                this.onchange?.();
             } else if (action === "clearActiveFolder") {
                 this.activeFolder = null;
                 delete (node as any).active;
                 this.tableView.refresh();
+                this.onchange?.();
             } else if (action === "delete") {
                 this.tableView.deleteNode(node.uuid);
                 if (this.activeFolder === node) this.activeFolder = null;
@@ -438,6 +440,7 @@ export class TTGui {
         // 活动文件夹折叠时：active 移到 root（TreeListViewer 已清 active 标记，这里同步 activeFolder）
         this.tableView.onFolderActiveCancel = () => {
             this.activeFolder = null;
+            this.onchange?.();
         };
     }
 
