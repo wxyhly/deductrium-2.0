@@ -547,7 +547,7 @@ class Game {
             if (tile) Object.assign(tile, edit);
         }
         this.restoreOrdinalMap();
-        for (const layer of ["D-layer", "P-layer"]) this.showLayerButton(layer, false);
+        for (const layer of ["D-layer", "P-layer", "T-layer"]) this.showLayerButton(layer, false);
         for (const key of this.gotRewards) {
             // key 可能是 name（经 nameMap 转 hash）或 hash 本身
             const hash = nameMap.get(key) ?? key;
@@ -577,6 +577,7 @@ class Game {
     // 单个奖励的独立效果：层按钮、推理层奖励与定点拆门；不发钱、不重置救济站。
     private applyUnlockEffect(block: TileBlock) {
         if (block.name) this.hsLayer.applyReward(block.name);
+        if (block.name === "type") this.showLayerButton("T-layer", true);
         if (block.name === "cmpss") this.hyLayer.world.navigateDraw = true;
         if (block.name === "highlightd") this.hyLayer.world.highLightGetD = true;
         if (block.name && (/^base(?:-\d+|[2-5])$/.test(block.name)

@@ -18,7 +18,7 @@ export class ModManager {
     private leaving = false;
     private readonly saveload: SaveLoad;
 
-    constructor(saveload: SaveLoad) {
+    constructor(saveload: SaveLoad, private readonly saveBeforeNavigation: () => void = () => saveload.save()) {
         this.saveload = saveload;
         if (!this.list || !this.upload || !this.file || !this.status) return;
         this.upload.addEventListener("click", () => {
@@ -116,9 +116,10 @@ export class ModManager {
             current.className = "pg-mod-current";
             current.textContent = `${LangMgr.text.modsCurrent} ${activeWorld.title || activeWorld.id}`;
             content.append(current, this.button(LangMgr.text.modsReturn, () => {
-                this.saveload.save();
+                this.saveBeforeNavigation();
                 this.saveload.cancelPendingSave();
-                location.assign(location.pathname);
+                const creative = new URLSearchParams(location.search).get("return") === "creative";
+                location.assign(location.pathname + (creative ? "?creative" : ""));
                 this.leaving = true;
             }));
             const hint = document.createElement("p");
@@ -175,7 +176,7 @@ export class ModManager {
                     // Use the same JSON boundary as save(): live drafts can contain
                     // optional fields such as a TT row's children: undefined.
                     prepareModSave(JSON.parse(JSON.stringify(this.saveload.serialize())), next);
-                    this.saveload.save();
+                    this.saveBeforeNavigation();
                     saveModLibrary(next);
                     this.saveload.cancelPendingSave();
                     location.reload();
@@ -186,10 +187,12 @@ export class ModManager {
             } else {
                 actions.append(this.button(LangMgr.text.modsEnter, () => {
                     const latest = this.current(world.id).entry;
-                    this.saveload.save();
+                    this.saveBeforeNavigation();
                     localStorage.setItem(WORLD_MANIFEST_KEY, JSON.stringify(latest.world));
                     this.saveload.cancelPendingSave();
-                    location.assign(location.pathname + "?mod-world");
+                    const creative = this.saveload.saveMode === "creative"
+                        || new URLSearchParams(location.search).get("return") === "creative";
+                    location.assign(location.pathname + "?mod-world" + (creative ? "&return=creative" : ""));
                     this.leaving = true;
                 }));
             }
@@ -197,7 +200,7 @@ export class ModManager {
                 const latest = this.current(world.id);
                 if (latest.entry.enabled) throw new Error(LangMgr.text.modsDisableFirst);
                 const next = latest.entries.filter(item => item.world.id !== world.id);
-                this.saveload.save();
+                this.saveBeforeNavigation();
                 saveModLibrary(next);
                 this.saveload.cancelPendingSave();
                 location.reload();

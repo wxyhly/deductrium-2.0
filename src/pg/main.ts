@@ -99,7 +99,7 @@ export class ProgressLayer {
     }
 
     init() {
-        new ModManager(this.saveload);
+        new ModManager(this.saveload, () => this.saveNavigationDraft());
         this.renderMode();
         this.renderLanguage();
         this.renderSlots();
@@ -185,13 +185,8 @@ export class ProgressLayer {
             this.saveload.cancelPendingSave();
             this.refreshTimer = window.setTimeout(() => {
                 try {
-                    const command = this.languageEditors?.capture();
-                    this.languageEditors?.commit();
                     // Movement and editing can continue during the refresh delay.
-                    this.saveload.save();
-                    if (command) sessionStorage.setItem(this.languageDraftKey(), JSON.stringify({
-                        save: localStorage.getItem(this.saveload.saveKey), command,
-                    }));
+                    this.saveNavigationDraft();
                     if (next === null) localStorage.removeItem("lang");
                     else localStorage.setItem("lang", next);
                     this.saveload.cancelPendingSave();
@@ -199,6 +194,16 @@ export class ProgressLayer {
                 } catch (error) { failed(error); }
             }, 200);
         } catch (error) { failed(error); }
+    }
+    /** Keep reload/Mod navigation consistent with the language switch. */
+    private saveNavigationDraft() {
+        const command = this.languageEditors?.capture();
+        this.languageEditors?.commit();
+        this.saveload.save();
+        if (command) sessionStorage.setItem(this.languageDraftKey(), JSON.stringify({
+            save: localStorage.getItem(this.saveload.saveKey), command,
+        }));
+        else sessionStorage.removeItem(this.languageDraftKey());
     }
     private languageDraftKey() { return `${this.saveload.saveKey}:language-draft`; }
     public restoreLanguageDraft() {
@@ -531,9 +536,15 @@ export class ProgressLayer {
         this.download(data, `deductrium_slot${i + 1}.dt`);
     }
     private exportCurrent() {
-        const raw = this.saveload.readKey(this.saveloadKey());
-        if (!raw) { alert(LangMgr.text.exportFailed); return; }
-        this.download(raw, `deductrium_${new Date().toISOString()}.dt`);
+        try {
+            this.languageEditors?.commit();
+            this.saveload.save();
+            const raw = this.saveload.readKey(this.saveloadKey());
+            if (!raw) throw new Error(LangMgr.text.exportFailed);
+            this.download(raw, `deductrium_${new Date().toISOString()}.dt`);
+        } catch (error) {
+            alert(LangMgr.text.exportFailed + (error instanceof Error ? error.message : String(error)));
+        }
     }
     private download(text: string, filename: string) {
         const blob = new Blob([text], { type: "application/octet-stream" });

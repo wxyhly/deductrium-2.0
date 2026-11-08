@@ -622,7 +622,7 @@ class Game {
                 Object.assign(tile, edit);
         }
         this.restoreOrdinalMap();
-        for (const layer of ["D-layer", "P-layer"])
+        for (const layer of ["D-layer", "P-layer", "T-layer"])
             this.showLayerButton(layer, false);
         for (const key of this.gotRewards) {
             // key 可能是 name（经 nameMap 转 hash）或 hash 本身
@@ -658,6 +658,8 @@ class Game {
     applyUnlockEffect(block) {
         if (block.name)
             this.hsLayer.applyReward(block.name);
+        if (block.name === "type")
+            this.showLayerButton("T-layer", true);
         if (block.name === "cmpss")
             this.hyLayer.world.navigateDraw = true;
         if (block.name === "highlightd")
