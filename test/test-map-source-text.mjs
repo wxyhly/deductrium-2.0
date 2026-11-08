@@ -3,8 +3,8 @@ import {readFile} from 'node:fs/promises';
 import {MapDocument, readText} from '../tools/map-editor/source-text.mjs';
 import {Polygon} from '../js/hy/tiling.js';
 import {blockMap, initMap} from '../js/hy/maploader.js';
+import {parseMapData} from '../js/hy/map-source.js';
 const source = await readFile(new URL('../src/hy/map.ts',import.meta.url),'utf8');
-const runtimeLoader = await readFile(new URL('../js/hy/maploader.js',import.meta.url),'utf8');
 const polygon = new Polygon(6,4), doc = new MapDocument(source,polygon);
 let checks = 0;
 const check = (name, run) => {run(); checks++; console.log('PASS '+name);};
@@ -61,10 +61,8 @@ check('a trailing backslash preserves both languages in the model and real game 
     assert.deepEqual(parsed.values(row.id),values);
     // Run the shipped loader on the exported map, with ordinal generation irrelevant here.
     const data = new Function(exported.replace('export const mapData =','return '))();
-    const loader = new Function('mapData','genOrdTiles','activeWorld','worldRuntimeTiles',runtimeLoader.replace(/^import .*$/gm,'').replace(/\bexport /g,'')+'\nreturn {initMap,blockMap};')(data,()=>{},undefined,()=>[]);
-    const log = console.log; console.log=()=>{};
-    try { loader.initMap(new Polygon(6,4)); } finally { console.log=log; }
-    assert.deepEqual(loader.blockMap.get(row.hash).text,values);
+    const loaded = parseMapData(data,new Polygon(6,4));
+    assert.deepEqual(loaded.tiles.get(row.hash).text,values);
 });
 check('unrepresentable slash-newline text stays in portable drafts and cannot silently export',()=>{
     const next = new MapDocument(source,new Polygon(6,4));

@@ -5,6 +5,7 @@ import type { ModEntry } from "../hy/mods.js";
 import { getModRuntimeError, validateModLibrary } from "../hy/mod-runtime.js";
 import { prepareModSave } from "../hy/mod-saves.js";
 import { activeWorld, WORLD_MANIFEST_KEY } from "../hy/world-runtime.js";
+import { builtinMods } from "../hy/builtin-mods.js";
 
 /** Settings for installed files. Runtime changes take effect after a saved reload. */
 export class ModManager {
@@ -124,6 +125,23 @@ export class ModManager {
             hint.className = "pg-mod-note";
             hint.textContent = LangMgr.text.modsIsolated;
             content.append(hint);
+        }
+        if (activeWorld?.mode !== "standalone") {
+            for (const builtin of builtinMods) {
+                const row = document.createElement("article");
+                row.className = "pg-mod-entry";
+                row.dataset.modId = builtin.id;
+                const name = document.createElement("h3");
+                name.textContent = builtin.title || builtin.id;
+                const meta = document.createElement("p");
+                meta.className = "pg-mod-meta";
+                meta.textContent = `${builtin.id} · ${LangMgr.text.modsRevision} ${builtin.revision}`;
+                const state = document.createElement("p");
+                state.className = "pg-mod-state";
+                state.textContent = LangMgr.text.modsEnabled;
+                row.append(name, meta, state);
+                content.append(row);
+            }
         }
         if (!entries.length) {
             const empty = document.createElement("p");

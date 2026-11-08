@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {Polygon} from '../js/hy/tiling.js';
 import {EditorProject, canonicalPath, relativePath, transport} from '../tools/map-editor/model.mjs';
 import {parseMapScript} from '../js/hy/script.js';
+import {parseMapData} from '../js/hy/map-source.js';
 import {Hvec,Rotor} from '../js/hy/algebra.js';
 import {tileVertices,halfPlaneContains} from '../tools/map-editor/geometry.mjs';
 
@@ -10,14 +11,11 @@ const polygon=new Polygon(6,4), key=path=>path.join(','), tile=(text='',data={})
 let checks=0;
 function check(name,run) { run(); checks++; console.log('PASS '+name); }
 const source=await readFile(new URL('../src/hy/map.ts',import.meta.url),'utf8');
-const loaderSource=await readFile(new URL('../js/hy/maploader.js',import.meta.url),'utf8');
 function runtime(source) {
     // Only trusted test fixtures/generated output are executed, never editor imports.
     const data=new Function(source.replace('export const mapData =','return '))();
-    const loader=new Function('mapData','genOrdTiles','activeWorld','worldRuntimeTiles',loaderSource.replace(/^import .*$/gm,'').replace(/\bexport /g,'')+'\nreturn {initMap,blockMap,nameMap};')(data,()=>{},undefined,()=>[]);
-    const log=console.log; console.log=()=>{};
-    try {loader.initMap(new Polygon(6,4));} finally {console.log=log;}
-    return loader;
+    const parsed = parseMapData(data, new Polygon(6,4));
+    return {blockMap: parsed.tiles, nameMap: parsed.names};
 }
 const official=EditorProject.fromSource(source,polygon);
 check('official source and all static metadata agree with the actual loader',()=>{

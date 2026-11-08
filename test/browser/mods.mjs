@@ -26,6 +26,29 @@ const ready=async page=>{
 const settings=async page=>{
     await page.evaluate(()=>{game.showLayerButton('P-layer',true);});
     await page.locator('button[data-layer="P-layer"]').click();
+    await builtinRows(page);
+};
+const builtinRows=async page=>{
+    const expected=await page.evaluate(async()=>{
+        const [{builtinMods},{activeWorld},{LangMgr}]=await Promise.all([
+            import('/js/hy/builtin-mods.js'),import('/js/hy/world-runtime.js'),import('/js/lang.js')]);
+        return {shown:activeWorld?.mode!=='standalone',mods:builtinMods.map(({id,title,revision})=>({id,title,revision})),
+            enabled:LangMgr.text.modsEnabled,revision:LangMgr.text.modsRevision,empty:LangMgr.text.modsEmpty,
+            library:JSON.parse(localStorage.getItem('deductrium2_mod_library')||'{"mods":[]}').mods};
+    });
+    assert.ok(expected.mods.some(mod=>mod.id==='builtin:main'),'main is registered as a builtin');
+    for(const mod of expected.mods){
+        const row=page.locator(`[data-mod-id="${mod.id}"]`);
+        assert.equal(await row.count(),expected.shown?1:0,'only loaded builtins appear');
+        if(!expected.shown)continue;
+        assert.equal(await row.locator('h3').textContent(),mod.title||mod.id);
+        assert.equal(await row.locator('.pg-mod-meta').textContent(),`${mod.id} · ${expected.revision} ${mod.revision}`);
+        assert.equal(await row.locator('.pg-mod-state').textContent(),expected.enabled);
+        assert.equal(await row.locator('button,input,select,a,[role="button"]').count(),0,'required builtin has no actions');
+    }
+    assert.equal(await page.locator('#pg-mod-list').getByText(expected.empty,{exact:true}).count(),
+        expected.library.length?0:1,'empty uploaded-library message is unchanged');
+    assert.equal(expected.library.some(entry=>entry.world.id==='builtin:main'),false,'builtin is not stored as an uploaded file');
 };
 const upload=async(page,world)=>{
     await page.locator('#pg-mod-file').setInputFiles({name:'browser.world.json',mimeType:'application/json',
@@ -42,6 +65,16 @@ const transition=async(page,modId,index)=>{
 };
 const state=page=>page.evaluate(()=>({D:game.deductrium,rw:[...game.gotRewards].sort(),dg:[...game.destructedGates].sort(),
     hs:game.hsLayer.serialize().r,tt:game.ttLayer.serialize(),ms:game.saveload.serialize().ms}));
+const trackErrors=context=>{
+    const errors=[];
+    context.on('page',page=>page.on('pageerror',error=>errors.push({url:page.url(),message:error.message,stack:error.stack})));
+    return errors;
+};
+const seedStorage=(context,origin,key,value)=>context.addInitScript(({origin,key,value})=>{
+    // Init scripts also run on the initial about:blank document, which has no storage origin.
+    if(location.origin!==origin)return;
+    if(localStorage.getItem(key)===null)localStorage.setItem(key,value);
+},{origin,key,value:JSON.stringify(value)});
 let browser;
 try{
     await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -50,8 +83,7 @@ try{
     browser=await chromium.launch({headless:true,channel:'chrome'});
     const origin=`http://127.0.0.1:${server.address().port}`;
     for(const viewport of [{width:1440,height:1000},{width:390,height:844}]){
-        const context=await browser.newContext({viewport}),errors=[];
-        context.on('page',page=>page.on('pageerror',error=>errors.push(error.message)));
+        const context=await browser.newContext({viewport}),errors=trackErrors(context);
         try{
             const page=await context.newPage();await page.goto(origin+'/index.html');await ready(page);await settings(page);
             assert.equal(await mounted(page,id),false,'no source-mounted example');
@@ -126,8 +158,24 @@ try{
             assert.deepEqual(errors,[]);
             console.log(JSON.stringify({viewport,upload:'PASS',toggle:'PASS',collision:'PASS',preservation:'PASS',standalone:'PASS',errors}));
         }finally{await context.close();}
+        // An isolated extension still includes the required main map; its uploaded library is empty.
+        const extensionContext=await browser.newContext({viewport}),extensionErrors=trackErrors(extensionContext);
+        await seedStorage(extensionContext,origin,'deductrium2_world_manifest',sample);
+        try{
+            const page=await extensionContext.newPage();
+            assert.deepEqual(extensionErrors,[],'fixture initialization on about:blank emits no errors');
+            await page.goto(origin+'/index.html?mod-world');
+            await ready(page);await settings(page);
+            assert.equal(await page.locator('[data-mod-id="builtin:main"]').count(),1);
+            assert.equal(await mounted(page,id),true,'isolated extension includes its own world tiles');
+            assert.equal(await page.evaluate(()=>game.saveload.saveKey),`deductrium2_world-${id}`);
+            assert.equal(await page.locator('#pg-mod-list > button').count(),1,'return button selector stays unique');
+            assert.deepEqual(extensionErrors,[]);
+            console.log(JSON.stringify({viewport,builtinExtension:'PASS',errors:extensionErrors}));
+        }finally{await extensionContext.close();}
         // An installed extension also works before the first normal save exists.
         const currencyWorld=structuredClone(sample),currencyContext=await browser.newContext({viewport});
+        const currencyErrors=trackErrors(currencyContext);
         currencyWorld.id='browser-currency';
         const currency=`mod:${currencyWorld.id}`;
         currencyWorld.currency={id:currency,name:'Mod coins'};
@@ -136,12 +184,11 @@ try{
         const counter=currencyWorld.tiles.at(-1);
         counter.type=3;counter.text='Coin exchange';
         counter.data={exchange:{bank:'coins',from:'reasoning',to:currency,amount:10}};
-        await currencyContext.addInitScript(world=>{
-            if(!localStorage.getItem('deductrium2_mod_library'))
-                localStorage.setItem('deductrium2_mod_library',JSON.stringify({version:1,mods:[{world,enabled:true}]}));
-        },currencyWorld);
+        await seedStorage(currencyContext,origin,'deductrium2_mod_library',{version:1,mods:[{world:currencyWorld,enabled:true}]});
         try{
-            const page=await currencyContext.newPage();await page.goto(origin+'/index.html');await ready(page);
+            const page=await currencyContext.newPage();
+            assert.deepEqual(currencyErrors,[],'fixture initialization on about:blank emits no errors');
+            await page.goto(origin+'/index.html');await ready(page);
             assert.equal(await page.evaluate(id=>game.saveload.serialize().balances[id],currency),0,'fresh enabled currency is registered');
             await page.evaluate(hash=>{
                 game.deductrium=17;game.hyLayer.world.hitTest(hash.split(',').map(Number));
@@ -152,16 +199,17 @@ try{
             assert.equal(await page.evaluate(id=>game.saveload.serialize().balances[id],currency),10);
             await transition(page,currencyWorld.id,0);
             assert.equal(await page.evaluate(id=>game.saveload.serialize().balances[id],currency),10,'disabled currency is retained');
-            console.log(JSON.stringify({viewport,currency:'PASS'}));
+            assert.deepEqual(currencyErrors,[]);
+            console.log(JSON.stringify({viewport,currency:'PASS',errors:currencyErrors}));
         }finally{await currencyContext.close();}
         // Uploading an inactive file must not register a balance that survives its removal.
         const unusedContext=await browser.newContext({viewport});
-        await unusedContext.addInitScript(world=>{
-            if(!localStorage.getItem('deductrium2_mod_library'))
-                localStorage.setItem('deductrium2_mod_library',JSON.stringify({version:1,mods:[{world,enabled:false}]}));
-        },currencyWorld);
+        const unusedErrors=trackErrors(unusedContext);
+        await seedStorage(unusedContext,origin,'deductrium2_mod_library',{version:1,mods:[{world:currencyWorld,enabled:false}]});
         try{
-            const page=await unusedContext.newPage();await page.goto(origin+'/index.html');await ready(page);
+            const page=await unusedContext.newPage();
+            assert.deepEqual(unusedErrors,[],'fixture initialization on about:blank emits no errors');
+            await page.goto(origin+'/index.html');await ready(page);
             await page.evaluate(()=>{game.deductrium=31;game.saveload.cancelPendingSave();game.saveload.save();});
             await page.reload();await ready(page);await settings(page);
             assert.equal(await page.evaluate(id=>game.saveload.serialize().balances[id],currency),undefined,
@@ -172,7 +220,8 @@ try{
                 'removing a never-enabled file keeps the main save loadable');
             await page.reload();await ready(page);
             assert.equal(await page.evaluate(()=>game.deductrium),31);
-            console.log(JSON.stringify({viewport,unusedCurrency:'PASS'}));
+            assert.deepEqual(unusedErrors,[]);
+            console.log(JSON.stringify({viewport,unusedCurrency:'PASS',errors:unusedErrors}));
         }finally{await unusedContext.close();}
     }
 }finally{if(browser)await browser.close();await new Promise(r=>server.close(r));}
