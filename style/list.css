@@ -229,6 +229,7 @@ body {
 }
 
 #propListWrapper .item-row {
+    --col-extra: clamp(112px, 22vw, 160px);
     --col-name: 40px;
 }
 
@@ -685,7 +686,8 @@ body {
     gap: 3px;
 }
 .proof-tags { margin-inline-start: 4px; vertical-align: middle; }
-#ruleListWrapper .cell-extra .extra-text {
+#ruleListWrapper .cell-extra .extra-text,
+#propListWrapper .cell-extra .extra-text {
     width: 100%;
     min-width: 0;
     white-space: normal;
@@ -699,6 +701,12 @@ body {
 #ruleListWrapper .proof-tags {
     flex: 1;
     min-width: 0;
+}
+#propListWrapper .cell-extra .extra-text { overflow-wrap: anywhere; }
+#propListWrapper .proof-tags {
+    display: flex;
+    margin-inline-start: 0;
+    margin-top: 2px;
 }
 .proof-tag {
     display: inline-block;
