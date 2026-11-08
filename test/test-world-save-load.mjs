@@ -161,6 +161,19 @@ test('normal creative/survival redirection and strict import behavior are retain
     assert.equal(startup.save.exportSave(),foreign); assert.equal(startup.writes.length,0);
 });
 
+test('normal mod preflight preserves creative/survival navigation while world preflight stays strict', () => {
+    const normal=environment('survival');normal.save.allowNormalModeRedirect=true;
+    let calls=0;normal.save.beforeLoad=data=>{calls++;return data;};
+    const foreign=pack('creative',{progress:'other'});
+    assert.equal(normal.save.loadFromString(foreign),true);
+    assert.equal(calls,0,'foreign data is validated only in its destination mode');
+    assert.equal(normal.context.window.location.href,'/game?creative#here');
+    const strict=environment('survival');strict.save.beforeLoad=data=>data;
+    assert.equal(strict.save.loadFromString(foreign),false);
+    const world=environment('world-isolated');world.save.allowNormalModeRedirect=true;
+    assert.equal(world.save.loadFromString(foreign),false,'world namespaces never redirect');
+});
+
 test('malformed world raw is retained and blocked without a migration callback', () => {
     const e=environment(); e.save.beforeLoad=undefined; e.entries.set(e.save.saveKey,'not json');
     assert.equal(e.save.load(),false); assert.equal(e.save.writesBlocked,true);
@@ -179,11 +192,11 @@ test('production Game deserialize rolls back earlier subsystems when a later Set
         unlockedInfos:new Set(['info']),deductrium:10,deductriumConsumed:2,typeDeductriumConsumed:0,
         tilesParcour:3,maxOrd:[1],ordBase:15,mapScript:{done:[]},
         getCurrentLayer:()=> 'P-layer',currencyBalances:()=>({reasoning:10,type:0}),validateBalances:data=>data,
-        applyGotRewards(){},restoreMapScript(){},updateStats(){},switchLayer(){},
+        applyGotRewards(){},restoreMapScript(){},updateStats(){},switchLayer(){},modPosition(){return {};},
         progressLayer:{refreshAchievements(){},refreshSymbols(){},refreshKnowledge(){}},
     };
     Object.assign(e.context,{activeWorldSaveMode:e.save.saveMode,editorPreview:false,gameMode:'survival',
-        activeWorld:undefined,createMapScriptState:data=>structuredClone(data),gameForTest:game});
+        activeWorld:undefined,enabledMods:[],captureModWorlds:()=>[],createMapScriptState:data=>structuredClone(data),gameForTest:game});
     const save=vm.runInContext(`(function(){return ${expression};}).call(gameForTest)`,e.context);
     const before=structuredClone(save.serialize()), raw=e.entries.get(save.saveKey);
     const invalid={...before,hs:{value:'partial HS'},hy:{value:'partial HY'},ac:{}};

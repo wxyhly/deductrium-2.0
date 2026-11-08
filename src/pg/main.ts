@@ -3,6 +3,7 @@ import { SaveLoad } from "../saveload.js";
 import { knowledgeBase } from "./kb.js";
 import { HSParser } from "../hs/core/parser.js";
 import { SyntaxViewer } from "../astrender.js";
+import { ModManager } from "./mods.js";
 
 // ==================== 成就列表 ====================
 // identifier 二维数组：每行 6 个（GUI 中一行；窄屏自动换列，逻辑不变）
@@ -91,6 +92,7 @@ export class ProgressLayer {
     }
 
     init() {
+        new ModManager(this.saveload);
         this.renderMode();
         this.renderLanguage();
         this.renderSlots();

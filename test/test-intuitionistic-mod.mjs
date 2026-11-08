@@ -91,14 +91,10 @@ test('checked-in editor project and runtime JSON are exact actual publications o
     assert.deepEqual(EditorProject.fromJSON(project, polygon).toJSON(), project);
 });
 
-test('the generated built-in constant is identical to the published world and keeps stable script identities', async () => {
-    const source = await readFile(new URL('../src/hy/builtin/intuitionistic.ts', import.meta.url), 'utf8');
-    assert.ok(source.startsWith("import type { WorldManifest } from '../world.js';"));
-    const match = /export const intuitionisticWorld: WorldManifest = ([\s\S]+);\s*$/.exec(source);
-    assert.ok(match, 'the built-in must export a literal generated manifest');
-    const builtin = JSON.parse(match[1]);
-    assert.deepEqual(builtin, world);
-    assert.deepEqual(worldRuntimeTiles(parseWorld(builtin)), runtime);
+test('the portable manifest keeps stable script identities for user installation', async () => {
+    const published = JSON.parse(await readFile(new URL('../examples/intuitionistic-propositional.world.json', import.meta.url), 'utf8'));
+    assert.deepEqual(published, world);
+    assert.deepEqual(worldRuntimeTiles(parseWorld(published)), runtime);
     assert.equal(runtimeById.get(sid('entry')).hash, '2,2,4,3,1,2,3,1,3,1');
     assert.ok(runtimeById.has('mod:intuitionistic-propositional::toolkit'));
 });

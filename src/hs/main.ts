@@ -130,14 +130,22 @@ export class HSLayer {
             for (let i = list.length - 1; i >= 0; i--) {
                 const node = list[i];
                 if (node.children) clean(node.children);
-                else if (removed.has(node.name)) list.splice(i, 1);
+                else if (removed.has(node.name) && !rules.has(node.name)) list.splice(i, 1);
             }
         };
         clean(this.ruleList);
+        const listed = new Set<string>();
+        const collect = (list: ListNode[]) => {
+            for (const node of list) {
+                if (node.children) collect(node.children);
+                else listed.add(node.name);
+            }
+        };
+        collect(this.ruleList);
         this.mapScriptRules = new Map(rules);
         for (const [name, rule] of rules) {
             this.hilbertSystem.rules.set(name, rule);
-            this.ruleList.push({ name, uuid: 0 });
+            if (!listed.has(name)) this.ruleList.push({ name, uuid: 0 });
         }
         this.ruleListView.refresh();
     }

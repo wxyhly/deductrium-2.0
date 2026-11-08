@@ -32,6 +32,8 @@ export class SaveLoad {
     serialize: () => any;
     /** Pure preflight: reject/migrate world data before storage or game mutation. */
     beforeLoad?: (data: any) => any;
+    /** Normal-mode preflight still runs after the legacy creative/survival navigation. */
+    allowNormalModeRedirect = false;
     lastLoadError: Error | null = null;
     private blockedWrite = false;
     private applyingLoad = false;
@@ -126,7 +128,9 @@ export class SaveLoad {
         const pkg = JSON.parse(this.compressor.decompress(compressed)) as SavePackage;
         if (!pkg || typeof pkg.mode !== 'string' || !pkg.mode) throw new Error('Invalid save package');
         if (pkg.mode !== this.mode) {
-            if (!allowRedirect || this.beforeLoad || this.mode.startsWith('world-') || pkg.mode.startsWith('world-')) {
+            const normalRedirect = this.allowNormalModeRedirect
+                && ['creative', 'survival'].includes(this.mode) && ['creative', 'survival'].includes(pkg.mode);
+            if (!allowRedirect || this.beforeLoad && !normalRedirect || this.mode.startsWith('world-') || pkg.mode.startsWith('world-')) {
                 throw new Error(`Save mode mismatch: ${pkg.mode} / ${this.mode}`);
             }
             return {mode:pkg.mode, data:undefined};

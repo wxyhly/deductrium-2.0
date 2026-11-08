@@ -160,6 +160,23 @@
                 </div>
             </div>
 
+            <div class="manager-card pg-card" id="pg-mod-card">
+                <div class="card-header">
+                    <h2 data-i18n="modsTitle">Mod 管理</h2>
+                </div>
+                <div class="pg-body">
+                    <p class="pg-mod-note" data-i18n="modsHelp">上传世界 JSON 后默认不启用。主地图扩展可同时启用；独立世界单独进入、单独保存进度。</p>
+                    <div class="pg-actions">
+                        <button type="button" class="btn-sm" id="pg-mod-upload" data-i18n="modsUpload">上传世界 JSON</button>
+                        <a class="btn-sm pg-mod-example" href="examples/intuitionistic-propositional.world.json" download data-i18n="modsExample">下载 IPC 示例世界</a>
+                        <input type="file" id="pg-mod-file" accept=".json,application/json" hidden />
+                    </div>
+                    <p class="pg-mod-note" data-i18n="modsKeepProgress">禁用或移除文件会保留存档进度；启用和禁用会保存当前进度并刷新页面。</p>
+                    <div id="pg-mod-list" aria-busy="false"></div>
+                    <p id="pg-mod-status" role="status" aria-live="polite" data-error="false"></p>
+                </div>
+            </div>
+
             <!-- 统计 -->
             <div class="manager-card pg-card">
                 <div class="card-header">

@@ -53,6 +53,16 @@ try{
         context.on('page',page=>page.on('pageerror',error=>errors.push(error.message)));
         try{
             const page=await context.newPage();await page.goto(origin+'/index.html');await ready(page);
+            assert.equal(await page.evaluate(async()=> (await import('/js/hy/maploader.js')).blockMap.size),2120,
+                'a new player sees only the official map');
+            await page.evaluate(()=>{game.showLayerButton('P-layer',true);game.switchLayer('P-layer');});
+            await page.locator('#pg-mod-file').setInputFiles({name:'intuitionistic.world.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(manifest))});
+            const row=page.locator(`[data-mod-id="${manifest.id}"]`);
+            await row.waitFor();
+            assert.equal(await page.evaluate(async()=> (await import('/js/hy/maploader.js')).blockMap.size),2120,
+                'uploading is separate from enabling');
+            await row.locator('button').first().click();await ready(page);
+            await page.waitForFunction(async id=>(await import('/js/hy/maploader.js')).nameMap.has(`mod:${id}::entry`),manifest.id);
             const initial=await page.evaluate(async manifest=>{
                 const {blockMap,nameMap}=await import('/js/hy/maploader.js');
                 return {key:game.saveload.saveKey,current:game.hyLayer.world.currentTile,
@@ -76,7 +86,7 @@ try{
             await page.reload();await ready(page);
             assert.deepEqual(await page.evaluate(()=>{
                 const data=game.saveload.serialize();return {hy:data.hy,rw:data.rw,D:data.D};
-            }),old,'legacy main progress and position survive the built-in addition');
+            }),old,'legacy main progress and position survive the installed extension');
             assert.equal(await page.evaluate(()=>game.saveload.writesBlocked),false);
             await page.evaluate(async hash=>{
                 const {Rotor}=await import('/js/hy/algebra.js'),w=game.hyLayer.world;

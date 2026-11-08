@@ -11,7 +11,7 @@ function tileText(tb) {
     return typeof tb.text === "string" ? tb.text : tb.text[LangMgr.lang] ?? Object.values(tb.text)[0] ?? "";
 }
 export class HWorld {
-    includeBuiltinMods;
+    includeUserMods;
     debugDraw = false;
     navigateDraw = false;
     localDraw;
@@ -36,15 +36,15 @@ export class HWorld {
     onTextColor;
     onTileText;
     atlasTile;
-    constructor(canvas, includeBuiltinMods = false) {
-        this.includeBuiltinMods = includeBuiltinMods;
+    constructor(canvas, includeUserMods = false) {
+        this.includeUserMods = includeUserMods;
         this.localDraw = new LocalDraw(canvas);
         this.atlasTile = new Polygon(6, 4);
         this.atlasTile.generateRotors();
-        initMap(this.atlasTile, this.includeBuiltinMods);
+        initMap(this.atlasTile, this.includeUserMods);
     }
     reload() {
-        initMap(this.atlasTile, this.includeBuiltinMods);
+        initMap(this.atlasTile, this.includeUserMods);
     }
     getBlock(hash) {
         const r = blockMap.get(hash) ?? blockMap.get(nameMap.get(hash));

@@ -105,6 +105,42 @@
     flex-wrap: wrap;
 }
 
+/* Mod files and their runtime state. Long user titles and IDs must fit mobile. */
+.pg-mod-note, .pg-mod-meta, .pg-mod-state, #pg-mod-status, .pg-mod-current {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    margin: 0.5rem 0;
+}
+.pg-mod-note, .pg-mod-meta { color: #64748b; }
+#pg-mod-list { display: grid; gap: 10px; margin-top: 12px; min-width: 0; }
+.pg-mod-entry {
+    min-width: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.8rem;
+    background: #f8fafc;
+}
+.pg-mod-entry h3 { font-size: 1rem; margin: 0; overflow-wrap: anywhere; }
+.pg-mod-state { font-weight: 600; }
+.pg-mod-actions .btn-sm, #pg-mod-upload, #pg-mod-list > .btn-sm {
+    min-height: 44px;
+    height: auto;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.pg-mod-actions .btn-sm:disabled, #pg-mod-upload:disabled { opacity: 0.5; cursor: default; }
+.pg-mod-example { display: inline-flex; align-items: center; text-decoration: none; }
+#pg-mod-status { color: #475569; }
+#pg-mod-status[data-error="true"] { color: #b91c1c; }
+html[data-theme="dark"] .pg-mod-entry {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+}
+html[data-theme="dark"] :is(.pg-mod-note, .pg-mod-meta, #pg-mod-status) { color: var(--theme-text); }
+html[data-theme="dark"] #pg-mod-status[data-error="true"] { color: #fca5a5; }
+
 /* 语言选择 */
 .pg-select {
     font-size: 0.9rem;

@@ -37,14 +37,14 @@ export class HWorld {
     onTextColor?: (block: TileBlock) => string;
     onTileText?: (block: TileBlock) => string;
     atlasTile: Polygon;
-    constructor(canvas: HTMLCanvasElement, private includeBuiltinMods = false) {
+    constructor(canvas: HTMLCanvasElement, private includeUserMods = false) {
         this.localDraw = new LocalDraw(canvas);
         this.atlasTile = new Polygon(6, 4);
         this.atlasTile.generateRotors();
-        initMap(this.atlasTile, this.includeBuiltinMods);
+        initMap(this.atlasTile, this.includeUserMods);
     }
     reload() {
-        initMap(this.atlasTile, this.includeBuiltinMods);
+        initMap(this.atlasTile, this.includeUserMods);
     }
     getBlock(hash: string):TileBlock {
         const r = blockMap.get(hash) ?? blockMap.get(nameMap.get(hash)!);

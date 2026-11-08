@@ -1,5 +1,7 @@
 import { activeWorld, activeWorldSaveMode, worldLoadFailure } from "./hy/world-runtime.js";
-import { migrateWorldSave, worldSaveMeta } from "./hy/world.js";
+import { migrateWorldSave, worldSaveMeta, WorldSaveMeta } from "./hy/world.js";
+import { installedMods, enabledMods } from "./hy/mod-runtime.js";
+import { captureModWorlds, prepareModSave } from "./hy/mod-saves.js";
 import { Rotor } from "./hy/algebra.js";
 import { createCurrencyBalances, CurrencyBalances } from "./hy/economy.js";
 import { lobbyBank, redeemMapBankOffer } from "./hy/bank.js";
@@ -43,6 +45,7 @@ class Game {
     typeDeductrium = 0;
     typeDeductriumConsumed = 0;
     private modBalances: Record<string, number> = {};
+    private modWorlds: WorldSaveMeta[] = [];
     deductriumConsumed = 0;  // 累计消耗推理素
     tilesParcour = 0;        // 总方块步数
     maxOrd: number[] = [];
@@ -78,7 +81,7 @@ class Game {
             ...(activeWorld ? { world: worldSaveMeta(activeWorld), worldPosition: {
                 tileId: activeWorld.tiles.find(tile => tile.hash === this.hyLayer.world.currentTile.join(","))?.id,
                 hash: this.hyLayer.world.currentTile.join(","),
-            } } : {}),
+            } } : {modWorlds: captureModWorlds(this.modWorlds, enabledMods), ...this.modPosition()}),
             tp: this.tilesParcour,
             mo: this.maxOrd.slice(),
             ob: this.ordBase,
@@ -88,6 +91,7 @@ class Game {
         if (data.hs) this.hsLayer.deserialize(data.hs);
         if (data.tt) this.ttLayer.deserialize(data.tt);
         if (gameMode === "survival") {
+            this.modWorlds = data.modWorlds ?? [];
             if (data.hy) this.hyLayer.deserialize(data.hy);
             else this.hyLayer.world.currentOrd = [];
             this.gotRewards = new Set(data.rw);
@@ -133,9 +137,16 @@ class Game {
                 this.validateBalances(migrated.balances ?? {reasoning: migrated.D ?? 0, type: 0});
                 return migrated;
             };
+        } else if (!editorPreview) {
+            this.saveload.allowNormalModeRedirect = true;
+            this.saveload.beforeLoad = data => {
+                const migrated = prepareModSave(data, installedMods.map(entry => ({...entry, enabled: enabledMods.includes(entry)})));
+                this.validateBalances(migrated.balances ?? {reasoning: migrated.D ?? 0, type: 0}, migrated.modWorlds);
+                return migrated;
+            };
         }
         const firstLoad = !this.saveload.load();
-        if (activeWorld && this.saveload.lastLoadError) {
+        if (this.saveload.lastLoadError) {
             worldLoadFailure(this.saveload.lastLoadError, this.saveload.saveKey);
             return;
         }
@@ -197,11 +208,14 @@ class Game {
 
     private currencyNames(): Record<string,string> {
         return {reasoning: LangMgr.lang === "en" ? "Deductrium" : "推理素", type: LangMgr.lang === "en" ? "Type currency" : "类型币",
+            ...Object.fromEntries(installedMods.flatMap(({world}) => world.mode === 'extension' && world.currency ? [[world.currency.id,world.currency.name]] : [])),
             ...(activeWorld?.currency ? {[activeWorld.currency.id]: activeWorld.currency.name} : {})};
     }
-    private validateBalances(input: unknown): CurrencyBalances {
+    private validateBalances(input: unknown, metadata = this.modWorlds): CurrencyBalances {
         if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid currency ledger");
-        const allowed = new Set(["reasoning", "type", ...(activeWorld?.currency ? [activeWorld.currency.id] : [])]);
+        const allowed = new Set(["reasoning", "type", ...(activeWorld ? activeWorld.currency ? [activeWorld.currency.id] : []
+            : [...enabledMods.flatMap(({world}) => world.currency ? [world.currency.id] : []),
+                ...(metadata ?? []).flatMap(world => world.currency ? [world.currency.id] : [])])]);
         const values = input as Record<string,number>;
         if (!Object.hasOwn(values, "reasoning") || !Object.hasOwn(values, "type")) throw new Error("Currency ledger must include reasoning and type");
         for (const [id,value] of Object.entries(values)) if (!allowed.has(id) || typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1e12) throw new Error(`Invalid or unregistered currency: ${id}`);
@@ -209,10 +223,21 @@ class Game {
             Object.fromEntries([...allowed].filter(id => id !== "reasoning" && id !== "type").map(id => [id,values[id] ?? 0])));
     }
     private currencyBalances(): CurrencyBalances {
-        return createCurrencyBalances(this.deductrium, this.typeDeductrium, this.modBalances);
+        const worlds = activeWorld ? [activeWorld] : enabledMods.map(entry => entry.world);
+        const registered = Object.fromEntries(worlds.flatMap(world => world.currency ? [[world.currency.id, 0]] : []));
+        return createCurrencyBalances(this.deductrium, this.typeDeductrium, {...registered, ...this.modBalances});
     }
     private mapBanks() {
-        return activeWorld?.mode === "standalone" ? activeWorld.banks : {...activeWorld?.banks, "builtin:lobby": lobbyBank};
+        return activeWorld?.mode === "standalone" ? activeWorld.banks : {
+            ...Object.assign({}, ...enabledMods.map(({world}) => world.banks)), ...activeWorld?.banks, "builtin:lobby": lobbyBank};
+    }
+    private modPosition() {
+        const hash = this.hyLayer.world.currentTile.join(',');
+        for (const {world} of enabledMods) {
+            const tile = world.tiles.find(tile => tile.hash === hash);
+            if (tile) return {modPosition: {worldId: world.id, tileId: tile.id, hash, entryHash: world.entry?.mainHash ?? ''}};
+        }
+        return {};
     }
     private redeemBankReward(block: TileBlock, isLoading?: boolean): boolean {
         if (isLoading) return true;

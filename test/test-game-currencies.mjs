@@ -20,6 +20,7 @@ const {createCurrencyBalances} = await import('../js/hy/economy.js');
 const {lobbyBank,redeemMapBankOffer} = await import('../js/hy/bank.js');
 const {createMapScriptState, parseMapScript, planMapScript} = await import('../js/hy/script.js');
 const {createMapScriptEngine} = await import('../js/hy/script-engine.js');
+const {captureModWorlds,prepareModSave} = await import('../js/hy/mod-saves.js');
 
 const quiet = fn => {
     const log = console.log;
@@ -98,13 +99,15 @@ function makeGame(data, mode = 'survival', tiles = []) {
         'ProgressLayer', 'kbFullId', 'SaveLoad', 'HSParser', 'calcMaxReachOrd', 'cmp', 'printOrd',
         'tileColor', 'tileTextColor', 'tileDisplayText', 'stringifyDeductriumAmout',
         'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'parseMapScript', 'planMapScript', 'createMapScriptEngine',
-        'activeWorld','activeWorldSaveMode','createCurrencyBalances','lobbyBank','redeemMapBankOffer',gameSource)(
+        'activeWorld','activeWorldSaveMode','createCurrencyBalances','lobbyBank','redeemMapBankOffer',
+        'installedMods','enabledMods','captureModWorlds','prepareModSave',gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
         ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd,
         tileColor, tileTextColor, tileDisplayText, stringifyDeductriumAmout,
-        false, ()=>'unused', createMapScriptState, parseMapScript, planMapScript, createMapScriptEngine, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer);
+        false, ()=>'unused', createMapScriptState, parseMapScript, planMapScript, createMapScriptEngine, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer,
+        [],[],captureModWorlds,prepareModSave);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;

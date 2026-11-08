@@ -1,6 +1,6 @@
 import { activeWorld } from "./world-runtime.js";
 import { worldRuntimeTiles, validateWorldBase } from "./world.js";
-import { installBuiltinMods } from "./builtin-mods.js";
+import { mountUserMods } from "./mod-runtime.js";
 import { mapData } from "./map.js";
 import { genOrdTiles } from "./ordinal.js";
 export var TileBlockType;
@@ -286,7 +286,9 @@ export function parseTileContent(content) {
     const rest = parseDataShortcuts(nameMatched ? content.slice(nameMatched[0].length) : content, data);
     return { name: nameMatched?.[1], data, text: parseText(rest) };
 }
-export function initMap(p, includeBuiltinMods = false) {
+export function initMap(p, includeUserMods = false) {
+    blockMap.clear();
+    nameMap.clear();
     const customTiles = activeWorld ? worldRuntimeTiles(activeWorld) : undefined;
     if (customTiles && activeWorld.mode === "standalone") {
         blockMap.clear();
@@ -423,8 +425,8 @@ export function initMap(p, includeBuiltinMods = false) {
                 nameMap.set(tile.name, hash);
         }
     }
-    if (includeBuiltinMods && !activeWorld)
-        installBuiltinMods(blockMap, nameMap);
+    if (includeUserMods && !activeWorld)
+        mountUserMods(blockMap, nameMap);
     // console.log(Array.from(blockMap.values()).filter(e=>e.type!=TileBlockType.Ordinal&&(e.text.startsWith("["))));
     // console.log(JSON.stringify(Array.from(blockMap.values()).filter(e=>(/[\u4e00-\u9fa5]/.test(e.text))).map(e=>e.text)));
     // console.log(JSON.stringify(Array.from(blockMap.values()).map(e=>langMgr.trc1(langMgr.trc(e.text))).filter(e=>(/[\u4e00-\u9fa5]/.test(e)))));

@@ -80,6 +80,18 @@ test('derived rule unlock closes real dependencies and refuses unearned axioms',
     assert.equal(hs.hilbertSystem.rules.has('.Z+s'), false);
 });
 
+test('restoring earned map rules preserves their row identities, folders and order', () => {
+    const {hs,engine,state}=fixture();state.engine.rules=['.i'];engine.restore(state);
+    const index=hs.ruleList.findIndex(node=>node.name==='.i'),row=hs.ruleList.splice(index,1)[0];
+    row.uuid=405;const folder={name:'My tools',uuid:404,children:[row]};hs.ruleList.unshift(folder);
+    const before=structuredClone(hs.ruleList);
+    engine.restore(state);engine.restore(state);
+    assert.deepEqual(hs.ruleList,before);assert.equal(hs.ruleList[0],folder);assert.equal(folder.children[0],row);
+    assert.equal(hs.hilbertSystem.rules.get('.i').error,undefined);
+    const empty=createMapScriptState();engine.restore(empty);
+    assert.deepEqual(folder.children,[],'rules actually withdrawn by a script are removed');
+});
+
 test('dynamic a/d-prefixed axiom bodies persist and ownership survives new adapters', () => {
     const { hs, tt, engine, state } = fixture();
     state.engine.axioms.aCustom = '⊢P';

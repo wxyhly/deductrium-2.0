@@ -254,8 +254,13 @@ test('full serde restores map dependencies before replaying recorded user macros
     first.engine.restore(state);
     run(first.hs.hilbertSystem,'hyp P;hyp Q;d/\\i P Q;mp 3 1;mp 4 2;m qPair;.i ¬P;a3 P P;mp 2 1;m qClassical');
     first.hs.ruleList.push({name:'qPair',uuid:1201},{name:'qClassical',uuid:1202});
-    // Actual reward/script commits reappend owned map rules after user macros.
+    // Older reward commits moved map rules after user macros. Preserve that saved
+    // ordering explicitly now that repeated commits retain each row's position.
     first.engine.restore(state);
+    const owned = new Set(first.hs.getMapScriptRuleNames());
+    const tail = first.hs.ruleList.filter(row => !row.children && owned.has(row.name));
+    const rest = first.hs.ruleList.filter(row => row.children || !owned.has(row.name));
+    first.hs.ruleList.splice(0, first.hs.ruleList.length, ...rest, ...tail);
     const saved = first.serde.serialize(), expectedRows = structuredClone(first.hs.ruleList);
     assert.ok(saved.r.indexOf('qPair:') < saved.r.indexOf('d/\\i:'));
     assert.ok(saved.r.indexOf('qClassical:') < saved.r.indexOf('.i:'));
