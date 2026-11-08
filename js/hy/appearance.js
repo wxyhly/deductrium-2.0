@@ -11,6 +11,8 @@ export function tileTextColor(block) {
     return getMapPalette().text[block.type];
 }
 export function tileDisplayText(block) {
+    if (block.name === "zh-en")
+        return LangMgr.text.languageSwitch;
     const data = block.data ?? {};
     let text = typeof block.text === "string" ? block.text : block.text[LangMgr.lang] ?? Object.values(block.text)[0] ?? "";
     if (data.pi || data.di || data.p || data.d) {

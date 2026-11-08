@@ -1850,5 +1850,11 @@ export class HSLayer {
     }
     serialize() { return this.serde.serialize(); }
     deserialize(data) { this.navigator.close(); return this.serde.deserialize(data); }
+    captureCommandDraft() {
+        if (this.cmdEngine.isExecuting())
+            throw new Error(LangMgr.text.languageFinishCommand);
+        return this.navigator.active ? undefined : this.cmdInput.getValue();
+    }
+    restoreCommandDraft(text) { this.cmdInput.setValue(text); }
 }
 //# sourceMappingURL=main.js.map

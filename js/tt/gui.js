@@ -528,6 +528,8 @@ export class TTGui {
         }
     }
     // "+ 命题"按钮：添加一个空命题行并立即进入就地编辑（语法高亮）
+    finishInlineEdit;
+    commitPendingEdit() { this.finishInlineEdit?.(); }
     addNewItem() {
         const node = this.addItem("");
         this.tableView.refresh();
@@ -576,7 +578,12 @@ export class TTGui {
         requestAnimationFrame(() => { if (ta.isConnected)
             autoresize(); });
         editor.focus();
+        let finished = false;
         const finish = () => {
+            if (finished)
+                return;
+            finished = true;
+            this.finishInlineEdit = undefined;
             const val = editor.getValue().trim();
             const node = this.findNode(id);
             if (node) {
@@ -592,6 +599,7 @@ export class TTGui {
             this.tableView.refresh();
             this.onchange?.();
         };
+        this.finishInlineEdit = finish;
         ta.addEventListener('blur', finish);
         ta.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {

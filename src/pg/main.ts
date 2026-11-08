@@ -45,6 +45,12 @@ export const kbAllIds: string[] = [
     ...Object.keys(knowledgeBase.mecanism).map(k => "mec:" + k),
 ];
 
+interface LanguageEditors {
+    commit(): void;
+    capture(): string | undefined;
+    restore(text: string): void;
+}
+
 // 从 "[zh]标题：正文 [en]Title: body" 解析当前语言的标题与正文：
 // 标题 = 第一个"："（或英文":"）前的内容；无冒号则标题为空、整段为正文
 export function kbSplitTitle(bilingual: string): { title: string; body: string } {
@@ -82,7 +88,8 @@ export class ProgressLayer {
     private isAchievementGot: (id: string) => boolean;
     private isInfoGot: (id: string) => boolean;
 
-    constructor(saveload: SaveLoad, mode: string, isAchievementGot?: (id: string) => boolean, isInfoGot?: (id: string) => boolean) {
+    constructor(saveload: SaveLoad, mode: string, isAchievementGot?: (id: string) => boolean, isInfoGot?: (id: string) => boolean,
+        private languageEditors?: LanguageEditors) {
         this.saveload = saveload;
         this.mode = mode;
         this.isAchievementGot = isAchievementGot ?? (() => false);
@@ -160,18 +167,57 @@ export class ProgressLayer {
         const lang = localStorage.getItem("lang");
         select.value = lang && ["zh", "en"].includes(lang) ? lang : "auto";
     }
+    /** Both entry-tile and settings changes save drafts before the full UI reload. */
+    public changeLanguage(value: "zh" | "en" | "auto") {
+        if (this.refreshTimer !== null) return;
+        const next = value === "auto" ? null : value;
+        if (localStorage.getItem("lang") === next) return;
+        const failed = (error: unknown) => {
+            this.refreshTimer = null;
+            this.renderLanguage();
+            this.saveload.notifySave();
+            alert(LangMgr.text.languageFailed + (error instanceof Error ? error.message : String(error)));
+        };
+        try {
+            this.languageEditors?.capture(); // Refuse to discard an interactive command in progress.
+            this.languageEditors?.commit();
+            this.saveload.save();
+            this.saveload.cancelPendingSave();
+            this.refreshTimer = window.setTimeout(() => {
+                try {
+                    const command = this.languageEditors?.capture();
+                    this.languageEditors?.commit();
+                    // Movement and editing can continue during the refresh delay.
+                    this.saveload.save();
+                    if (command) sessionStorage.setItem(this.languageDraftKey(), JSON.stringify({
+                        save: localStorage.getItem(this.saveload.saveKey), command,
+                    }));
+                    if (next === null) localStorage.removeItem("lang");
+                    else localStorage.setItem("lang", next);
+                    this.saveload.cancelPendingSave();
+                    window.location.reload();
+                } catch (error) { failed(error); }
+            }, 200);
+        } catch (error) { failed(error); }
+    }
+    private languageDraftKey() { return `${this.saveload.saveKey}:language-draft`; }
+    public restoreLanguageDraft() {
+        try {
+            const key = this.languageDraftKey(), raw = sessionStorage.getItem(key);
+            if (!raw) return;
+            sessionStorage.removeItem(key);
+            const draft = JSON.parse(raw);
+            if (typeof draft.command === "string" && draft.save === localStorage.getItem(this.saveload.saveKey)) {
+                this.languageEditors?.restore(draft.command);
+            }
+        } catch { /* Unavailable or stale UI drafts never block loading a game. */ }
+    }
     private bindEvents() {
         const select = document.getElementById("pg-lang") as HTMLSelectElement | null;
         if (select) {
             select.addEventListener("change", () => {
-                const v = select.value;
-                const prev = localStorage.getItem("lang");
-                if (v === "auto") {
-                    if (prev) localStorage.removeItem("lang");
-                } else {
-                    localStorage.setItem("lang", v);
-                }
-                if (prev !== (v === "auto" ? null : v)) this.scheduleRefresh();
+                const value = select.value;
+                if (value === "auto" || value === "zh" || value === "en") this.changeLanguage(value);
             });
         }
         // 导出当前进度

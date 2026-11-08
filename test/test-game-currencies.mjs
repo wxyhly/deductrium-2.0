@@ -84,7 +84,7 @@ class HyBoundary {
     serialize() { return this.serde.serialize(); }
     deserialize(data) { this.serde.deserialize(data); }
 }
-class ProgressBoundary { refreshAchievements() {} refreshSymbols() {} refreshKnowledge() {} }
+class ProgressBoundary { refreshAchievements() {} refreshSymbols() {} refreshKnowledge() {} restoreLanguageDraft() {} }
 const documentBoundary = {
     getElementById() { return null; }, querySelector() { return null; }, querySelectorAll() { return []; },
 };

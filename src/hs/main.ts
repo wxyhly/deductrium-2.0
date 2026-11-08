@@ -1551,4 +1551,9 @@ export class HSLayer {
     }
     serialize() { return this.serde.serialize() }
     deserialize(data: any) { this.navigator.close(); return this.serde.deserialize(data) }
+    captureCommandDraft(): string | undefined {
+        if (this.cmdEngine.isExecuting()) throw new Error(LangMgr.text.languageFinishCommand);
+        return this.navigator.active ? undefined : this.cmdInput.getValue();
+    }
+    restoreCommandDraft(text: string) { this.cmdInput.setValue(text); }
 }

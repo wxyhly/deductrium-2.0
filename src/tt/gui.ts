@@ -487,6 +487,8 @@ export class TTGui {
     }
 
     // "+ 命题"按钮：添加一个空命题行并立即进入就地编辑（语法高亮）
+    private finishInlineEdit?: () => void;
+    commitPendingEdit() { this.finishInlineEdit?.(); }
     addNewItem() {
         const node = this.addItem("");
         this.tableView.refresh();
@@ -529,7 +531,11 @@ export class TTGui {
         // 兜底：确保布局完成后高度正确（防某些浏览器首次测量不准）
         requestAnimationFrame(() => { if (ta.isConnected) autoresize(); });
         editor.focus();
+        let finished = false;
         const finish = () => {
+            if (finished) return;
+            finished = true;
+            this.finishInlineEdit = undefined;
             const val = editor.getValue().trim();
             const node = this.findNode(id);
             if (node) {
@@ -544,6 +550,7 @@ export class TTGui {
             this.tableView.refresh();
             this.onchange?.();
         };
+        this.finishInlineEdit = finish;
         ta.addEventListener('blur', finish);
         ta.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { editor.setValue(this.findNode(id)?.content ?? ""); editor.blur(); }

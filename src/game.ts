@@ -126,7 +126,11 @@ class Game {
         }
         this.switchLayer(data.ly);
     })
-    progressLayer = new ProgressLayer(this.saveload, gameMode, (id) => this.isAchievementGot(id), (id) => this.isInfoUnlocked(id));
+    progressLayer = new ProgressLayer(this.saveload, gameMode, (id) => this.isAchievementGot(id), (id) => this.isInfoUnlocked(id), {
+        commit: () => this.ttLayer.getGui().commitPendingEdit(),
+        capture: () => this.hsLayer.captureCommandDraft(),
+        restore: text => this.hsLayer.restoreCommandDraft(text),
+    });
     constructor() {
         this.initHyGUI();
         this.initLayerGUI();
@@ -204,6 +208,7 @@ class Game {
                 if (block) this.runMapScript(block, hash, "start");
             }
         }
+        this.progressLayer.restoreLanguageDraft();
     }
 
     private currencyNames(): Record<string,string> {
@@ -548,7 +553,7 @@ class Game {
             const hash = nameMap.get(key) ?? key;
             const block = blockMap.get(hash);
             if (!block) continue; // 地图改版后砖块可能不存在
-            if (block.data?.exchange) continue;
+            if (block.data?.exchange || block.name === "zh-en") continue;
             block.data ??= {};
             block.data.got = true;
             if (block.type === TileBlockType.Reward && !/^JJZ[OI]-[12]$/.test(block.name ?? "")
@@ -630,6 +635,12 @@ class Game {
             block.data ??= {};
             // Counter rewards stay available; entering their bank or reloading never exchanges money.
             if (block.data.exchange !== undefined) return this.redeemBankReward(block, isLoading);
+            if (block.name === "zh-en") {
+                // A reusable control: old saves may already list it as a claimed reward.
+                block.type = TileBlockType.Reward;
+                if (!isLoading) this.progressLayer.changeLanguage(LangMgr.lang === "en" ? "zh" : "en");
+                return;
+            }
             const alreadyGot = this.gotRewards.has(block.name || hash);
             let keepReward = this.mapScript.tileEdits[block.name || hash]?.type === TileBlockType.Reward;
             if (!isLoading) {
