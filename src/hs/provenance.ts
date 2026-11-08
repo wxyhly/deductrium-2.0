@@ -85,6 +85,25 @@ class Analysis {
     constructor(private original: HilbertSystem) {
         this.resolver = createProofResolver(original);
         this.scratch = this.resolver.system;
+        // Nested lifts resolve the same inner transformations repeatedly. Keep
+        // only this analysis's successfully checked proofs, with charged lookups
+        // and an in-progress marker so recursive generation still fails closed.
+        const resolve = this.scratch.getD.bind(this.scratch);
+        const generated = new Map<string, Deduction | null>();
+        this.scratch.getD = (ast, withProof = true) => {
+            if (!withProof) return resolve(ast, false);
+            this.resolver.charge();
+            const key = this.resolver.key(ast);
+            if (generated.has(key)) {
+                const cached = generated.get(key);
+                if (!cached) throw Error("Cyclic proof generation");
+                return cached;
+            }
+            generated.set(key, null);
+            const rule = resolve(ast, true);
+            generated.set(key, rule);
+            return rule;
+        };
         const mcpt = this.scratch.mcpt.bind(this.scratch);
         this.scratch.mcpt = formula => {
             this.tautologyBudget(formula);
@@ -302,8 +321,10 @@ class Analysis {
                 for (const index of summary.used) {
                     const condition = data.conditions[index];
                     if (!condition) throw Error("Missing proof premise");
-                    merge(result, this.reference(condition, step.parent, frame));
-                    if (layers.length) merge(result, this.reference(condition, scope, frame));
+                    // The outer reference includes the premise's intrinsic
+                    // proof as well as its captures. Walking it locally too
+                    // repeats that same used chain at every discharged scope.
+                    merge(result, this.reference(condition, layers.length ? scope : step.parent, frame));
                 }
             } else if (step.from.type === "h") {
                 const index = frame.inputs.get(step);

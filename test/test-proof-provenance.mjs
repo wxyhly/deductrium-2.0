@@ -164,6 +164,53 @@ test('discharged conditions and variable scopes do not include unrelated sibling
     assert.ok(tags(stepProvenance(system, system.props[0])).includes('first-order'));
 });
 
+test('nested extensionality scopes retain actual sources within the proof work budget', () => {
+    const system = layer().hilbertSystem;
+    // Explicitly record the iff elimination rule used by the reported command chain.
+    run(system, 'hyp $1↔$2;<.<>1 1;m l');
+    run(system, String.raw`var x;var y;cond x⊂y;cond y⊂x;aext;<a4 5 x;<a4 6 y;<:l(d\c) 3 z;<:l(d\c) 4 z;var z;<a4 8 z;<a4 9 z;.<> 11 12;cd 4;mp 7 13`);
+    const context = system.saveContext(), commands = system.genCmd().join(';');
+    const expected = ['a1','a2','a3','a4','d<>1','d\\c','mp'];
+    for (const id of ['8','9','11','12']) assert.deepEqual(ids(stepProvenance(system, system.getP(id))), expected, id);
+    const iff = stepProvenance(system, system.getP('13'));
+    assert.deepEqual(ids(iff), [...expected.slice(0,5), 'd<>2', ...expected.slice(5)]);
+    const conclusion = stepProvenance(system, system.getP('14'));
+    assert.deepEqual(ids(conclusion), ['a1','a2','a3','a4','aext','d<>1','d<>2','d\\c','mp','v']);
+    assert.deepEqual(conclusion.tags, ['propositional','classical','first-order','zfc']);
+    assert.equal(permitsProvenance(conclusion, ['propositional','classical','first-order']), false);
+    assert.equal(system.saveContext().props, context.props);
+    assert.equal(system.genCmd().join(';'), commands);
+    assert.deepEqual(ruleProvenance(system, system.m('qExtensionality')), conclusion);
+});
+
+test('scoped proof reuse ignores unused premises and rechecks changed implicit rules', () => {
+    const system = fixture();
+    run(system, 'hyp $1;hyp $2;a1 C D;m qIgnore');
+    const unused = primitive(system, 'localUnused', '⊢E');
+    run(system, 'localUnused;localUnused;cond A;var x;qIgnore 1 2');
+    const step = system.getP('5'), before = stepProvenance(system, step);
+    assert.equal(ids(before).includes('localUnused'), false);
+    assert.equal(before.tags.includes('custom'), false);
+    unused.error = {cause:'unreachable'};
+    assert.deepEqual(stepProvenance(system, step), before);
+    system.rules.get('a1').error = {cause:'changed implicit dependency'};
+    const changed = stepProvenance(system, step);
+    assert.equal(changed.valid, false);
+    assert.deepEqual(changed.sources, []);
+    assert.equal(permitsProvenance(changed, PROOF_TAGS.map(tag => tag.id)), false);
+});
+
+test('reused proof generation retains the dependency depth boundary', () => {
+    const system = fixture();
+    run(system, 'a1 A B;m q0');
+    for (let index = 1; index <= 40; index++) run(system, `q${index - 1};m q${index}`);
+    assert.deepEqual(ids(ruleProvenance(system, system.rules.get('q5'))), ['a1']);
+    const value = ruleProvenance(system, system.rules.get('q40'));
+    assert.equal(value.valid, false);
+    assert.match(value.error, /Proof provenance exceeds dependency depth/);
+    assert.deepEqual(value.sources, []);
+});
+
 test('mcpt remains classical both directly and inside recorded macros', () => {
     const system = fixture();
     run(system, 'mcpt A→A');
