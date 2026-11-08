@@ -21,6 +21,8 @@ export class TreeListViewer<T extends ListNode> {
     private rowsContainer: HTMLElement;
     private openMenuId: string | null = null;
     private dragState: { type: 'node' | 'item'; uuid: number; sourceElement: HTMLElement } | null = null;
+    private mouseDrag: { uuid: number; sourceElement: HTMLElement; pointerId: number; startX: number; startY: number;
+        x: number; y: number; started: boolean; userSelect: string } | null = null;
 
     idCounter = 1;
     expandedFolders: Set<number> = new Set();
@@ -97,6 +99,7 @@ export class TreeListViewer<T extends ListNode> {
         this.refresh();
     }
     private renderList(): void {
+        if (this.mouseDrag) this.mouseCancelHandler();
         const flat = this.flattenVisible();
         this.rowsContainer.innerHTML = '';
         if (flat.length === 0) { this.onAfterRender?.(); return; }
@@ -166,13 +169,13 @@ export class TreeListViewer<T extends ListNode> {
         row.className = `item-row ${isFolderNode ? 'folder-row' : ''}`;
         row.dataset.uuid = String(id);
         row.style.setProperty('--depth', String(depth));
-        row.draggable = true;
+        row.draggable = false;
 
         // ---- 名称列 ----
         const nameCell = document.createElement('div');
         nameCell.className = 'cell-name';
         nameCell.dataset.uuid = isPlaceholder ? "" : String(id);
-        nameCell.draggable = !isPlaceholder;
+        nameCell.draggable = false;
 
         const nameText = document.createElement('span');
         nameText.className = 'name-text';
@@ -278,22 +281,14 @@ export class TreeListViewer<T extends ListNode> {
         });
 
         // 拖拽（鼠标 + 触摸）
-        this.rowsContainer.querySelectorAll('.item-row').forEach(row => {
+        this.rowsContainer.querySelectorAll<HTMLElement>('.item-row').forEach(row => {
             if ((row as HTMLElement).dataset.uuid === String(TreeListViewer.PLACEHOLDER_ID)) return;
             // 点击整行（供外部回调，如d命令选择命题/规则）
             row.removeEventListener('click', this.rowClickHandler as any);
             row.addEventListener('click', this.rowClickHandler as any);
-            // 鼠标拖拽
-            row.removeEventListener('dragstart', this.dragStartHandler as any);
-            row.removeEventListener('dragend', this.dragEndHandler as any);
-            row.removeEventListener('dragover', this.dragOverHandler as any);
-            row.removeEventListener('dragleave', this.dragLeaveHandler as any);
-            row.removeEventListener('drop', this.dropHandler as any);
-            row.addEventListener('dragstart', this.dragStartHandler as any);
-            row.addEventListener('dragend', this.dragEndHandler as any);
-            row.addEventListener('dragover', this.dragOverHandler as any);
-            row.addEventListener('dragleave', this.dragLeaveHandler as any);
-            row.addEventListener('drop', this.dropHandler as any);
+            // Mouse dragging leaves wheel scrolling to the browser.
+            row.removeEventListener('pointerdown', this.mouseDownHandler);
+            row.addEventListener('pointerdown', this.mouseDownHandler);
 
             // 触摸拖拽（长按触发）
             row.removeEventListener('touchstart', this.touchStartHandler as any);
@@ -510,184 +505,135 @@ export class TreeListViewer<T extends ListNode> {
         this.openMenuId = null;
     }
 
-    private dragStartHandler = (e: DragEvent) => {
+    // Keep the browser out of native HTML drag mode so wheel events stay available.
+    private mouseDownHandler = (e: PointerEvent) => {
+        if (e.pointerType !== 'mouse' || e.button !== 0 || this.isDraggingTouch) return;
         const target = e.target as HTMLElement;
-        const cellName = target.closest('.cell-name');
-        if (!cellName) {
-            e.preventDefault();
-            return;
-        }
-        const row = cellName.closest('.item-row') as HTMLElement;
-        if (!row) {
-            e.preventDefault();
-            return;
-        }
-        const id = Number(row.dataset.uuid);
-        if (!id || id === TreeListViewer.PLACEHOLDER_ID) {
-            e.preventDefault();
-            return;
-        }
-        this.dragState = {
-            type: 'node',
-            uuid: id,
-            sourceElement: row
-        };
-        e.dataTransfer!.setData('text/plain', JSON.stringify({ type: 'node', id }));
-        e.dataTransfer!.effectAllowed = 'move';
-        row.classList.add('dragging');
+        if (target.closest('input, textarea, button, [contenteditable="true"]')) return;
+        const row = target.closest('.cell-name')?.closest('.item-row') as HTMLElement | null;
+        if (!row || !this.rowsContainer.contains(row)) return;
+        const uuid = Number(row.dataset.uuid);
+        if (!uuid || uuid === TreeListViewer.PLACEHOLDER_ID || !this.findNode(uuid)) return;
+        this.endMouseDrag();
+        e.preventDefault();
+        this.mouseDrag = { uuid, sourceElement: row, pointerId: e.pointerId,
+            startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, started: false,
+            userSelect: document.body.style.userSelect };
+        document.addEventListener('pointermove', this.mouseMoveHandler);
+        document.addEventListener('pointerup', this.mouseUpHandler);
+        document.addEventListener('pointercancel', this.mouseCancelHandler);
+        document.addEventListener('keydown', this.mouseEscapeHandler, true);
+        document.addEventListener('scroll', this.mouseScrollHandler, true);
+        document.addEventListener('visibilitychange', this.mouseVisibilityHandler);
+        window.addEventListener('blur', this.mouseCancelHandler);
     };
 
-    private dragEndHandler = (e: DragEvent) => {
+    private mouseMoveHandler = (e: PointerEvent) => {
+        const drag = this.mouseDrag;
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        if (!(e.buttons & 1)) { this.mouseCancelHandler(); return; }
+        drag.x = e.clientX; drag.y = e.clientY;
+        if (!drag.started) {
+            if (Math.hypot(drag.x - drag.startX, drag.y - drag.startY) < 5) return;
+            drag.started = true;
+            this.dragState = { type: 'node', uuid: drag.uuid, sourceElement: drag.sourceElement };
+            drag.sourceElement.classList.add('dragging');
+            document.body.style.userSelect = 'none';
+        }
+        this.highlightMouseTarget();
+    };
+
+    private mouseTarget(x: number, y: number): { row: HTMLElement; node: T | null; position: 'inside' | 'before' | 'after' } | null {
+        const row = document.elementFromPoint(x, y)?.closest('.item-row') as HTMLElement | null;
+        if (!row || !this.rowsContainer.contains(row)) return null;
+        const id = Number(row.dataset.uuid);
+        if (!id || id === this.mouseDrag?.uuid) return null;
+        if (id === TreeListViewer.PLACEHOLDER_ID) return { row, node: null, position: 'before' };
+        const node = this.findNode(id);
+        if (!node) return null;
+        const rect = row.getBoundingClientRect();
+        const lowerHalf = y - rect.top > rect.height / 2;
+        const position = lowerHalf && isFolder(node) && this.expandedFolders.has(id) ? 'inside'
+            : lowerHalf ? 'after' : 'before';
+        return { row, node, position };
+    }
+
+    private highlightMouseTarget = () => {
         this.clearDragHighlights();
-        if (this.dragState) {
-            const src = this.dragState.sourceElement;
-            if (src) src.classList.remove('dragging');
+        const drag = this.mouseDrag;
+        if (!drag?.started) return;
+        const source = this.findNode(drag.uuid);
+        const target = this.mouseTarget(drag.x, drag.y);
+        if (!source || !target) return;
+        const allowed = this.allowDrop(source, target.node, target.position);
+        target.row.classList.add(`drop-${target.position}${allowed ? '' : '-disallowed'}`);
+    };
+
+    private mouseScrollHandler = () => { if (this.mouseDrag?.started) this.highlightMouseTarget(); };
+
+    private mouseUpHandler = (e: PointerEvent) => {
+        const drag = this.mouseDrag;
+        if (!drag || e.pointerId !== drag.pointerId || e.button !== 0) return;
+        try {
+            if (!drag.started) return;
+            this.blockDragClick();
+            const source = this.findNode(drag.uuid);
+            const target = this.mouseTarget(e.clientX, e.clientY);
+            if (!source || !target || !this.allowDrop(source, target.node, target.position)) return;
+            let moved = false;
+            if (!target.node) {
+                const info = this.findParentAndIndex(drag.uuid);
+                if (info && info.index !== info.parent.length - 1) {
+                    info.parent.push(...info.parent.splice(info.index, 1));
+                    moved = true;
+                }
+            } else moved = this.moveNode(drag.uuid, target.node.uuid, target.position);
+            if (moved) { this.onAfterChange(); this.renderList(); }
+        } finally { this.endMouseDrag(); }
+    };
+
+    private mouseEscapeHandler = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape' || !this.mouseDrag) return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        this.mouseCancelHandler();
+    };
+    private mouseVisibilityHandler = () => { if (document.hidden) this.mouseCancelHandler(); };
+    private mouseCancelHandler = () => {
+        if (this.mouseDrag?.started) this.blockDragClick();
+        this.endMouseDrag();
+    };
+
+    private blockDragClick(): void {
+        document.addEventListener('click', this.suppressDragClick, true);
+        document.addEventListener('pointerdown', this.clearDragClick, true);
+    }
+    private clearDragClick = () => {
+        document.removeEventListener('click', this.suppressDragClick, true);
+        document.removeEventListener('pointerdown', this.clearDragClick, true);
+    };
+    private suppressDragClick = (e: MouseEvent) => {
+        if (!e.detail) return;
+        e.preventDefault(); e.stopImmediatePropagation(); this.clearDragClick();
+    };
+
+    private endMouseDrag(): void {
+        const drag = this.mouseDrag;
+        if (drag) {
+            drag.sourceElement.classList.remove('dragging');
+            if (drag.started) document.body.style.userSelect = drag.userSelect;
             this.dragState = null;
         }
-    };
+        this.mouseDrag = null;
+        this.clearDragHighlights();
+        document.removeEventListener('pointermove', this.mouseMoveHandler);
+        document.removeEventListener('pointerup', this.mouseUpHandler);
+        document.removeEventListener('pointercancel', this.mouseCancelHandler);
+        document.removeEventListener('keydown', this.mouseEscapeHandler, true);
+        document.removeEventListener('scroll', this.mouseScrollHandler, true);
+        document.removeEventListener('visibilitychange', this.mouseVisibilityHandler);
+        window.removeEventListener('blur', this.mouseCancelHandler);
+    }
 
-    private dragOverHandler = (e: DragEvent) => {
-        e.preventDefault();
-        e.dataTransfer!.dropEffect = 'move';
-
-        const targetRow = (e.target as HTMLElement).closest('.item-row') as HTMLElement;
-        if (!targetRow) return;
-        const targetId = Number(targetRow.dataset.uuid);
-        if (!targetId) return;
-        const sourceId = this.dragState?.uuid;
-        if (!sourceId || sourceId === targetId) {
-            this.clearDropTarget(targetRow);
-            return;
-        }
-        const sourceNode = this.findNode(sourceId);
-        if (!sourceNode) {
-            this.clearDropTarget(targetRow);
-            return;
-        }
-
-        // 占位符
-        if (targetId === TreeListViewer.PLACEHOLDER_ID) {
-            const allowed = this.allowDrop(sourceNode, null, 'before');
-            this.clearDropTarget(targetRow);
-            if (allowed) {
-                targetRow.classList.add('drop-before');
-                e.dataTransfer!.dropEffect = 'move';
-            } else {
-                targetRow.classList.add('drop-before-disallowed');
-                e.dataTransfer!.dropEffect = 'none';
-            }
-            return;
-        }
-
-        const rect = targetRow.getBoundingClientRect();
-        const y = e.clientY - rect.top;
-        const height = rect.height;
-
-        const targetNode = this.findNode(targetId);
-        const isFolderTarget = targetNode && isFolder(targetNode);
-        const isExpanded = isFolderTarget && this.expandedFolders.has(targetId);
-
-        let position: 'inside' | 'before' | 'after' = 'before';
-        if (isExpanded && (y / height) > 0.5) {
-            position = 'inside';
-        } else {
-            position = (y / height) < 0.5 ? 'before' : 'after';
-        }
-
-        const allowed = this.allowDrop(sourceNode, targetNode, position);
-        this.clearDropTarget(targetRow);
-
-        if (allowed) {
-            e.dataTransfer!.dropEffect = 'move';
-            if (position === 'inside') targetRow.classList.add('drop-inside');
-            else if (position === 'before') targetRow.classList.add('drop-before');
-            else targetRow.classList.add('drop-after');
-        } else {
-            e.dataTransfer!.dropEffect = 'none';
-            if (position === 'inside') targetRow.classList.add('drop-inside-disallowed');
-            else if (position === 'before') targetRow.classList.add('drop-before-disallowed');
-            else targetRow.classList.add('drop-after-disallowed');
-        }
-    };
-
-    private dragLeaveHandler = (e: DragEvent) => {
-        const targetRow = (e.target as HTMLElement).closest('.item-row') as HTMLElement;
-        if (targetRow) {
-            this.clearDropTarget(targetRow);
-        }
-    };
-
-    private dropHandler = (e: DragEvent) => {
-        e.preventDefault();
-        const targetRow = (e.target as HTMLElement).closest('.item-row') as HTMLElement;
-        if (!targetRow) return;
-
-        const targetId = Number(targetRow.dataset.uuid);
-        if (!targetId) return;
-        const sourceId = this.dragState?.uuid;
-        if (!sourceId || sourceId === targetId) {
-            this.dragEndHandler(e);
-            return;
-        }
-        const sourceNode = this.findNode(sourceId);
-        if (!sourceNode) {
-            this.dragEndHandler(e);
-            return;
-        }
-
-        // 占位符
-        if (targetId === TreeListViewer.PLACEHOLDER_ID) {
-            const allowed = this.allowDrop(sourceNode, null, 'before');
-            if (!allowed) {
-                this.dragEndHandler(e);
-                return;
-            }
-            const srcInfo = this.findParentAndIndex(sourceId);
-            if (srcInfo) {
-                const parent = srcInfo.parent;
-                const idx = srcInfo.index;
-                const node = parent[idx];
-                parent.splice(idx, 1);
-                parent.push(node);
-                this.onAfterChange();
-                this.renderList();
-            }
-            this.dragEndHandler(e);
-            return;
-        }
-
-        let position: 'inside' | 'before' | 'after' = 'before';
-        if (targetRow.classList.contains('drop-inside') || targetRow.classList.contains('drop-inside-disallowed')) {
-            position = 'inside';
-        } else if (targetRow.classList.contains('drop-before') || targetRow.classList.contains('drop-before-disallowed')) {
-            position = 'before';
-        } else if (targetRow.classList.contains('drop-after') || targetRow.classList.contains('drop-after-disallowed')) {
-            position = 'after';
-        } else {
-            const rect = targetRow.getBoundingClientRect();
-            const y = e.clientY - rect.top;
-            const height = rect.height;
-            const targetNode = this.findNode(targetId);
-            const isFolderTarget = targetNode && isFolder(targetNode);
-            const isExpanded = isFolderTarget && this.expandedFolders.has(targetId);
-            if (isExpanded && (y / height) > 0.5) position = 'inside';
-            else position = (y / height) < 0.5 ? 'before' : 'after';
-        }
-
-        const targetNode = this.findNode(targetId);
-        if (!targetNode) {
-            this.dragEndHandler(e);
-            return;
-        }
-        if (!this.allowDrop(sourceNode, targetNode, position)) {
-            this.dragEndHandler(e);
-            return;
-        }
-        this.moveNode(sourceId, targetId, position);
-        this.onAfterChange();
-        this.renderList();
-        this.dragEndHandler(e);
-    };
 
     // ---- 触摸拖拽（长按触发） ----
     private touchStartHandler = (e: TouchEvent) => {
@@ -1033,6 +979,8 @@ export class TreeListViewer<T extends ListNode> {
     }
 
     public destroy(): void {
+        this.endMouseDrag();
+        this.clearDragClick();
         document.removeEventListener('mousemove', this._mouseMove);
         document.removeEventListener('mouseup', this._mouseUp);
         document.removeEventListener('touchmove', this._touchMove);

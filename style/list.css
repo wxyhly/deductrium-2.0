@@ -224,13 +224,25 @@ body {
 
 /* ===== 行 ===== */
 #ruleListWrapper .item-row {
-    --col-extra: clamp(112px, 22vw, 160px);
     --col-name: 60px;
 }
 
 #propListWrapper .item-row {
-    --col-extra: clamp(112px, 22vw, 160px);
     --col-name: 40px;
+}
+
+/* Sources take their content width, with room reserved for the formula.
+   Keep the original four cells so cached scripts and styles still agree. */
+:is(#ruleListWrapper, #propListWrapper) .item-row:not(.activePlaceholder) {
+    grid-template-columns: calc(var(--col-name) + var(--depth, 0) * 6px) minmax(0, 1fr) fit-content(40%) 26px;
+}
+:is(#ruleListWrapper, #propListWrapper) .cell-content {
+    min-width: 0;
+}
+:is(#ruleListWrapper, #propListWrapper) .cell-extra {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
 }
 
 .item-row {
