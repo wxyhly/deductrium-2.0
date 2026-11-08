@@ -152,6 +152,51 @@ test('composition traces only used function arguments and preserves external pre
     assert.deepEqual(ids(ruleProvenance(system, rule)), ['a1']);
 });
 
+test('fixed meta summaries never generate expanded proofs', () => {
+    const system = fixture();
+    const cases = ['ca3','<a3','>mp','va3','vmp','u<a3','ea3','mp(a1,#)'];
+    const rules = cases.map(text => system.getD(name(text), false));
+    const getD = HilbertSystem.prototype.getD;
+    HilbertSystem.prototype.getD = function(ast, withProof = true, work) {
+        if (ast.type === NodeType.NODE_DNAME && withProof) throw Error('Unexpected meta proof expansion');
+        return getD.call(this, ast, withProof, work);
+    };
+    try {
+        for (const rule of rules) ids(ruleProvenance(system, rule));
+    } finally { HilbertSystem.prototype.getD = getD; }
+});
+
+test('universal generalization includes the quantified child construction', () => {
+    const system = fixture();
+    assert.deepEqual(ids(ruleProvenance(system, system.getD(name('ump'), false))), ['a5','a6','mp']);
+    primitive(system, 'a5', '⊢A→B');
+    const rejected = ruleProvenance(system, system.getD(name('ump'), false));
+    assert.equal(rejected.valid, false);
+    assert.match(rejected.error, /Invalid meta rule dependency: a5/);
+    assert.deepEqual(rejected.sources, []);
+    const custom = fixture();
+    custom.rules.set('a5', primitive(custom, 'localDistribution', '⊢∀$x:($1→$2)→(∀$x:$1→∀$x:$2)'));
+    const accepted = ruleProvenance(custom, custom.getD(name('ump'), false));
+    assert.deepEqual(ids(accepted), ['a6','localDistribution','mp']);
+    assert.deepEqual(accepted.tags, ['propositional','first-order','custom']);
+});
+
+test('inverse deduction and discharge preserve only the used premise indices', () => {
+    const system = fixture();
+    run(system, 'hyp $1;hyp $2;a1 $1 $3;mp 3 1;m keepArrow');
+    primitive(system, 'localUnused', '⊢Q');
+    primitive(system, 'localUsed', '⊢R');
+    run(system, 'a3 A B;localUnused;localUsed;<keepArrow 1 2 3');
+    const inverse = ids(stepProvenance(system, system.getP('4')));
+    assert.ok(inverse.includes('a3'));
+    assert.ok(inverse.includes('localUsed'), 'the new antecedent is a used premise');
+    assert.equal(inverse.includes('localUnused'), false);
+    run(system, '>keepArrow 1');
+    assert.equal(ids(stepProvenance(system, system.getP('5'))).includes('localUnused'), false);
+    const combined = system.getD(name('<keepArrow(a3,localUnused,localUsed)'), false);
+    assert.deepEqual(ids(ruleProvenance(system, combined)), inverse);
+});
+
 test('discharged conditions and variable scopes do not include unrelated siblings', () => {
     const system = fixture();
     run(system, 'cond A;a3 B C;a1 D E');
@@ -181,6 +226,54 @@ test('nested extensionality scopes retain actual sources within the proof work b
     assert.equal(system.saveContext().props, context.props);
     assert.equal(system.genCmd().join(';'), commands);
     assert.deepEqual(ruleProvenance(system, system.m('qExtensionality')), conclusion);
+});
+
+test('a recorded extensionality theorem remains verifiable inside a second conditional macro', () => {
+    const hs = layer(), system = hs.hilbertSystem;
+    run(system, String.raw`hyp $1↔$2;<.<>1 1;m l;var x;var y;cond x⊂y;cond y⊂x;aext;<a4 5 x;<a4 6 y;<:l(d\c) 3 z;<:l(d\c) 4 z;var z;<a4 8 z;<a4 9 z;.<> 11 12;cd 4;mp 7 13;m saext2`);
+    const original = ruleProvenance(system, system.rules.get('saext2'));
+    ids(original);
+    const commands = String.raw`cond $x⊂$y∧$y⊂$x;./\1 1;./\2 1;saext2;.\acn 4 #x;v.\acn 5 #y;<a4 6 $x;<a4 7 $y;mp 8 2;mp 9 3`;
+    for (const command of commands.split(';')) {
+        run(system, command);
+        ids(stepProvenance(system, system.getLastChildP(null)));
+        if (command === 'saext2') assert.deepEqual(stepProvenance(system, system.getP('4')), original);
+    }
+    const before = stepProvenance(system, system.getP('10'));
+    assert.deepEqual(before.tags, ['propositional','classical','first-order','zfc']);
+    for (const id of ids(original)) assert.ok(ids(before).includes(id), id);
+    assert.equal(permitsProvenance(before, ['propositional','classical','first-order']), false);
+    const recorded = system.m('sNew'), recordedCommands = system.genCmd(recorded.step);
+    assert.deepEqual(ruleProvenance(system, recorded), before);
+    run(system, 'sNew x y');
+    const context = system.saveContext(), liveCommands = system.genCmd();
+    assert.deepEqual(stepProvenance(system, system.getP('1')), before);
+    assert.deepEqual(ruleProvenance(system, recorded), before);
+    assert.equal(system.saveContext().props, context.props);
+    assert.deepEqual(system.genCmd(), liveCommands);
+    assert.deepEqual(system.genCmd(recorded.step), recordedCommands);
+    hs.ruleList.push(...['l','saext2','sNew'].map((name,index) => ({name,uuid:1500+index})));
+    const saved = new Serde(hs, system, hs.ruleList, hs.propListView, hs.ruleListView).serializeRulelist();
+    const restored = layer('');
+    new Serde(restored, restored.hilbertSystem, restored.ruleList, restored.propListView, restored.ruleListView).deserializeRulelist(saved);
+    assert.deepEqual(ruleProvenance(restored.hilbertSystem, restored.hilbertSystem.rules.get('sNew')), before);
+});
+
+test('conditional theorem reuse checks the weakening schema and custom sources', () => {
+    const broken = layer().hilbertSystem;
+    run(broken, 'aext;m theorem;cond P;theorem');
+    primitive(broken, 'a1', '⊢A→B');
+    const rejected = stepProvenance(broken, broken.getP('2'));
+    assert.equal(rejected.valid, false);
+    assert.deepEqual(rejected.sources, []);
+    assert.equal(permitsProvenance(rejected, PROOF_TAGS.map(tag => tag.id)), false);
+
+    const custom = layer().hilbertSystem;
+    run(custom, 'aext;m theorem;cond P;theorem');
+    custom.rules.set('a1', primitive(custom, 'localWeakening', '⊢$1→$2→$1'));
+    const accepted = stepProvenance(custom, custom.getP('2'));
+    assert.deepEqual(ids(accepted), ['aext','localWeakening','mp']);
+    assert.deepEqual(accepted.tags, ['propositional','zfc','custom']);
 });
 
 test('scoped proof reuse ignores unused premises and rechecks changed implicit rules', () => {

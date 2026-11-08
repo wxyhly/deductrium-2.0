@@ -39,6 +39,7 @@ function appendProofTags(host: HTMLElement, value: ProofProvenance) {
         const label = PROOF_TAGS.find(label => label.id === tag);
         badge.textContent = label ? (LangMgr.lang === 'zh' ? label.zh : label.en)
             : LangMgr.lang === 'zh' ? '来源未确认' : 'Unverified sources';
+        badge.title = labels.title;
         labels.appendChild(badge);
     }
     if (labels.hasChildNodes()) host.appendChild(labels);

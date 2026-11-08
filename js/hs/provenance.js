@@ -77,27 +77,6 @@ class Analysis {
         this.original = original;
         this.resolver = createProofResolver(original);
         this.scratch = this.resolver.system;
-        // Nested lifts resolve the same inner transformations repeatedly. Keep
-        // only this analysis's successfully checked proofs, with charged lookups
-        // and an in-progress marker so recursive generation still fails closed.
-        const resolve = this.scratch.getD.bind(this.scratch);
-        const generated = new Map();
-        this.scratch.getD = (ast, withProof = true) => {
-            if (!withProof)
-                return resolve(ast, false);
-            this.resolver.charge();
-            const key = this.resolver.key(ast);
-            if (generated.has(key)) {
-                const cached = generated.get(key);
-                if (!cached)
-                    throw Error("Cyclic proof generation");
-                return cached;
-            }
-            generated.set(key, null);
-            const rule = resolve(ast, true);
-            generated.set(key, rule);
-            return rule;
-        };
         const mcpt = this.scratch.mcpt.bind(this.scratch);
         this.scratch.mcpt = formula => {
             this.tautologyBudget(formula);
@@ -255,26 +234,61 @@ class Analysis {
             }
             return result;
         }
-        const rule = this.scratch.getD(ast, true);
-        if (ast.name === "e") {
-            const result = empty();
-            merge(result, this.name(ast.nodes[0]));
+        // The fixed meta rules transform schemas. Validate their applicability
+        // through the bounded kernel, then compose source summaries instead of
+        // generating and walking another copy of the child's proof.
+        this.scratch.getD(ast, false);
+        const child = this.scratch.getD(ast.nodes[0], false);
+        const summary = this.name(ast.nodes[0]);
+        const result = { sources: new Map(summary.sources), used: new Set(summary.used) };
+        if (ast.name === "<") {
+            this.logicalSources(result, "mp");
+            result.used.add(child.conditions.length);
+        }
+        else if (ast.name === ">") {
+            this.logicalSources(result, "a1", "a2", "mp");
+            result.used.delete(child.conditions.length - 1);
+        }
+        else if (ast.name === "c") {
+            if (!child.conditions.length)
+                this.logicalSources(result, "a1", "mp");
+            else
+                this.logicalSources(result, "a1", "a2", "mp");
+        }
+        else if (ast.name === "v") {
+            if (ast.nodes[0].type === NodeType.ATOM_DNAME && ast.nodes[0].name === "mp") {
+                this.logicalSources(result, "a5", "mp");
+            }
+            else {
+                if (child.conditions.length)
+                    this.logicalSources(result, "a4", "mp");
+                else
+                    result.sources.set("v", "first-order");
+            }
+        }
+        else if (ast.name === "u") {
+            // u first generalizes each premise with a6, then applies v:d.
+            // Reuse that summary so v:mp's a5 special case stays visible.
+            const quantified = this.name(new AST(NodeType.NODE_DNAME, "v", ast.nodes[0]));
+            for (const [id, tag] of quantified.sources)
+                result.sources.set(id, tag);
+            this.logicalSources(result, "a6", "mp");
+        }
+        else
             result.sources.set("e", "first-order");
-            return result;
+        return result;
+    }
+    logicalSources(result, ...ids) {
+        for (const id of ids) {
+            const ast = new AST(NodeType.ATOM_DNAME, id);
+            const rule = this.scratch.getD(ast, false);
+            // The fixed construction assumes these schemas, not merely these
+            // names. A replacement with the same schema retains its own sources.
+            if (schema(rule) !== primitives.get(id)?.schema)
+                throw Error(`Invalid meta rule dependency: ${id}`);
+            for (const [root, tag] of this.name(ast).sources)
+                result.sources.set(root, tag);
         }
-        if (!rule.step?.length) {
-            if (ast.name !== "v")
-                throw Error("Transformed rule has no proof");
-            const result = empty();
-            merge(result, this.name(ast.nodes[0]));
-            result.sources.set("v", "first-order");
-            return result;
-        }
-        // The generated proof has a non-atomic name, so inspect its body here
-        // instead of dispatching back into transformed().
-        const body = Object.create(Object.getPrototypeOf(rule));
-        Object.assign(body, rule, { name: new AST(NodeType.ATOM_DNAME, "@generated") });
-        return this.rule(body);
     }
     layers(step, scope) {
         const ancestors = new Set();
