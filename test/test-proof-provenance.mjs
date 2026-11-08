@@ -479,6 +479,43 @@ test('msbt named, proof and mcpt templates preserve actual sources and external 
     assert.ok(ids(ruleProvenance(system, system.rules.get('substituted'))).includes('localEq'));
 });
 
+test('msbt through an existential quantifier replays the saved proof and preserves its actual sources', () => {
+    const hs = layer(), system = hs.hilbertSystem;
+    run(system, 'mcpt z=z→(z∈y↔z∈x∧¬z=z)↔¬z∈y;a7 z;mp 1 2;m s0');
+    run(system, 'asep x y z ¬z=z;<a4 1 x;msbt>(s0) 2 0');
+    assert.equal(system.props.at(-1).ast.toString(), '∃y:∀z:¬z∈y');
+    assert.equal(system.rules.has('.<>r\\e'), false);
+    const context = system.saveContext(), commands = system.genCmd().join(';');
+    const value = stepProvenance(system, system.props.at(-1));
+    assert.deepEqual(ids(value), ['a1','a2','a3','a4','a5','a7','asep','d<>1','d<>2','d\\e','mcpt','mp','v']);
+    assert.equal(permitsProvenance(value, ['propositional','classical','first-order']), false);
+    assert.equal(permitsProvenance(value, ['propositional','classical','first-order','zfc']), true);
+    assert.deepEqual(system.saveContext(), context);
+    assert.equal(system.genCmd().join(';'), commands);
+    assert.equal(system.rules.has('.<>r\\e'), false);
+    const existentialDefinition = system.rules.get('d\\e');
+    system.rules.delete('d\\e');
+    assert.equal(stepProvenance(system, system.props.at(-1)).valid, false,
+        'a missing existential definition cannot be replaced by a trusted helper name');
+    system.rules.set('d\\e', existentialDefinition);
+    primitive(system, '.<>r\\e', '∀$x:($1↔$2)⊢∃$x:$1↔∃$x:$2');
+    const customCongruence = stepProvenance(system, system.props.at(-1));
+    assert.equal(customCongruence.valid, true);
+    assert.ok(customCongruence.tags.includes('custom'));
+    assert.equal(permitsProvenance(customCongruence, ['propositional','classical','first-order','zfc']), false,
+        'a player supplied congruence must retain its actual custom source');
+    system.rules.delete('.<>r\\e');
+    assert.deepEqual(stepProvenance(system, system.props.at(-1)), value);
+    assert.deepEqual(ruleProvenance(system, system.m('qEmptySet')), value);
+    run(system, 'qEmptySet');
+    assert.deepEqual(stepProvenance(system, system.props.at(-1)), value);
+    hs.ruleList.push(...['s0','qEmptySet'].map((name,index) => ({name,uuid:2000+index})));
+    const serialized = new Serde(hs,system,hs.ruleList,hs.propListView,hs.ruleListView).serializeRulelist();
+    const restored = layer('');
+    new Serde(restored,restored.hilbertSystem,restored.ruleList,restored.propListView,restored.ruleListView).deserializeRulelist(serialized);
+    assert.deepEqual(ruleProvenance(restored.hilbertSystem, restored.hilbertSystem.rules.get('qEmptySet')), value);
+});
+
 test('mcnt unfolds the quantifier renaming proof and keeps sources of a step target', () => {
     const hs = layer(), system = hs.hilbertSystem;
     run(system, 'mcnt ∀x:x=y {z}');

@@ -70,6 +70,19 @@ try {
         await run('sNested0 $x $y');
         assert.equal(await page.evaluate(() => game.hsLayer.hilbertSystem.props.length), 1,
             'the recorded macro remains usable');
+        // A real existential substitution previously referenced a missing helper
+        // while its kernel result and named substitution template were valid.
+        await run('clear;mcpt z=z→(z∈y↔z∈x∧¬z=z)↔¬z∈y;a7 z;mp 1 2;m s0;asep x y z ¬z=z;<a4 1 x;msbt>(s0) 2 0');
+        const substitution = await page.evaluate(async () => {
+            const {stepProvenance} = await import('/js/hs/provenance.js');
+            const hs = game.hsLayer.hilbertSystem;
+            return stepProvenance(hs, hs.getLastChildP(null));
+        });
+        assert.equal(substitution.valid, true, substitution.error);
+        assert.deepEqual(substitution.tags, ['propositional','classical','first-order','zfc']);
+        assert.equal(await page.locator('#propRows [data-proof-tag="unknown"]').count(), 0);
+        await run('m sExistentialSubstitution');
+        assert.deepEqual(await value('sExistentialSubstitution'), substitution);
         const snapshot = await page.evaluate(() => {
             const hs = game.hsLayer.hilbertSystem;
             game.saveload.save();
@@ -81,6 +94,7 @@ try {
             assert.deepEqual(await value(`sNested${round}`), recorded[round],
                 'saved and immediate proof sources agree');
         }
+        assert.deepEqual(await value('sExistentialSubstitution'), substitution);
         assert.deepEqual(await page.evaluate(() => game.hsLayer.hilbertSystem.genCmd()), snapshot);
         await page.locator('button[data-layer="D-layer"]').click();
         // A genuinely unverifiable proof keeps a directly accessible reason.

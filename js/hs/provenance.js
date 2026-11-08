@@ -435,11 +435,32 @@ class Analysis {
             this.resolver.charge(commands.length);
             if (commands.length > 512)
                 throw Error("Meta proof exceeds command budget");
+            // MSBT/MCNT emit this congruence although it is not in the rule
+            // library. Prove it locally from the current existential definition
+            // and congruence macros; never promote its name to a trusted root.
+            if (commands.some(command => command.startsWith("d .<>r\\e ")) && !this.scratch.rules.has(".<>r\\e")) {
+                this.existentialCongruence();
+            }
             // mcpt is a checked classical primitive in the provenance model;
             // fromCmd checks its formula but never constructs its truth-table proof.
             this.scratch.fromCmd(commands.map(command => parser.parse(command, "cmd")));
             const rule = new Deduction(new Set(), new AST(NodeType.ATOM_DNAME, "@meta"), frame.assertions, data.conditions.map(condition => condition.ast), step.ast, this.scratch.props.slice());
             return this.rule(rule);
+        }
+        finally {
+            this.scratch.loadContext(saved);
+        }
+    }
+    existentialCongruence() {
+        const saved = this.scratch.saveContext();
+        try {
+            this.scratch.loadContext(this.scratch.createEmptyContext());
+            const commands = String.raw `hyp ∀$x:($1↔$2);v.<>r~ 1;.<>r\a 2;.<>r~ 3;d\e $x $1;d\e $x $2;.<>s 6;.<>t 5 4;.<>t 8 7`.split(";");
+            this.resolver.charge(commands.length);
+            this.scratch.fromCmd(commands.map(command => parser.parse(command, "cmd")));
+            const rule = new Deduction(new Set(), new AST(NodeType.ATOM_DNAME, ".<>r\\e"), [], [parser.parse("∀$x:($1↔$2)", "wff")], parser.parse("∃$x:$1↔∃$x:$2", "wff"), this.scratch.props.slice());
+            this.rule(rule);
+            this.scratch.rules.set(".<>r\\e", rule);
         }
         finally {
             this.scratch.loadContext(saved);
