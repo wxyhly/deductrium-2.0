@@ -6,6 +6,7 @@ import { HyLayer } from "./hy/gui.js";
 import { blockMap, nameMap, TileBlockType } from "./hy/maploader.js";
 import { LangMgr } from "./lang.js";
 import { ProgressLayer, kbFullId } from "./pg/main.js";
+import { knowledgeId, rewardKnowledgeIds, tileKnowledgeIds } from "./pg/unlocks.js";
 import { SaveLoad } from "./saveload.js";
 import { calcMaxReachOrd, cmp, printOrd } from "./hy/ordinal.js";
 import { getMapPalette } from "./hy/palette.js";
@@ -73,7 +74,8 @@ class Game {
             this.gotRewards = new Set(data.rw);
             this.destructedGates = new Set(data.dg);
             this.gotAchievements = new Set(data.ac);
-            this.unlockedInfos = new Set(data.in);
+            this.unlockedInfos = new Set((Array.isArray(data.in) ? data.in : [])
+                .map(knowledgeId).filter((id) => id !== undefined));
             this.deductrium = data.D ?? 0;
             this.deductriumConsumed = data.DC ?? 0;
             this.tilesParcour = data.tp ?? 0;
@@ -203,15 +205,21 @@ class Game {
     }
     // 解锁知识（通过带 data.info 的方块或获得同名 reward 时调用）
     unlockInfo(id) {
+        this.unlockInfos([id]);
+    }
+    unlockInfos(ids, notify = true) {
         if (gameMode === "creative")
             return;
-        const full = kbFullId(id);
-        // 仅接受知识库条目（sym:/mec: 前缀）；未知 identifier 忽略
-        if (!full.startsWith("sym:") && !full.startsWith("mec:"))
+        let changed = false;
+        for (const id of ids) {
+            const full = knowledgeId(id);
+            if (!full || this.unlockedInfos.has(full))
+                continue;
+            this.unlockedInfos.add(full);
+            changed = true;
+        }
+        if (!changed || !notify)
             return;
-        if (this.unlockedInfos.has(full))
-            return;
-        this.unlockedInfos.add(full);
         this.progressLayer.refreshSymbols();
         this.progressLayer.refreshKnowledge();
         this.saveload.notifySave();
@@ -291,11 +299,13 @@ class Game {
         for (const layer of ["D-layer", "P-layer"])
             this.showLayerButton(layer, false);
         for (const key of this.gotRewards) {
+            this.unlockInfos(rewardKnowledgeIds(key), false);
             // key 可能是 name（经 nameMap 转 hash）或 hash 本身
             const hash = nameMap.get(key) ?? key;
             const block = blockMap.get(hash);
             if (!block)
                 continue; // 地图改版后砖块可能不存在
+            this.unlockInfos(tileKnowledgeIds(block), false);
             block.data ??= {};
             block.data.got = true;
             if (block.type === TileBlockType.Reward && !/^JJZ[OI]-[12]$/.test(block.name ?? "")) {
@@ -303,8 +313,15 @@ class Game {
             }
             this.applyUnlockEffect(block);
         }
-        for (const key of this.destructedGates)
+        for (const key of this.destructedGates) {
+            const block = blockMap.get(nameMap.get(key) ?? key);
+            if (block)
+                this.unlockInfos(tileKnowledgeIds(block), false);
             this.destructGate(key);
+        }
+        const current = this.hyLayer.world.getBlock(this.hyLayer.world.currentTile.join(","));
+        if (current)
+            this.unlockInfos(tileKnowledgeIds(current), false);
         this.updateOrdinalProgress();
         this.hyLayer.needUpdate = true;
     }
@@ -420,10 +437,8 @@ class Game {
             if (!isLoading && block.data.ac)
                 this.finishAchievement(block.data.ac);
             // 知识库：方块带 data.info 解锁该 identifier；奖励名匹配也解锁
-            if (!isLoading && block.data.info)
-                this.unlockInfo(block.data.info);
-            if (!isLoading && block.name)
-                this.unlockInfo(block.name);
+            if (!isLoading)
+                this.unlockInfos(tileKnowledgeIds(block));
             if (!isLoading && !alreadyGot && block.data.getD !== undefined) {
                 this.addDeductrium(block.data.getD);
             }
@@ -503,8 +518,7 @@ class Game {
             if (tile.data?.ac)
                 this.finishAchievement(tile.data.ac);
             // 知识库：门带 data.info 解锁
-            if (tile.data?.info)
-                this.unlockInfo(tile.data.info);
+            this.unlockInfos(tileKnowledgeIds(tile));
             // dG（拆门技能）：能通过的门拆除，变为 road（旧版 delgate 逻辑）
             if (this.gotRewards.has("dG") && tile.type !== TileBlockType.Ordinal && !automaticExit) {
                 this.destructGate(name || hash, tile);
@@ -519,8 +533,8 @@ class Game {
             const block = this.hyLayer.world.getBlock(hash);
             if (block?.data?.ac)
                 this.finishAchievement(block.data.ac);
-            if (block?.data?.info)
-                this.unlockInfo(block.data.info);
+            if (block)
+                this.unlockInfos(tileKnowledgeIds(block));
             this.hyLayer.onchange?.(); // 保留存档通知
         };
     }
