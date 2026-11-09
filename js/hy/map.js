@@ -119,7 +119,7 @@ export const mapData = `
 :%*,3$[[del<>]][=dstrTarget:"port-iff"][=dstr:"#<>(↔)\\n提示：该门后才解锁相应符号"]
 :%*,3,3$[[base-7]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%,1#[d]¬($0→$1)⊢$0
-:%*,3$[[andor]][=ac:"andor"][=unl:true][zh]逻辑符号[n]“∧”（&）与“∨”（|）[en]logical symbols[n]“∧” (&) and “∨” (|)
+:%*,3$[[andor]][=ac:"andor"][=unl:true][zh]逻辑符号[n]“∧”（/\\）与“∨”（\\/）[en]logical symbols[n]“∧” (/\\) and “∨” (\\/)
 :%*,3,2#[[lem]][=ac:"lem"][p](P∨¬P)
 :%*,3,2,2$[[base-8]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :%*,3,2,4$[=getD:9]
@@ -255,7 +255,7 @@ export const mapData = `
 :%*,5,5$[=getD:9]
 :%,2#[p]¬¬A→(¬¬A→A)
 :%*,3@[zh]提示：~~A>(~~A>A)[n]与a2公理[en]Hint: ~~A>(~~A>A)[n]and Axiom a2
-:%,2#[p](¬¬A→¬¬A)→(¬¬A→A))
+:%,2#[p](¬¬A→¬¬A)→(¬¬A→A)
 :%,2$[=getD:5]
 :%,1$[[base-10]][zh]获得奖励：[n]若序数进位基底大于5[n]则将基底减1[en]Obtain Reward:[n]Reduce the limit carry base by 1[n]if the ordinal base is greater than 5
 :neg,3#[[exfalso2]][=ac:"exfalso2"][d]$0⊢(¬$0→$1)
@@ -294,12 +294,12 @@ export const mapData = `
 
 // 一阶逻辑与iff的引子
 
-:dL,1@[=unl:true][zh]拆门技能奖励方块前方[n]可解锁<>、&、|逻辑符号[n]然后有很多推理素奖励[en]You can unlock logical symbols <>, & and |[n]Ahead of the gate destruct skill reward[n]Then, there are many deductriums
+:dL,1@[=unl:true][zh]拆门技能奖励方块前方[n]可解锁↔、∧、∨逻辑符号[n]然后有很多推理素奖励[en]You can unlock logical symbols ↔, ∧ and ∨[n]Ahead of the gate destruct skill reward[n]Then, there are many deductriums
 :dL,1,4#[=payD:100]
 :dL,1,3#[[port-iff]][zh][n]未解锁的闸门无法通过[n]请寻找线索解开闸门[n]#<>(↔)[en][n]Locked gate cannot be passed[n]Find clues to unlock it[n]#<>(↔)
 :dL,1,4,5$[[1st]][=ac:"1st"][=unl:true][zh]一阶逻辑[n]量词公理a4、a5、a6[n]与公理模式元规则mq[n]建议先前往介绍[n]量词、公式那条路[n]后面再来公理a4相关关卡[en]1st-order logic[n]Quantifier Axioms a4, a5, a6[n]and Axiom Schema Meta-rule mq[n]Recommend: first go to the path[n] introducing quantifiers and formulas[n]Then back to the Axiom a4 later
 :dL,1,3,1$[[iff]][=ac:"iff"][=unl:true][zh]当且仅当（互推）[n]逻辑符号“↔”（<>）[en]iff (mutual implication)[n]Logical symbol “↔” (<>)
-:%,5#[p](¬(A→¬B)→C)↔(A→(B→C)))
+:%,5#[p](¬(A→¬B)→C)↔(A→(B→C))
 :%,5$[=getD:20]
 :1st,4#[=payD:50]
 :%,4$[[italic-item]][=unl:true][zh]用斜体区分[n]显示项与公式[en]the use of italics [n]to distinguish terms and formulas.
@@ -329,16 +329,16 @@ export const mapData = `
 :%,5#[p](∀$2:$0) → ∀$2:($1→$0)
 :%,0@[zh]公理a6解读：[n]#nf($0,$1)的值为$0[n]外加验证变量$1不在[n]表达式$0中自由出现[n](nf为not free缩写)[en]Axiom a6 interpretation:[n]Value of #nf($0,$1) is $0[n]with verifying variable $1 not free [n]in expression $0[n]('nf' is for not free)
 :%,5@[zh]若$0中没有一阶逻辑量词[n]则自由出现指$0中含有$1[n][en]If $0 has no first-order logic quantifiers[n]free occurrence means $0 contains $1[n]
-:%,5@[zh]验证#nf(Vx:$0,$1)[n]有两种情况：[n]1.若x为$1，则[n]$1不在Vx:$0中自由出现[n]若$0中有x,我们说[n]x被量词约束[en]To verify #nf(Vx:$0,$1)[n]There's two cases. Frist case:[n]If x is $1, then[n] variable x is not free in Vx:$0[n]If x occurs in $0, we say[n]x bound by quantifier
-:%,0@[zh]2.若x不是$1[n]则#nf(Vx:$0,$1)=[n]Vx:#nf($0,$1)[n]即$1在Vx:$0中是否自由出现[n]取决于$1在$0中是否自由出现[en]2. If x is not $1[n]then #nf(Vx:$0,$1)=[n]Vx:#nf($0,$1)[n]i.e., whether $1 is free in Vx:$0[n]depends on whether $1 is free in $0
+:%,5@[zh]验证#nf(∀x:$0,$1)[n]有两种情况：[n]1.若x为$1，则[n]$1不在∀x:$0中自由出现[n]若$0中有x,我们说[n]x被量词约束[en]To verify #nf(∀x:$0,$1)[n]There's two cases. Frist case:[n]If x is $1, then[n] variable x is not free in ∀x:$0[n]If x occurs in $0, we say[n]x bound by quantifier
+:%,0@[zh]2.若x不是$1[n]则#nf(∀x:$0,$1)=[n]∀x:#nf($0,$1)[n]即$1在∀x:$0中是否自由出现[n]取决于$1在$0中是否自由出现[en]2. If x is not $1[n]then #nf(∀x:$0,$1)=[n]∀x:#nf($0,$1)[n]i.e., whether $1 is free in ∀x:$0[n]depends on whether $1 is free in $0
 :%,5@[zh]若#nf函数验证成功[n]则系统自动删去#nf函数[n]若验证失败系统将报错[en]If #nf function verification succeeds[n]the system automatically removes it[n]If verification fails, the system gets an error
 :%,0@[zh]由于$开头的公式或项[n]在录制宏后可替换成任意值[n]无法确定时[n]#nf函数将保留[en]Since $-prefixed formulas or terms[n]can be replaced with any value in macro usage[n]#nf function remains when there's uncertainty
 :%,0#[[nf]][=ac:"nf"][p](∀x:$1)→(∀x:(∀x:$1))
-:%*,5@[zh]Vx:$1中x被量词约束[n]不会自由出现[n]因此可使用公理a6[en]In Vx:$1, x is bound by quantifier[n]will not occur freely[n]Thus can use axiom a6
+:%*,5@[zh]∀x:$1中x被量词约束[n]不会自由出现[n]因此可使用公理a6[en]In ∀x:$1, x is bound by quantifier[n]will not occur freely[n]Thus can use axiom a6
 :%,0#[p](∀x:$1)→(∀y:(∀x:$1))
 :%*,3,1#[p](∀x:F(x)∈y)→(∀y:(∀x:F(x)∈y))
 :%*,3$[never]
-:%,2@[zh]Vx:$1中y没被量词约束[n]可能在$1中自由出现[n]因此无法使用公理a6[en]In Vx:$1, y is not bound by quantifier[n]may occur freely in $1[n]Thus cannot use axiom a6
+:%,2@[zh]∀x:$1中y没被量词约束[n]可能在$1中自由出现[n]因此无法使用公理a6[en]In ∀x:$1, y is not bound by quantifier[n]may occur freely in $1[n]Thus cannot use axiom a6
 :%,4#[d]#nf($1,y) ⊢ (∀x:$1)→(∀y:(∀x:$1))
 :%,5#[p](∀x:x=z)→(∀y:(∀x:x=z))
 :%*,2$[=getD:10]
@@ -353,7 +353,7 @@ export const mapData = `
 :%,2@[zh]若本来自由出现的变量[n]替换后被量词约束[n]则不可替换[en]If free variable becomes bound[n] by quantifier after replacement[n] this replacement can't be allowed
 :%*,2#[p]∀x:(¬∀y:(x=y)) → ¬∀y:(y=y)
 :%*,2,1$[never]
-:%,3@[zh]例如#sb(~Vy:(x=y),x,y)[n]系统将验证失败[n][en]For example, #sb(~Vy:(x=y),x,y)[n]fails the system check.[n]
+:%,3@[zh]例如#sb(~∀y:(x=y),x,y)[n]系统将验证失败[n][en]For example, #sb(~∀y:(x=y),x,y)[n]fails the system check.[n]
 :%*,1#[p]¬(∀x:(¬∀y:(x=y)) → ¬∀y:(y=y))
 :%*,2,1$[[sysrule]][zh]获取关于系统函数#nf、#rp[n]自动化简规则的提示[en]Get hints about the system functions #nf, #rp,[n]and the automated simplification rules.
 :%*,3@[zh]道理是这个道理[n]但否定挪进去后[n]真相就又变了[n](这边是附加题)[en]The rule is clear, but[n]once the negation is moved in[n]the truth changes again.[n](This part is an extra question)
@@ -367,15 +367,15 @@ export const mapData = `
 
 // 谓词、变量、项教程
 
-:1st,5@[zh]“∀”(\\a)叫做量词[n]量词后紧跟的叫变量[n]冒号后的公式叫[n]该量词的管辖范围[n]整个V$0:$1是公式[en]“∀” (\\a) is called a quantifier.[n]It is followed by a variable.[n]The formula after the colon[n]is the scope of that quantifier.[n]The whole expression V$0:$1 is a formula.
+:1st,5@[zh]“∀”(\\a)叫做量词[n]量词后紧跟的叫变量[n]冒号后的公式叫[n]该量词的管辖范围[n]整个∀$0:$1是公式[en]“∀” (\\a) is called a quantifier.[n]It is followed by a variable.[n]The formula after the colon[n]is the scope of that quantifier.[n]The whole expression ∀$0:$1 is a formula.
 :%*,5@[zh]注意：变量都是“项”[n]不能说某项为真或假[n]只有公式才能讨论其真假[n]纯命题逻辑都是公式[n]即都可判断真假[en]Note: Variables are all "terms"[n]We can't say term is true/false[n]Only formulas can be assigned[n] with True or False[n]Pure propositional logic are all formulas[n]ie, all can be judged true/false
 :%*,0,3#[p](∀$2:($0↔$1))→((∀$2:$0)↔(∀$2:$1))
 :%*,0,3,5$[[I1]][=unl:true][zh]门#I1[en]gate #I1
 :%*,3#[p]∀x:x∈y → ∀x:x∈y
 :%*,2#[[vx=x]][p]∀x:x=x
 :%,4@[zh]谓词属于“∈”（@）与[n]相等“=”只能连接项[n]连接后的整体是公式[n]如x@y与x=y都是公式[n]它们都能谈论真假[en]Predicates like “∈” (@) and[n]equality “=” can only connect terms[n]After connection, the expression[n] becomes formula[n]E.g., x@y and x=y are both formulas[n]They can all be assigned with truth values
-:%*,1@[zh]所有命题逻辑连词符号[n]即>、<>、~、&、|[n]都只能连接公式[n]不能直接连接项[n]连接后的整体也是公式[en]All propositional logic connective[n]symbols, ie, >, <>, ~, &, |[n]can only connect formulas[n]They can't directly connect terms[n]After connection, the expression is also formula
-:%*,1,4@[zh]比如输入Vx:x>x[n]系统会报错[n]因为x出现在V后[n]就判定x为变量[n]而“>”不能连接变量[en]E.g., enter Vx:x>x[n]You will get an error[n]Because x occurs after V as a variable[n]but ">" cannot connect variables
+:%*,1@[zh]所有命题逻辑连词符号[n]即→、↔、¬、∧、∨[n]都只能连接公式[n]不能直接连接项[n]连接后的整体也是公式[en]All propositional logic connective[n]symbols, ie, →, ↔, ¬, ∧, ∨[n]can only connect formulas[n]They can't directly connect terms[n]After connection, the expression is also formula
+:%*,1,4@[zh]比如输入∀x:x>x[n]系统会报错[n]因为x出现在∀后[n]就判定x为变量[n]而“>”不能连接变量[en]E.g., enter ∀x:x>x[n]You will get an error[n]Because x occurs after ∀ as a variable[n]but ">" cannot connect variables
 // :%,4@
 
 :vx=x,5$[[a7]][=ac:"a7"][=unl:true][zh]等词公理a7[en]equational axiom a7
@@ -415,7 +415,7 @@ export const mapData = `
 :%,1@[zh]如果用不惯或未解锁元定理[n]也可使用一阶逻辑大礼包中的[n]“.<>rxx”系列推理宏规则[n]结合“.<>s”、“.<>t”、“.<>1”等[n]手动等价代换得到[en]If not used to or not unlocked metatheorem[n]you can also use ".<>rxx" series macro rules[n]in first-order logic toolkit[n]combine with ".<>s", ".<>t", ".<>1", etc.[n]to manually get equivalent substitution for iff
 :%,1#[=payD:66]
 :%,1@
-:1st,5,3,4$[[dE]][=unl:true][zh]量词符号[n]“∃”(E)[en]quantifier symbol[n]“∃”(E)
+:1st,5,3,4$[[dE]][=unl:true][zh]量词符号[n]“∃”(\\e)[en]quantifier symbol[n]“∃”(\\e)
 :%*,2#[p](∃$0:($1∨$2)) ↔ ((∃$0:$1)∨(∃$0:$2))
 :%*,2,5$[=getD:123]
 :%,5#[d]#nf($1,$0) ⊢ ∃$0:$0=$1
@@ -438,7 +438,7 @@ export const mapData = `
 :mcvt,0#[p](∀$0:($1∧$2)) ↔ ((∀$0:$1) ∧ (∀$0:$2))
 :%,2$[=getD:40]
 :mcvt,3@[zh]条件概括元定理可把[n]定理的所有条件和结论[n]都加上相同的量词[n]同时加强var[en]The Conditional Generalization Metatheorem[n]adds the same quantifier[n]to all premises and the conclusion[n]of a theorem.[n]It also strengthens var.
-:mvt,0@[zh]概括元定理是说[n]若定理的所有条件[n]都没自由出现$0[n]则可单独在结论中[n]加上量词V$0[en]Generalization metatheorem states that[n]if all conditions of a rule[n]have no free occurrence of $0[n]then quantifier V$0 can be added to conclusion
+:mvt,0@[zh]概括元定理是说[n]若定理的所有条件[n]都没自由出现$0[n]则可单独在结论中[n]加上量词∀$0[en]Generalization metatheorem states that[n]if all conditions of a rule[n]have no free occurrence of $0[n]then quantifier ∀$0 can be added to conclusion
 // 分离公理与空集
 
 :aExt,1#[p]∀x:∀y:((∀z:(z∈x↔z∈y))→(x=y))
@@ -476,19 +476,19 @@ export const mapData = `
 :%,1$[[ifft-EU]][=unl:true][zh]替换元定理中[n]可跨越量词E!进行替换[en]Replacement across the quantifier E![n]In the IFF Metatheorem
 :port-rp,1@[zh]后方解锁替换元定理中[n]可跨越量词E!进行替换[en]Go forward to unlock Replacement [n]across the quantifier E! in IFF Metatheorem
 :port-rp,3@[zh]特称元定理可给[n]任何带一个条件的规则[n]的条件和结论都加上[n]相同的存在量词[en]The Existential Metatheorem adds[n]the same existential quantifier[n]to both the condition and conclusion[n]of any rule with one condition
-:port-rp,2@[zh]尝试执行规则">veve.Vcn"[n]试试一键证明[n]“解锁特称元定理”方块[n]旁边的定理[en]Try executing the rule ">veve.Vcn"[n]to proof the theorem next to the[n]"Unlock Particularization Metatheorem" block
+:port-rp,2@[zh]尝试执行规则">veve.\\acn"[n]试试一键证明[n]“解锁特称元定理”方块[n]旁边的定理[en]Try executing the rule ">veve.\\acn"[n]to proof the theorem next to the[n]"Unlock Particularization Metatheorem" block
 :port-rp,5#[d]#nf($1,$z) ⊢ ∀$4:∃$3:∀$2:∃$0:∀$x:$1 →∀$4:∃$3:∀$2:∃$0:∀$z:#sb($1,$x,$z)
 :port-rp,4#[=payD:1e4]
 :%,5$[[met]][=unl:true][zh]特称元定理[en]Existential Metatheorem
 :d<,4@[zh]向前走，有更多关于证明[n]空集存在性的提示[en]Go forward for more hints on proving[n]the existence of the empty set.
-:%,3@[zh]首先把分离公理[n]通过互推替换化简为[n]正常人类使用的形式：[n]Vx:Ey:Vz:[n](z@y <> (z@x & ~z=z))[en]First, simplify the Axiom of Separation[n]through IFF metatheorem into [n]a form read by normal humans:[n]Vx:Ey:Vz:(z@y <> (z@x & ~z=z))
-:%,3@[zh]由于我们通过a7公理[n]知道z=z是对的，因此[n]~z=z是错的，[n]继而有z@x & ~z=z是错的[n]则与之等价的z@y也是错的[en]Since via axiom a7[n] we know z=z is true, thus[n]~z=z is false,[n]thus z@x & ~z=z is false[n]Then equivalent z@y is also false
-:%,3@[zh]具体做法：先证明$zz ⊢ [n]($zy<>($zx&~$zz)) <> ~$zy[n](提示：命题逻辑自动推理[n]元规则可一键完成该证明)[n]然后将$XXX代入具体值[n]使用互推替换即可[en]Specific approach: First prove $zz ⊢ [n]($zy<>($zx&~$zz)) <> ~$zy[n](Hint: Completeness metarule can[n] complete this proof with one click)[n]Then substitute specific values for $XXX[n]use IFF metatheorem
+:%,3@[zh]首先把分离公理[n]通过互推替换化简为[n]正常人类使用的形式：[n]∀x:∃y:∀z:[n](z@y <> (z@x ∧ ~z=z))[en]First, simplify the Axiom of Separation[n]through IFF metatheorem into [n]a form read by normal humans:[n]∀x:∃y:∀z:(z@y <> (z@x ∧ ~z=z))
+:%,3@[zh]由于我们通过a7公理[n]知道z=z是对的，因此[n]~z=z是错的，[n]继而有z@x ∧ ~z=z是错的[n]则与之等价的z@y也是错的[en]Since via axiom a7[n] we know z=z is true, thus[n]~z=z is false,[n]thus z@x ∧ ~z=z is false[n]Then equivalent z@y is also false
+:%,3@[zh]具体做法：先证明$zz ⊢ [n]($zy<>($zx∧~$zz)) <> ~$zy[n](提示：命题逻辑自动推理[n]元规则可一键完成该证明)[n]然后将$XXX代入具体值[n]使用互推替换即可[en]Specific approach: First prove $zz ⊢ [n]($zy<>($zx∧~$zz)) <> ~$zy[n](Hint: Completeness metarule can[n] complete this proof with one click)[n]Then substitute specific values for $XXX[n]use IFF metatheorem
 :d<,2#[[.<i]][=ac:".<i"][p]$0⊂$0
 :%,5$[=getD:30]
 
 :crp,3#[=payD:19]
-:%,5$[[dE!]][=unl:true][zh]唯一存在量词[n]“∃!”(E!)[en]unique existence quantifier[n]“∃!”(E!)
+:%,5$[[dE!]][=unl:true][zh]唯一存在量词[n]“∃!”(\\e!)[en]unique existence quantifier[n]“∃!”(\\e!)
 :%,5#[p](∃!x:∀y:¬y∈x)↔((∃x:∀y:¬(y∈x))∧(∀x:∀z:(((∀y:¬(y∈x))∧∀y:¬(y∈z)) → x=z)))
 :%,5$[=getD:49]
 :%,0@
@@ -521,7 +521,7 @@ export const mapData = `
 :%*,3,1@提示：解锁差集符号“＼”[n]需要先解锁有序数对[n]或重新证明皮亚诺公理
 :%*,3,2$[=getD:4e3]
 :%*,5#[[a@a]][=ac:"a@a"][p]¬(a∈{{a}})
-:%*,5,2@[zh]集合论中直接定义：[n]0={}，S(x)=xU{x}[n]若皮亚诺公理此时[n]不限制只对数推理的话[n]会推出矛盾[en]In set theory, we have definitions: [n]0={} and S(x)=x∪{x}[n]If the Peano axioms[n]are not restricted to natural numbers[n]this leads to a contradiction
+:%*,5,2@[zh]集合论中直接定义：[n]0={}，S(x)=x∪{x}[n]若皮亚诺公理此时[n]不限制只对数推理的话[n]会推出矛盾[en]In set theory, we have definitions: [n]0={} and S(x)=x∪{x}[n]If the Peano axioms[n]are not restricted to natural numbers[n]this leads to a contradiction
 :%*,5,2,1@[zh]若apn5中去掉$0中[n]不自由出现x的条件[n]也能推出矛盾。[en]If the condition that x does not occur freely[n]in $0 is removed from apn5,[n]a contradiction can still be derived.
 :%*,5,2,1,3@[[apn5-err-in]][zh]向前走获得错误的[n]apn5公理apn5x[n]该公理只能在前方[n]门后的区域中使用[en]Go forward and get the incorrect[n]apn5 axiom: apn5x.[n]This axiom can only be used in the area[n]beyond the gate ahead.
 :%*,5,2,1,1@[zh]分离公理中的[n]不自由出现条件[n]取消掉后也能推出矛盾。[en]If the non-free occurrence [n]condition in the Axiom of Separation is removed,[n] a contradiction can also be derived.
@@ -545,41 +545,41 @@ export const mapData = `
 :%,0$[[mc]][=unl:true]自定义常量的公理模式[n]元规则mc
 :%,3@用法：$$0是新常量名[n]该名字不能在[D]或[P]中[n]的约束变量中出现过
 :%,1@$$1为任意的约束变量名，如x[n]$$2则是关于该常量的性质[n]但用$$1来表达
-:%,4@给个例子：重新定义空集[n]$$0：empty[n]$$1：x[n]$$2：Vy:~y@x  
+:%,4@给个例子：重新定义空集[n]$$0：empty[n]$$1：x[n]$$2：∀y:~y@x
 
 :d(),3,4#[d]#nf($x,$z), #nf($y,$z) ⊢[n] $x ∩ $y = {$z∈$x|$z∈$y}
 :%,1$[[dsub]][=unl:true]差集运算符[n]“＼”
-:d(),3,2#[p]¬0∈(N＼{0})
+:d(),3,2#[p]¬0∈(ℕ＼{0})
 // :d(),3,2#($a＼$b)U$b=$aU$b[n]#p
 :d(),3,2,5$[=getD:500]
 
 :d(),1#[p]∀x:∀y:∃d:∀a:∀b:((a∈x∧b∈y)↔(a,b)∈d)
-:d(),1,2$[[dX]][=ac:"dX"][=unl:true][zh]集合[n]笛卡尔积运算[n]“×”(X)[en]the set[n]Cartesian product operation[n]“×”(X).
-:dX,1#[p](1,2)∈N×N
+:d(),1,2$[[dX]][=ac:"dX"][=unl:true][zh]集合[n]笛卡尔积运算[n]“×”(\\x)[en]the set[n]Cartesian product operation[n]“×”(\\x).
+:dX,1#[p](1,2)∈ℕ×ℕ
 :%,1;1;1@..........
 :%,1#[p]∀a:∀b:∀x:(x∈a×b → ∃!m:∃!n:x=(m,n))
 :%*,3#[=payD:2e4]
 :%*,3,5$[[mf]][=unl:true]自定义函数公理模式[n]元规则mf
 :%,1@
-:%,1$[[d()pr]][=unl:true][zh]有序数对投影函数[n]Pr1与Pr2[en]the ordered pair projection[n] functions Pr1 and Pr2.
-:%,1#[p]x = Pr1((x,y))
-:%,1#[p]y = Pr2((x,y))
-:%,2#[p]∀x:(x∈(N＼{0})→∃y:x=S(y))
-:%,1#[p]∀x:(x∈N×{0,1}→(Pr2(x)=0∨Pr2(x)=1))
+:%,1$[[d()pr]][=unl:true][zh]有序数对投影函数[n]pr1与pr2[en]the ordered pair projection[n] functions pr1 and pr2.
+:%,1#[p]x = pr1((x,y))
+:%,1#[p]y = pr2((x,y))
+:%,2#[p]∀x:(x∈(ℕ＼{0})→∃y:x=S(y))
+:%,1#[p]∀x:(x∈ℕ×{0,1}→(pr2(x)=0∨pr2(x)=1))
 :%,1@[zh]ZFC中把整数a-b看成(a,b)[n]其中a与b是自然数[en]In ZFC, the integer a-b is[n] represented as (a,b),[n]where a and b are natural numbers.
 :%,1$[[dfZ]][=unl:true][zh]整数等价类生成函数“Z”[en]the integer equivalence[n] class generating function “Z”.
 :%,1@[zh]若a+d=b+c，则[n](a,b)跟(c,d)表示同一个整数[n]因此ZFC中把整数[n]定义为整个等价类的集合[en]If a+d=b+c, then[n](a,b) and (c,d) represent the same integer.[n]Therefore, in ZFC, integers are defined[n]as the set of the equivalence class.
-:%,1$[[dZ]][=ac:"dZ"][=unl:true][zh]整数集合(Z)[en]the set of[n] integers (Z).
+:%,1$[[dZ]][=ac:"dZ"][=unl:true][zh]整数集合(ℤ)[en]the set of[n] integers (ℤ).
 :%,1#[p]Z((0,0))=Z((1,1))
 :%,1#[p]Z((1,2))=Z((0,1))
 :%*,3@[zh]有难度？绕行的路上给些提示[en]Too difficult? [n]Get some hints [n]along the detour.
-:%*,3,1#[[.Zr]][d]$x∈N,$y∈N,$z∈N⊢Z(($x,$y))=Z(($x+$z,$y+$z))
-:%,2#[d]x1a∈N,x2a∈N,x1b∈N,x2b∈N,y1a∈N,y2a∈N,y1b∈N,y2b∈N,Z((x1a,x2a))=Z((x1b,x2b)),Z((y1a,y2a))=Z((y1b,y2b))⊢Z((x1a+y1a,x2a+y2a))=Z((x1b+y1b,x2b+y2b))
+:%*,3,1#[[.Zr]][d]$x∈ℕ,$y∈ℕ,$z∈ℕ⊢Z(($x,$y))=Z(($x+$z,$y+$z))
+:%,2#[d]x1a∈ℕ,x2a∈ℕ,x1b∈ℕ,x2b∈ℕ,y1a∈ℕ,y2a∈ℕ,y1b∈ℕ,y2b∈ℕ,Z((x1a,x2a))=Z((x1b,x2b)),Z((y1a,y2a))=Z((y1b,y2b))⊢Z((x1a+y1a,x2a+y2a))=Z((x1b+y1b,x2b+y2b))
 :%,1$[[dZ+]][=unl:true][zh]整数加法运算[en]the integer[n] addition operation.
-:%,1#[p]$1∈Z→($2∈Z→($1+$2)∈Z)
-:%,1#[p]$1∈Z→($2∈Z→($1+$2)=($2+$1))
+:%,1#[p]$1∈ℤ→($2∈ℤ→($1+$2)∈ℤ)
+:%,1#[p]$1∈ℤ→($2∈ℤ→($1+$2)=($2+$1))
 :%,1$[[dZ<=]][=unl:true][zh]整数序关系谓词[en]the integer[n] order relation predicate.
-:%,1#[p]($x∈Z∧$y∈Z∧$x≤$y∧$y≤$x)→$x=$y
+:%,1#[p]($x∈ℤ∧$y∈ℤ∧$x≤$y∧$y≤$x)→$x=$y
 :%,2$[[dZ*]][=unl:true][zh]整数乘法运算[en]the integer[n] multiplication operation.
 
 :mf,2@用法：$$0是新函数名[n]该名字不能在[D]或[P]中[n]以谓词形式出现过[n]即出现的$$0(...)是项，不能是公式
@@ -587,16 +587,16 @@ export const mapData = `
 :%,5@$$3则是关于该函数的性质的公式[n]其中$$2代表函数值[n]$$1是函数的参数
 :%,4@$$3则是关于该函数的性质的公式[n]其中$$2代表函数值[n]$$1是函数的参数
 :%*,2@注意：这里函数值[n]完全没说唯一性[n]f(...)只代表是[n]满足$$3关系的某个函数值
-:%,4@给个例子：重新定义幂集函数[n]$$0：powerset[n]$$1：x[n]$$2：a[n]$$3：Vn:(n<x<>n@a) 
+:%,4@给个例子：重新定义幂集函数[n]$$0：powerset[n]$$1：x[n]$$2：a[n]$$3：∀n:(n⊂x<>n@a)
 
 
 :.Zr,5$[[dZn]][=unl:true][zh]整数常数定义[n]如dZ0/dZ-1/dZ2[n]将引入整数+0/-1/+2[en]the integer constant definitions[n]such as dZ0/dZ-1/dZ2.[n]This introduces the integers +0/-1/+2.
 :.Zr,2$[=getD:5e3]
-:%,1#[d]$x∈N,$y∈N,$z∈N⊢Z(($x,$y))=Z(($z,0))↔$x=$y+$z
+:%,1#[d]$x∈ℕ,$y∈ℕ,$z∈ℕ⊢Z(($x,$y))=Z(($z,0))↔$x=$y+$z
 :%,1$[=getD:5e3]
-:%,1#[d]$x∈N,$y∈N,$z∈N⊢Z(($x,$y))=Z((0,$z))↔$y=$x+$z
+:%,1#[d]$x∈ℕ,$y∈ℕ,$z∈ℕ⊢Z(($x,$y))=Z((0,$z))↔$y=$x+$z
 :%,1$[=getD:5e3]
-:%,1#[d]$x∈N,$y∈N⊢$x≤$y∨$x≥$y
+:%,1#[d]$x∈ℕ,$y∈ℕ⊢$x≤$y∨$x≥$y
 :%,1#[=payD:1e5]
 
 // :dX,1#~(1,0)@NX(N\{0})[n]#p
@@ -604,7 +604,7 @@ export const mapData = `
 
 :.pn1,3@[zh]我们将在集合论框架下[n]实现皮亚诺公理系统[en]We'll implement the Peano Axiom System[n]within the framework of set theory.
 :%,1;2;1@
-:%,1@[zh]空集相当于0[n]后继S(x)相当于xU{x}[en]The empty set is equivalent to 0.[n]The successor S(x) is[n] equivalent to xU{x}.
+:%,1@[zh]空集相当于0[n]后继S(x)相当于x∪{x}[en]The empty set is equivalent to 0.[n]The successor S(x) is[n] equivalent to x∪{x}.
 :%,1@[zh]要将ω与ℕ两者等同[n]就要重新“证明”5个公理[en]To equate ω and ℕ,[n]we must “prove” the 5 axioms again.
 :%,1@
 :%,1#[[.pn2]][p]∀n:(n∈ω → n∪{n}∈ω)
@@ -625,44 +625,44 @@ export const mapData = `
 
 :.pn4,5,5#[=payD:3e3]
 :%,3@
-:%*,3@[zh]从前提易得x@yU{y}[n]因此要么x=y要么x@y[n]正则公理可证x@y不可能[n]因此x=y得证[en]It is easily derived from the premise that x@yU{y}.[n]Therefore, either x=y or x@y.[n]The Axiom of Regularity[n] proves x@y is impossible.[n]Thus, x=y is proven.
+:%*,3@[zh]从前提易得x@y∪{y}[n]因此要么x=y要么x@y[n]正则公理可证x@y不可能[n]因此x=y得证[en]It is easily derived from the premise that x@y∪{y}.[n]Therefore, either x=y or x@y.[n]The Axiom of Regularity[n] proves x@y is impossible.[n]Thus, x=y is proven.
 :%,2@[zh]提示还不够？[n]没事，继续付费嘛！[en]Not enough hints?[n]No worries, continue paying!
 :%,2#[=payD:3e3]
 :%,3@
-:%,3@[zh]因为x跟y的地位对称[n]所以同样可得到y@x[n]即：若~x=y，有x@y&y@x成立。[n]易证集合{x,y}违背了正则公理[n]说明假设~x=y错误[en]Because x and y are symmetric,[n]we can similarly get y@x.[n]That is: If ~x=y,[n] then x@y & y@x holds.[n]It is easily proven that the set [n]{x,y} violates the Axiom of Regularity,[n]which shows that[n] the assumption ~x=y is false.
+:%,3@[zh]因为x跟y的地位对称[n]所以同样可得到y@x[n]即：若~x=y，有x@y∧y@x成立。[n]易证集合{x,y}违背了正则公理[n]说明假设~x=y错误[en]Because x and y are symmetric,[n]we can similarly get y@x.[n]That is: If ~x=y,[n] then x@y ∧ y@x holds.[n]It is easily proven that the set [n]{x,y} violates the Axiom of Regularity,[n]which shows that[n] the assumption ~x=y is false.
 
 :.pn2,5@[zh]侧面买提示[en]Buy a hint on the side
 :%,3#[=payD:3e3]
 :%,3@
-:%,3@[zh]由omega定义可知[n]x属于omega等价于[n]x属于任意一个归纳集S[n]对xU{x}也同理[n]x@omega推出x@S[n]归纳集定义可知[n]x@S能推出xU{x}@S[en]From the definition of omega,[n] we know that x is [n]an element of omega if and only if[n]x is an element of any inductive set S.[n]The same applies to xU{x}.[n]x@omega implies x@S.[n]From the definition of an inductive set,[n] we know that x@S implies xU{x}@S.
+:%,3@[zh]由ω定义可知[n]x属于ω等价于[n]x属于任意一个归纳集S[n]对x∪{x}也同理[n]x@ω推出x@S[n]归纳集定义可知[n]x@S能推出x∪{x}@S[en]From the definition of ω,[n] we know that x is [n]an element of ω if and only if[n]x is an element of any inductive set S.[n]The same applies to x∪{x}.[n]x@ω implies x@S.[n]From the definition of an inductive set,[n] we know that x@S implies x∪{x}@S.
 :.pn5,5,0@[zh]侧面买提示2[en]Buy hint 2 on the side.
 :%,3#[=payD:4e3]
 :%,3@
-:%,3@[zh]自然数是最小的归纳集[n]因此{x@omega|P(x)}=omega[n]所以P(x)对所有自然数成立[en]The natural numbers are the smallest inductive set.[n]Therefore, {x@omega|P(x)}=omega.[n]So, P(x) holds for all natural numbers.
+:%,3@[zh]自然数是最小的归纳集[n]因此{x@ω|P(x)}=ω[n]所以P(x)对所有自然数成立[en]The natural numbers are the smallest inductive set.[n]Therefore, {x@ω|P(x)}=ω.[n]So, P(x) holds for all natural numbers.
 :.pn5,5@[zh]侧面买提示1[en]Buy hint 1 on the side.
 :%,3#[=payD:5e3]
 :%,3@
-:%,3@[zh]归纳集指满足{}@x且[n]Va:(a@x>aU{a}@x)的集合[n]若已知P(0)、Vx:(P(x)>P(xU{x}))[n]可证{x@omega|P(x)}是个归纳集[en]An inductive set is a set [n]that satisfies {}@x and[n]Va:(a@x > aU{a}@x).[n]If P(0) and Vx:(P(x) > P(xU{x})) are given,[n]we can prove that {x@omega|P(x)} is an inductive set.
+:%,3@[zh]归纳集指满足{}@x且[n]∀a:(a@x>a∪{a}@x)的集合[n]若已知P(0)、∀x:(P(x)>P(x∪{x}))[n]可证{x@ω|P(x)}是个归纳集[en]An inductive set is a set [n]that satisfies {}@x and[n]∀a:(a@x > a∪{a}@x).[n]If P(0) and ∀x:(P(x) > P(x∪{x})) are given,[n]we can prove that {x@ω|P(x)} is an inductive set.
 
-:.pn5,2,2#[d]$x∈N,$y∈N ⊢($x≤$y∧¬$x=$y) ↔ $x∈$y
+:.pn5,2,2#[d]$x∈ℕ,$y∈ℕ ⊢($x≤$y∧¬$x=$y) ↔ $x∈$y
 :%,5$[=getD:3e4]
 
-:aReg,3#[p]∃quiv(ω,ω∪{ω})
-:%,1@[zh]提示：omega、Equiv[n]的定义分别在[n]序数ω^ω+ω^2与[n]序数ω^ω^ω附近[en]Hint: Definitions of omega、Equiv are [n]respectively near ordinal [n]ω^ω+ω^2 and ordinal ω^ω^ω
+:aReg,3#[p]Equiv(ω,ω∪{ω})
+:%,1@[zh]提示：ω、Equiv[n]的定义分别在[n]序数ω^ω+ω^2与[n]序数ω^ω^ω附近[en]Hint: Definitions of ω、Equiv are [n]respectively near ordinal [n]ω^ω+ω^2 and ordinal ω^ω^ω
 :%,2$[=getD:1.5e6]
 :%,1@[zh]提示：利用反证法[n]假设存在双射r，则可[n]通过“对角线法则”[n]构造矛盾[en]Hint: Use proof by contradiction[n]Assume bijection r exists, then[n]construct contradiction via "diagonal method"
-:%,1#[p]¬∃quiv(ω,Pow(ω))
+:%,1#[p]¬Equiv(ω,pow(ω))
 :%,1$[[delAl]][=dstrTarget:"Aleph"][=ac:"delAl"][=dstr:"#א"]
 :%,1$[=getD:1.2345678899999999e7]
 :%,1@[zh]提示：门#א在序数的尽头之后[en]Hint: Gate #א is beyond end of ordinals
-:aChoice,2#[[vwo]][=ac:"vwo"][p]∀x∃r:WellOrder(x, r)
+:aChoice,2#[[vwo]][=ac:"vwo"][p]∀x:∃r:WellOrder(x, r)
 :%*,1@[zh]提示：解锁WellOrder(良序)的定义[n]需要到达序数ω^(ω2)[n]（前往该序数需在[n]解锁并集公理的不远处[n]用替代公理证明[n]{ω,ω+1,ω+2,...}[n]的存在性）[en]Hint: Unlock WellOrder definition[n]Need to reach ordinal ω^(ω2)[n](To get there, near unlocked union axiom[n]use replacement axiom to prove[n]{ω,ω+1,ω+2,...}[n]existence)
 :%,2$[=getD:4.2e8]
 // 并集、幂集、无穷公理、序数之门
-:empty,3@[zh]卡住了？前往序数[n]ω³+ω²3+ω5+7查看[n]证明并集符号U合法性的提示[en]Got Stucked? Go to the ordinal[n]ω³+ω²3+ω5+7 to see a hint [n]for proving the legality[n] of the union symbol U.
+:empty,3@[zh]卡住了？前往序数[n]ω³+ω²3+ω5+7查看[n]证明并集符号∪合法性的提示[en]Got Stucked? Go to the ordinal[n]ω³+ω²3+ω5+7 to see a hint [n]for proving the legality[n] of the union symbol ∪.
 :empty,2$[[aUnion]][=unl:true][zh]ZFC集合论[n]并集公理(aUnion)[en]ZFC set theory[n]axiom of union (aUnion)
 :%,5#[p]∀x:∀y:∃z:∀w:(w∈z ↔ (w∈x ∨ w∈y))
-:%*,5$[[dU]][=unl:true][zh]并集公理定义的“Union”函数[n]与二元函数符号“U”[en]the “Union” function [n]defined by the Axiom of Union[n]and the binary function symbol “U”.
+:%*,5$[[dU]][=unl:true][zh]并集公理定义的“union”函数[n]与二元函数符号“∪”[en]the “union” function [n]defined by the Axiom of Union[n]and the binary function symbol “∪”.
 :%,2$[[aPow]][=unl:true][zh]ZFC集合论[n]幂集公理(aPow)[en]ZFC set theory[n]axiom of power set (aPow)
 :aUnion,4#[p]∀x:∃y:∀z:(z∈y ↔ z⊂x)
 :%,1$[[base5]][zh]将序数进位基底[n]降至5[n](提示：到达在#ω门后的[n]序数ω^ω后才能[n]解锁无穷公理)[en]Reduce ordinal base to 5[n](Hint: After reaching ordinal ω^ω behind gate #ω[n]you can unlock axiom of infinity)
@@ -713,49 +713,49 @@ export const mapData = `
 :%*,3#[p]3+4=7
 :%*,2#[p]4+3=7
 :%*,3,1$[=getD:111]
-:%*,4#[[commu+]][=ac:"commu+"][p]$0∈N→($1∈N→$0+$1=$1+$0)
+:%*,4#[[commu+]][=ac:"commu+"][p]$0∈ℕ→($1∈ℕ→$0+$1=$1+$0)
 :%*,4,5$[=getD:1.11e3]
 :%,1#[[2x2]][=ac:"2x2"][p]2*2=4
-:%,1#[p]∀x:(x∈N→x*0=0)
-:%,1#[p]$0∈N→$0*1=$0
-:%,1#[p]$0∈N→$0*3=$0+($0+$0)
-:%,1#[[commux]][p]$1∈N→($2∈N→$1*$2=$2*$1)
-:%,1#[[xdistr]][=ac:"xdistr"][p]$1∈N→($2∈N→($3∈N→($1+$2)*$3=($1*$3)+($2*$3)))
-:%*,0#[[3<4]][=ac:"3<4"][p]∀x:(x∈N→¬(4+x=3))
-:%,1#[p]∀x:(x∈N→¬(4+x=0))
-:%,1#[p]∀x:(x∈N→¬(4+x=1))
+:%,1#[p]∀x:(x∈ℕ→x*0=0)
+:%,1#[p]$0∈ℕ→$0*1=$0
+:%,1#[p]$0∈ℕ→$0*3=$0+($0+$0)
+:%,1#[[commux]][p]$1∈ℕ→($2∈ℕ→$1*$2=$2*$1)
+:%,1#[[xdistr]][=ac:"xdistr"][p]$1∈ℕ→($2∈ℕ→($3∈ℕ→($1+$2)*$3=($1*$3)+($2*$3)))
+:%*,0#[[3<4]][=ac:"3<4"][p]∀x:(x∈ℕ→¬(4+x=3))
+:%,1#[p]∀x:(x∈ℕ→¬(4+x=0))
+:%,1#[p]∀x:(x∈ℕ→¬(4+x=1))
 :1+1,3,5@[zh]证加法交换律[n]需要用数学归纳法apn5[n]若不会证[n]请向前走看教程[en]Proving additive commutativity[n]need axiom of induction apn5[n]If you get stucked[n]Go forward for tutorial
-:%,5@[zh]首先证明对0成立[n]Vy:(y@N>0+y=y+0)[n]提示：证明该命题[n]也需要数学归纳法[en]First prove holds for 0[n]Vy:(y@N>0+y=y+0)[n]Hint: Prove this proposition[n]Also need induction (apn5)
-:%,0#[p]∀y:(y∈N→0+y=y)
-:%,5#[p]∀x:∀y:(x∈N→(y∈N→(x+y=y+x →S(x+y)=S(y+x))))
-:%,0#[p]∀x:∀y:(x∈N→(y∈N→S(y)+x=S(y+x)))
+:%,5@[zh]首先证明对0成立[n]∀y:(y@ℕ>0+y=y+0)[n]提示：证明该命题[n]也需要数学归纳法[en]First prove holds for 0[n]∀y:(y@ℕ>0+y=y+0)[n]Hint: Prove this proposition[n]Also need induction (apn5)
+:%,0#[p]∀y:(y∈ℕ→0+y=y)
+:%,5#[p]∀x:∀y:(x∈ℕ→(y∈ℕ→(x+y=y+x →S(x+y)=S(y+x))))
+:%,0#[p]∀x:∀y:(x∈ℕ→(y∈ℕ→S(y)+x=S(y+x)))
 :%,5@[zh]下面是重点：消去量词[n]看似直接使用两次[n]“<a4”规则即可消去量词[n]但$0或$1可能是y或x[n]因此可能一个变量被替换两次[en]The key point: Eliminating quantifiers.[n]It seems that applying[n] the "<a4" rule twice can work,[n]but $0 or $1 might be y or x,[n] may leading to substitution twice.
-:%,0#[[elV3]][=ac:"elV3"][p]$0∈N→($1∈N→S($0)+$1=S($0+$1))
-:3<4,1#[[5R6]][=ac:"5R6"][p]∀x:(x∈N→¬(x*5=6))
+:%,0#[[elV3]][=ac:"elV3"][p]$0∈ℕ→($1∈ℕ→S($0)+$1=S($0+$1))
+:3<4,1#[[5R6]][=ac:"5R6"][p]∀x:(x∈ℕ→¬(x*5=6))
 :3<4,2$[=getD:3.4e3]
-:%*,2#[p]∀y:(y∈N→∃x:y*(y+1)=2*x)
+:%*,2#[p]∀y:(y∈ℕ→∃x:y*(y+1)=2*x)
 :%*,2,5$[=getD:4.321e3]
-:%,1#[p]∀x:(x∈N→¬(x+5=1))
-:%*,3$[[d<=]][=unl:true][zh]序关系谓词符号[n]“≤”(<=)与“≥”(>=)[en]the order relation[n] predicate symbols[n]“≤”(<=) and “≥”(>=).
-:%*,2#[p]$x∈N→$x≤$x
+:%,1#[p]∀x:(x∈ℕ→¬(x+5=1))
+:%*,3$[[d<=]][=unl:true][zh]序关系谓词符号[n]“≤”(\\<=)与“≥”(\\>=)[en]the order relation[n] predicate symbols[n]“≤”(\\<=) and “≥”(\\>=).
+:%*,2#[p]$x∈ℕ→$x≤$x
 :%*,2,1#[=payD:1.2e5]
-:%*,2,2#[p]($x∈N∧$y∈N∧$x≤$y∧$y≤$x)→$x=$y
+:%*,2,2#[p]($x∈ℕ∧$y∈ℕ∧$x≤$y∧$y≤$x)→$x=$y
 :%*,2,2,5$[=getD:2.1e3]
-:%*,2,2,1#[p]($x∈N∧$y∈N∧$z∈N∧$x≤$y∧$y≤$z)→$x≤$z
+:%*,2,2,1#[p]($x∈ℕ∧$y∈ℕ∧$z∈ℕ∧$x≤$y∧$y≤$z)→$x≤$z
 :%*,2,2,1,5$[=getD:2.2e3]
-:%*,2,2,1,2#[p]($x∈N∧$y∈N∧$z∈N∧$x≤$y)→$x+$z≤$y+$z
+:%*,2,2,1,2#[p]($x∈ℕ∧$y∈ℕ∧$z∈ℕ∧$x≤$y)→$x+$z≤$y+$z
 :%*,2,2,1,2,5$[=getD:2.3e3]
-:%*,2,2,1,2,1#[p]($x∈N∧$y∈N∧$z∈N∧$x+$z≤$y+$z)→$x≤$y
+:%*,2,2,1,2,1#[p]($x∈ℕ∧$y∈ℕ∧$z∈ℕ∧$x+$z≤$y+$z)→$x≤$y
 :%*,2,2,1,2,1,4$[=getD:2.4e3]
-:%*,2,2,1,2,1,1#[p]($x∈N∧$y∈N)→$x≤$x*S($y)
+:%*,2,2,1,2,1,1#[p]($x∈ℕ∧$y∈ℕ)→$x≤$x*S($y)
 :%*,2,2,1,2,1,1,5$[=getD:2.5e3]
-:%*,2,2,1,2,1,1,1#[p]($x∈N∧$y∈N∧$z∈N∧$x≤$y)→$x*$z≤$y*$z
+:%*,2,2,1,2,1,1,1#[p]($x∈ℕ∧$y∈ℕ∧$z∈ℕ∧$x≤$y)→$x*$z≤$y*$z
 :%*,2,2,1,2,1,1,1,4$[=getD:2.6e3]
-:%*,2,2,1,2,1,1,1,1#[p]($x∈N∧$y∈N∧$z∈N∧$x*S($z)≤$y*S($z))→$x≤$y
-:%*,2,2,1,2,1,1,1,1,1$[[ddiv]][=unl:true][zh]整除谓词“∣”(/|)[en]the divisibility[n] predicate “∣”(/|).
-:%*,2,2,1,2,1,1,1,1,1,1#[p]x∈N→((1∣x)∧(x∣0))
+:%*,2,2,1,2,1,1,1,1#[p]($x∈ℕ∧$y∈ℕ∧$z∈ℕ∧$x*S($z)≤$y*S($z))→$x≤$y
+:%*,2,2,1,2,1,1,1,1,1$[[ddiv]][=unl:true][zh]整除谓词“∣”(\\d)[en]the divisibility[n] predicate “∣”(\\d).
+:%*,2,2,1,2,1,1,1,1,1,1#[p]x∈ℕ→((1∣x)∧(x∣0))
 
-:%,1#[p]∀x:(x∈N→¬(x*5=1))
+:%,1#[p]∀x:(x∈ℕ→¬(x*5=1))
 :%*,2#[=payD:5e3]
 :%*,2,5$[[kit+*]][zh]获得常见[n]加法乘法性质定理[n]大礼包！[en]Obtain a tookit of common[n]theorems on the properties of[n] addition and multiplication!
 :%,1$[=getD:5.1e3]
@@ -772,18 +772,18 @@ export const mapData = `
 :%*,3$[[mprd]][=unl:true]自定义谓词公理模式[n]元规则mprd
 :%*,4#[p]¬Prime(4)
 :%*,4,5$[=getD:4e3]
-:%*,4,4#[p]∀z:((z∈N∧¬z=0∧z≤3) → z∣6)
-:%*,4,4,4#[[ex!]][=ac:"ex!"][p]∀x:∃y:(¬y=0∧∀z:((x∈N∧z∈N∧¬z=0∧z≤x) → (z∣y)))
+:%*,4,4#[p]∀z:((z∈ℕ∧¬z=0∧z≤3) → z∣6)
+:%*,4,4,4#[[ex!]][=ac:"ex!"][p]∀x:∃y:(¬y=0∧∀z:((x∈ℕ∧z∈ℕ∧¬z=0∧z≤x) → (z∣y)))
 :%*,4,4,4,5$[=getD:1.23456e5]
 :%*,2#[[prm7]][=ac:"prm7"][p]Prime(7)
 :%*,2,1$[=getD:7e3]
-:%*,2,2#[p]∀x:∀y:((x∈N∧y∈N∧¬x=0∧¬x=1)→(x∣y→¬(x∣y+1)))
-:%*,2,2,2#[[infprm]][=ac:"infprm"][p]∀x:(x∈N→∃y:(Prime(y) ∧ y≥x))
+:%*,2,2#[p]∀x:∀y:((x∈ℕ∧y∈ℕ∧¬x=0∧¬x=1)→(x∣y→¬(x∣y+1)))
+:%*,2,2,2#[[infprm]][=ac:"infprm"][p]∀x:(x∈ℕ→∃y:(Prime(y) ∧ y≥x))
 :%*,2,2,2,1$[=getD:9.99e5]
 
 :mprd,3@用法：$$0是新谓词名[n]该名字不能在[D]或[P]中[n]以函数的形式出现过[n]即出现的$$0(...)是公式，不能是项
 :%,3@$$1是变量列表[n]是几元谓词就输入几个变量[n]如x,y,z[n]$$2是关于它们的性质的公式
-:%,3@例如定义三元谓词neq3表示[n]“三者两两不相等”[n]则$$0：neq3[n]$$1：x,y,z[n]$$2：~x=y&~x=z&~y=z
+:%,3@例如定义三元谓词neq3表示[n]“三者两两不相等”[n]则$$0：neq3[n]$$1：x,y,z[n]$$2：~x=y∧~x=z∧~y=z
 // inconsist axioms
 
 :apn5-err-in,1#[zh]退出该门前请[n]清除所有依赖错误公理[n]的定理与规则！[n]然后执行“del apn5x”[n](该门为自动门，且无法被拆)[n]#imm[en]Before exiting this gate,[n]please clear all props and rules[n]that rely on the incorrect axiom![n]Then execute “del apn5x”[n](This gate is automatic and cannot be destructed)[n]#imm
@@ -1717,9 +1717,9 @@ export const mapData = `
 1,2,1,4,4,1,2,2,4,4,1,2,4,3,2$[[dOrder]][=unl:true][zh]全序(Order)与[n]良序(WellOrder)[n]定义[en]definitions of Order and WellOrder
 // w^w^w+1
 1,2,1,4,3,3,1,3$[[dEquiv]][=unl:true][zh]双射(Equiv)谓词的定义[en]definition of bijection (Equiv) predicate
-:%,5#[p]∀a:∀b:∃quiv({a},{b})
+:%,5#[p]∀a:∀b:Equiv({a},{b})
 :%,5$[=getD:1.1e6]
-:dEquiv,5,0,4,2$[[dPow]][=unl:true]幂集(Pow)函数的定义
+:dEquiv,5,0,4,2$[[dPow]][=unl:true]幂集(pow)函数的定义
 // :%,1,2,3$[[mcf]]解锁自定义递归函数[n]的公理模式[n]m
 // w^2*3+w4+7
 1,2,2,1,2,3,1,2,3,1,2,3,1,3,1,3,1,3,1,3,2,2,2,2,2$[[ttord]][=unl:true][zh]类型层中的[n]序数类型Ord[en]ordinal type (Ord) in type layer
@@ -1728,13 +1728,13 @@ export const mapData = `
 1,2,1,4,3,4,4,1,4,3,2$[[base2]][zh]将序数进位基底[n]降至2[en]Reduce ordinal base to 2
 // w^3+w^23+w5+7
 1,2,2,1,2,2,3,1,2,3,1,2,3,1,2,3,1,3,1,3,1,3,1,3,1,3,2,2,2,2,2,1,3@[zh]你终于找到这里来啦！[n]并集公理是说[n]每个集合x的元素（也是集合）[n]中的所有元素能放在一起[n]构成新集合[en]You finally found your way here![n]The Axiom of Union says[n]that all elements of the elements [n](which are also sets)[n]of every set x can be put together[n]to form a new set.
-:%,3@[zh]我们还需要结合分离公理aSep[n]得到不包含其它元素[n]的集合Union(x)[en]We also need to combine this [n]with the Axiom of Separation (aSep)[n]to obtain the set Union(x)[n]which contains no other elements.
+:%,3@[zh]我们还需要结合分离公理aSep[n]得到不包含其它元素[n]的集合union(x)[en]We also need to combine this [n]with the Axiom of Separation (aSep)[n]to obtain the set union(x)[n]which contains no other elements.
 :%*,2@[zh]这听起来有点复杂[n]你可以花钱买这个引理[n]它还能构造幂集、[n]自然数集等集合哦[en]This sounds a bit complicated.[n]You can buy this lemma;[n]it can also construct the power set,[n] natural numbers, and other sets.
 :%*,2,5#[d]∃x:∀z:(#nf($0,x) → z∈x)⊢∃!x:∀z:(z∈x ↔ #nf($0,x))
 :%*,2,5,2$[[.filter]][=unl:true][zh]引理“.filter”[en]the lemma ".filter"
 :%*,2,4#[=payD:3e3]
 
-:%,3@[zh]我们这样构造aUb：[n]Union({a,b})[en]We can construct [n]"aUb" by: Union({a,b})
+:%,3@[zh]我们这样构造a∪b：[n]union({a,b})[en]We can construct [n]"a∪b" by: union({a,b})
 //w^(w^w+w)
 1,2,1,4,3,2,4,3,1#[=payD:1.111e6]
 :%,5$[[stepw]][=unl:true][zh]技能[n]将能前往的最大序数[n]的后继运算提升至指数[en]skill[n]Upgrade the successor operation of 、nthe maximum reachable ordinal to exponential

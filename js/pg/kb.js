@@ -14,7 +14,7 @@ export const knowledgeBase = {
         "∃!ₛ": { ascii: "\\e!@", name: "[zh]有界唯一存在量词：在集合 A 中存在唯一 x 使 P(x) 成立[en]Bounded unique existence: a unique x in set A makes P(x) hold" },
         "∈": { ascii: "@", name: "[zh]属于关系：元素属于集合[en]Membership: element belongs to a set" },
         "=": { ascii: "=", name: "[zh]相等：两个项相等[en]Equality: two terms are equal" },
-        "⊂": { ascii: "\\c", name: "[zh]真子集：集合被另一集合严格包含[en]Proper subset: strictly contained in" },
+        "⊂": { ascii: "\\c", name: "[zh]子集：集合的每个元素都属于另一集合（可相等）[en]Subset: every element belongs to the other set (equality allowed)" },
         "＜": { ascii: "\\<", name: "[zh]小于[en]Less than" },
         "＞": { ascii: "\\>", name: "[zh]大于[en]Greater than" },
         "≤": { ascii: "\\<=", name: "[zh]小于等于[en]Less than or equal" },
