@@ -1,0 +1,56 @@
+/* Authoring workflow sections. Scoped to .author-* so editor globals stay untouched. */
+.author-section{margin:0;padding:12px 0;border:0;border-radius:0;box-shadow:none;background:none}
+.task-section>*+.author-section,.author-section+.author-section,.author-section+.panel-group,.panel-group+.author-section{border-top:1px solid var(--line)}
+details.author-section>summary{padding:2px 0;font-size:13px;font-weight:650}
+details.author-section[open]>summary{margin-bottom:6px}
+.author-section h3{font-size:13px;margin:10px 0 4px}
+.author-note{color:var(--muted);font-size:11px;line-height:1.5;margin:4px 0}
+.author-status{font-size:12px;color:var(--muted);margin:6px 0;min-height:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.author-status:empty{display:none}
+.author-status[data-error=true]{color:var(--danger)}
+.author-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
+.author-row>label{display:flex;align-items:center;gap:6px;margin:0;font-size:12px;color:var(--muted);flex:1;min-width:0}
+.author-row>label>input,.author-row>label>select{color:var(--ink);min-height:32px;padding:5px 6px;width:auto;flex:1;min-width:0}
+.author-grow{flex:1 1 100%}
+.author-section button{font-size:12px;min-height:32px;padding:4px 8px}
+.author-section input,.author-section select,.author-section textarea{min-height:32px;font-size:13px}
+.author-section textarea{font-family:ui-monospace,"Microsoft YaHei",monospace;line-height:1.5}
+.author-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.author-check input{width:16px;height:16px}
+.author-list{display:grid;gap:4px;margin:6px 0;max-height:280px;overflow:auto;scrollbar-width:thin}
+.author-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;align-items:center;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:var(--field)}
+.author-item[data-severity=error]{border-color:var(--danger)}
+.author-item[data-severity=warning]{border-color:#b67a2d}
+.author-item-main{min-width:0;display:grid;gap:1px}
+.author-item-main strong,.author-item-main span,.author-item-main small{overflow-wrap:anywhere}
+.author-item-main small,.author-meta{color:var(--muted);font-size:11px}
+.author-item button{justify-self:end}
+.author-diff{font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:2px 0 0;color:var(--ink)}
+.author-diff del{color:var(--danger);text-decoration:line-through}
+.author-diff ins{color:var(--accent);text-decoration:none}
+.author-form{display:grid;gap:2px;margin:6px 0;padding:8px;border:1px dashed var(--line);border-radius:6px}
+.author-form label{margin:4px 0;font-size:12px}
+.author-form .author-row{margin:2px 0}
+.author-pill{font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid var(--line);color:var(--muted)}
+.author-pill[data-severity=error]{color:var(--danger);border-color:var(--danger)}
+.author-pill[data-severity=warning]{color:#b67a2d;border-color:#b67a2d}
+.author-counts{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+.author-empty{color:var(--muted);font-size:12px;margin:6px 0}
+.author-kv{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:4px;align-items:center;margin:3px 0}
+.author-kv input{min-width:0}
+.author-table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
+.author-table th,.author-table td{text-align:left;vertical-align:top;padding:4px 5px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.author-table th{color:var(--muted);font-weight:600}
+.author-group{margin:8px 0;padding:6px 8px;border:1px solid var(--line);border-radius:6px}
+.author-group>legend{font-size:12px;font-weight:650;padding:0 4px}
+.author-danger{color:var(--danger)}
+#tile-form .author-section{margin:8px 0}
+
+@media(max-width:700px){
+.author-section button{min-height:36px}
+.author-item{grid-template-columns:minmax(0,1fr)}
+.author-item button{justify-self:start}
+.author-kv{grid-template-columns:minmax(0,1fr) auto}
+.author-kv input:first-child{grid-column:1 / -1}
+.author-list{max-height:50dvh}
+}

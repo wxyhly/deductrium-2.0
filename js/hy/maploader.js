@@ -15,7 +15,7 @@ export var TileBlockType;
 export const blockMap = new Map();
 export const nameMap = new Map();
 // Editor playtests consume JSON tiles, never JavaScript from imported map.ts.
-export const editorPreview = typeof window !== "undefined" && window.location?.search === "?map-editor-preview";
+export const editorPreview = typeof window !== "undefined" && new URLSearchParams(window.location?.search).has("map-editor-preview");
 export function editorPreviewTiles() {
     if (!editorPreview)
         return;

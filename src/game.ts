@@ -20,6 +20,9 @@ import { tileColor, tileTextColor, tileDisplayText } from "./hy/appearance.js";
 import { stringifyDeductriumAmout } from "./format.js";
 import { createMapScriptState, parseMapScript, planMapScript, MapScriptPlan, MapScriptEventName } from "./hy/script.js";
 import { createMapScriptEngine } from "./hy/script-engine.js";
+import { activeContentWorlds, contentAchievements } from "./hy/content-catalog.js";
+import { localizedContent } from "./hy/world-content.js";
+import { authorDebugSaveMode, mountAuthorDebug, AuthorDebugHandle } from "./hy/author-debug.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
 // 旧地图的 dstr 是展示文字；目标必须按稳定 ID 查找，不能解析本地化文案。
@@ -53,6 +56,7 @@ class Game {
     ordBase = 15;
     mapScript = createMapScriptState();
     private lastScriptError = "";
+    private authorDebug?: AuthorDebugHandle;
 
     langMgr = new LangMgr(SaveLoad.getSavedLang());
     hsLayer = new HSLayer;
@@ -62,7 +66,7 @@ class Game {
     private initialMapState = new Map(Array.from(blockMap, ([hash, block]) =>
         [hash, { ...block, data: { ...block.data } }] as const));
     private initialMapNames = new Map(nameMap);
-    saveload = new SaveLoad(activeWorldSaveMode ?? (editorPreview ? editorPreviewSaveMode() : gameMode), () => {
+    saveload = new SaveLoad(authorDebugSaveMode(activeWorldSaveMode ?? (editorPreview ? editorPreviewSaveMode() : gameMode), window.location.search), () => {
         // 创造模式目前只有推理层（hs）+ 类型层（tt）；几何层/奖励/成就/经济仅生存模式
         if (gameMode === "creative") return { hs: this.hsLayer.serialize(), tt: this.ttLayer.serialize(), ly: this.getCurrentLayer() };
         return {
@@ -200,6 +204,15 @@ class Game {
         this.hsLayer.onchange = () => this.saveload.notifySave();
         this.ttLayer.onchange = () => this.saveload.notifySave();
         this.hyLayer.onchange = () => this.saveload.notifySave();
+        // Content installation belongs before this hook; start events below are traced as well.
+        this.authorDebug = mountAuthorDebug({save:this.saveload, readState:() => ({
+            keys:[...this.mapScript.keys], flags:[...this.mapScript.flags], counts:{...this.mapScript.counts},
+            once:[...this.mapScript.done], eventDone:this.mapScript.eventDone ?? {},
+            rewards:[...this.gotRewards], scriptRewards:[...this.mapScript.rewards],
+            money:this.deductrium, balances:this.currencyBalances(),
+            position:this.hyLayer.world.currentTile.join(','),
+            proof:{hs:this.hsLayer.serialize(), tt:this.ttLayer.serialize()},
+        })});
         if (gameMode === "survival") {
             this.restoreMapScript();
             if (firstLoad) {
@@ -266,7 +279,7 @@ class Game {
 
     private restoreMapScript() {
         for (const reward of this.mapScript.removedRewards) this.gotRewards.delete(reward);
-        createMapScriptEngine(this.hsLayer, this.ttLayer).restore(this.mapScript);
+        createMapScriptEngine(this.hsLayer, this.ttLayer, activeContentWorlds().flatMap(w => w.content ? [w.content] : [])).restore(this.mapScript);
         this.hsLayer.setMapDisabledAxioms?.(this.mapScript.disabledAxioms);
         for (const reward of this.mapScript.rewards) this.hsLayer.applyReward(reward);
         for (const layer of this.mapScript.layers) this.showLayerButton(layer, true);
@@ -288,10 +301,11 @@ class Game {
             const explicit = parseMapScript(block.data.script).some(statement => statement.op === "on");
             // Touch is opt-in; legacy scripts still run only at their original tile lifecycle boundary.
             if (event === "touch" && !explicit) return;
-            const engine = createMapScriptEngine(this.hsLayer, this.ttLayer);
+            const engine = createMapScriptEngine(this.hsLayer, this.ttLayer, activeContentWorlds().flatMap(w => w.content ? [w.content] : []));
             const plan = planMapScript(block.data.script, this.mapScript, {
                 money, typeMoney: this.typeDeductrium, balances: {...this.currencyBalances(), reasoning: money},
                 banks: this.mapBanks(), rewards: this.gotRewards, selfId: id,
+                trace: this.authorDebug?.trace,
                 hasTile: target => blockMap.has(nameMap.get(target) ?? target),
                 hasAxiom: name => this.hsLayer.hasMapAxiom(name),
                 getTileType: target => blockMap.get(nameMap.get(target) ?? target)?.type,
@@ -319,11 +333,20 @@ class Game {
                     this.hyLayer.needUpdate = true;
                 }
             }
-            if (plan.status === "blocked" || plan.confirmation && !confirm(plan.confirmation)) return false;
+            if (plan.status === "blocked") return false;
+            if (plan.confirmation) {
+                const accepted = confirm(plan.confirmation);
+                this.authorDebug?.trace({kind:'outcome', phase:'host', tileId:id, event,
+                    outcome:accepted ? 'confirmation' : 'blocked', reason:accepted ? '作者已确认，等待提交' : '作者取消确认，事务未提交'});
+                if (!accepted) return false;
+            }
             this.lastScriptError = "";
             return { plan, money, id, ...(plan.event ? {event: plan.event} : {}) };
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            const match = /^Map script line (\d+):/.exec(message);
+            this.authorDebug?.trace({kind:'outcome', phase:'host', tileId:id, event, outcome:'exception', reason:message,
+                ...(match ? {line:Number(match[1]), source:block.data.script.split(/\r\n|\r|\n/)[Number(match[1])-1]} : {})});
             if (this.lastScriptError !== id + message) this.showToast(message);
             this.lastScriptError = id + message;
             return false;
@@ -332,6 +355,7 @@ class Game {
     private commitMapScript(prepared: ReturnType<Game["prepareMapScript"]>) {
         if (!prepared) return;
         const { plan, money, id, event } = prepared;
+        try {
         if (!plan.repeat) {
             if (event) {
                 const events = (plan.state.eventDone ??= {})[id] ??= [];
@@ -393,6 +417,12 @@ class Game {
         this.checkEconAchievements();
         this.updateStats();
         this.saveload.notifySave();
+        this.authorDebug?.trace({kind:'outcome', phase:'host', tileId:id, event, outcome:'pass', reason:'事务已提交'});
+        } catch (error) {
+            this.authorDebug?.trace({kind:'outcome', phase:'host', tileId:id, event, outcome:'exception',
+                reason:error instanceof Error ? error.message : String(error)});
+            throw error;
+        }
     }
     private runMapScript(block: TileBlock, hash: string, event?: MapScriptEventName): boolean {
         const prepared = this.prepareMapScript(block, hash, event);
@@ -442,7 +472,8 @@ class Game {
     finishAchievement(id: string) {
         if (this.gotAchievements.has(id)) return;
         this.gotAchievements.add(id);
-        this.showToast(LangMgr.formalize.achToast(LangMgr.achName(id)), "ach");
+        const custom = contentAchievements().find(entry => entry.id === id);
+        this.showToast(LangMgr.formalize.achToast(custom ? localizedContent(custom.title, LangMgr.lang) : LangMgr.achName(id)), "ach");
         this.progressLayer.refreshAchievements();
         this.saveload.notifySave();
     }
@@ -465,7 +496,9 @@ class Game {
         return false;
     }
     // 解锁知识（通过带 data.info 的方块或获得同名 reward 时调用）
-    unlockInfo(id: string) {
+    unlockInfo(id: unknown) {
+        if (Array.isArray(id)) { for (const entry of id) this.unlockInfo(entry); return; }
+        if (typeof id !== 'string') return;
         if (gameMode === "creative") return;
         const full = kbFullId(id);
         // 仅接受知识库条目（sym:/mec: 前缀）；未知 identifier 忽略
@@ -745,7 +778,7 @@ class Game {
                 }
                 if (data.t) {
                     const text = typeof tile.text === "string" ? tile.text : tile.text[LangMgr.lang] ?? Object.values(tile.text)[0];
-                    try { return createMapScriptEngine(this.hsLayer, this.ttLayer).query({kind: "type", text}, this.mapScript); }
+                    try { return createMapScriptEngine(this.hsLayer, this.ttLayer, activeContentWorlds().flatMap(w => w.content ? [w.content] : [])).query({kind: "type", text}, this.mapScript); }
                     catch { return false; }
                 }
                 // An explicit touch handler alone never grants permission to pass a gate.

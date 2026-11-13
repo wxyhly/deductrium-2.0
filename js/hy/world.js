@@ -4,6 +4,8 @@ import { regionContains } from './half-plane.js';
 import { validateBankConfig } from './economy.js';
 import { validateMapBankOffer } from './bank.js';
 import { createMapScriptState, parseMapScript, formatMapScript, rewriteMapScript } from './script.js';
+import { validateWorldContent, contentId } from './world-content.js';
+import { validatePublication } from './publication.js';
 const FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor']);
 const MAX_TILES = 20_000;
 const polygon = new Polygon(6, 4);
@@ -123,6 +125,11 @@ function script(source, world, names) {
         }
     };
     const reference = (command) => {
+        if ('op' in command && command.op === 'unlock' && (command.kind === 'info' || command.kind === 'achievement')) {
+            const entries = command.kind === 'info' ? world.content?.knowledge : world.content?.achievements;
+            if (entries?.some(entry => entry.id === command.id))
+                return { ...command, id: contentId(world.id, command.id, command.kind === 'info') };
+        }
         if ('op' in command && command.op === 'exchange' && !Object.hasOwn(world.banks, command.bankId))
             fail(`Unknown script bank: ${command.bankId}`);
         if ('currency' in command && !registered.has(command.currency))
@@ -175,6 +182,12 @@ function runtime(world) {
     };
     return world.tiles.map(tile => {
         const data = json(tile.data ?? {});
+        if (world.content?.knowledge.length && data.info !== undefined) {
+            const note = (id) => world.content.knowledge.some(n => n.id === id) ? contentId(world.id, id, true) : id;
+            data.info = Array.isArray(data.info) ? data.info.map(note) : note(data.info);
+        }
+        if (world.content?.achievements.some(a => a.id === data.ac))
+            data.ac = contentId(world.id, data.ac);
         if (tile.name !== undefined)
             data.worldLocalName = tile.name;
         if (data.dstrTarget !== undefined)
@@ -196,12 +209,16 @@ function runtime(world) {
 export function parseWorld(input) {
     const w = json(input);
     const required = ['format', 'id', 'title', 'revision', 'mode', 'spawn', 'tiles', 'banks', 'migrations'];
-    fields(w, [...required, 'currency', 'region', 'entry'], required, 'manifest');
+    fields(w, [...required, 'currency', 'region', 'entry', 'content', 'publication'], required, 'manifest');
     if (w.format !== 'deductrium-world-v1' && w.format !== 'deductrium-world-v2')
         fail('Unsupported world format');
     worldId(w.id);
     text(w.title, 'title', 200, 1);
     revision(w.revision);
+    if (w.content !== undefined)
+        w.content = validateWorldContent(w.content);
+    if (w.publication !== undefined)
+        w.publication = validatePublication(w.publication, w.id);
     if (w.mode !== 'standalone' && w.mode !== 'extension')
         fail('Invalid world mode');
     if (w.region !== undefined) {
@@ -364,16 +381,19 @@ function ordered(value) {
     return value;
 }
 const PRESENTATION = new Set(['color', 'textColor', 'background', 'appearance', 'style', 'label', 'description', 'dstr', 'worldLocalName']);
-function goal(tile) {
+function goal(tile, logic) {
     const data = Object.fromEntries(Object.entries(tile.data ?? {}).filter(([key]) => !PRESENTATION.has(key)));
     // Road/reward text is display-only. A proof gate's text and #imm are actual conditions.
     const puzzle = tile.type === 2 && (data.pi || data.di || data.p || data.d || data.t || data.td || data.puzzle !== undefined);
     const immediate = Object.values(typeof tile.text === 'string' ? { text: tile.text } : tile.text).some(t => t.endsWith('#imm'));
-    return JSON.stringify(ordered({ type: tile.type, data, ...(puzzle || immediate ? { text: tile.text } : {}) }));
+    return JSON.stringify(ordered({ type: tile.type, data, ...(puzzle || immediate ? { text: tile.text } : {}),
+        ...(logic && (puzzle || data.script) ? { logic } : {}) }));
 }
 export function worldSaveMeta(world) {
     const w = parseWorld(world);
-    return { id: w.id, revision: w.revision, mode: w.mode, tiles: runtime(w).map(([, tile]) => ({ id: tile.name, goal: goal(tile) })),
+    const logic = w.content && (w.content.rules.length || w.content.definitions.length)
+        ? { rules: w.content.rules, definitions: w.content.definitions } : undefined;
+    return { id: w.id, revision: w.revision, mode: w.mode, tiles: runtime(w).map(([, tile]) => ({ id: tile.name, goal: goal(tile, logic) })),
         ...(w.currency ? { currency: { id: w.currency.id } } : {}) };
 }
 /**

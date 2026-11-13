@@ -3,6 +3,7 @@ import {parseTileContent} from '../../js/hy/maploader.js';
 import {parseMapScript, rewriteMapScript} from '../../js/hy/script.js';
 import {validateWorldBase} from '../../js/hy/world.js';
 import {halfPlaneContains, canonicalPath, transport, relativePath, regionContains, relocationFrame} from './geometry.mjs';
+import {searchProject, previewReplace, applyReplace, analyzeProject, deleteImpact} from './authoring.mjs';
 export {canonicalPath, transport, relativePath} from './geometry.mjs';
 
 const clone = value => structuredClone(value);
@@ -302,6 +303,63 @@ export class EditorProject {
         if (!this.tiles.has(hash)) return;
         this._change(()=>this.tiles.delete(hash));
     }
+    /** One transaction. data/reward recursively merge objects; arrays replace.
+     * removeData explicitly removes top-level data keys; script:null removes it.
+     * reward is a convenience data patch, e.g. {getD:5,unl:{layer:'D-layer'}}.
+     */
+    batchEdit(hashes, patch) {
+        if (!object(patch)) throw Error('批量修改须为对象');
+        const allowed=['type','name','text','data','reward','script','removeData','delete'];
+        if (Object.keys(patch).some(k=>!allowed.includes(k))) throw Error('批量修改包含不支持的字段');
+        json(patch);
+        if (own(patch,'delete') && typeof patch.delete!=='boolean') throw Error('delete 须为布尔值');
+        if (patch.delete && Object.keys(patch).some(k=>k!=='delete')) throw Error('删除不能同时修改属性');
+        for (const field of ['data','reward']) if (own(patch,field) && !object(patch[field])) throw Error(`${field} 须为 JSON 对象`);
+        if (own(patch,'removeData') && (!Array.isArray(patch.removeData) || patch.removeData.some(k=>typeof k!=='string'))) throw Error('removeData 须为属性名数组');
+        if (own(patch,'script') && patch.script!==null && typeof patch.script!=='string') throw Error('script 须为字符串或 null');
+        const merge=(base, updates)=>{
+            const result=clone(base);
+            for (const [name,value] of Object.entries(updates)) result[name]=object(value) && object(result[name]) ? merge(result[name],value) : clone(value);
+            return result;
+        };
+        const unique=[...new Set([...hashes].map(h=>key(canonicalPath(h,this.polygon))))];
+        const changes=unique.map(hash=>{
+            const previous=this.tiles.get(hash); if (!previous) throw Error(`选区包含空格 ${hash}`);
+            if (patch.delete) return [hash,null];
+            const next=clone(previous);
+            for (const field of ['type','name','text']) if (own(patch,field)) next[field]=clone(patch[field]);
+            for (const field of ['data','reward']) if (own(patch,field)) next.data=merge(next.data,patch[field]);
+            for (const name of patch.removeData ?? []) delete next.data[name];
+            if (own(patch,'script')) { if (patch.script===null) delete next.data.script; else next.data.script=patch.script; }
+            return [hash,next];
+        });
+        return this._applyAuthoring(changes);
+    }
+    // Shared commit seam for batch edits and replacements. Validate the final
+    // selection together so renames may exchange names without partial edits.
+    _applyAuthoring(changes, metadata = {}) {
+        const next=new Map(this.tiles), changed=[], tileIds=[];
+        for (const [hash,input] of changes) {
+            const old=this.tiles.get(hash); if (!old) throw Error('选区包含空格');
+            const error=this._regionError(hash); if (error) throw Error(error);
+            if (old.instanceId) throw Error('请先分离模块实例再编辑砖块');
+            if (input===null) { next.delete(hash); changed.push(hash); tileIds.push(old.id); continue; }
+            if (input.id!==old.id || input.hash!==old.hash || input.instanceId || input.localId) throw Error('批量修改不能改变砖块身份或位置');
+            const value={id:old.id,hash,...tileValue(input)};
+            if (JSON.stringify(value)!==JSON.stringify(old)) { next.set(hash,value); changed.push(hash); tileIds.push(old.id); }
+        }
+        const names=new Set();
+        for (const tile of next.values()) if (tile.name) { if (names.has(tile.name)) throw Error('砖块名称已存在'); names.add(tile.name); }
+        const title=own(metadata,'title') ? metadata.title : this.title;
+        if (typeof title!=='string' || title.length>240) throw Error('地图标题最多 240 字');
+        if (changed.length || title!==this.title) this._change(()=>{this.tiles=next;this.title=title;});
+        return {count:changed.length,hashes:changed,tileIds};
+    }
+    searchProject(options) { return searchProject(this,options); }
+    previewReplace(options) { return previewReplace(this,options); }
+    applyReplace(options) { return applyReplace(this,options); }
+    analyzeProject(options) { return analyzeProject(this,options); }
+    deleteImpact(hashes, options) { return deleteImpact(this,hashes,options); }
     exportSource() {
         if (this._source !== undefined) return this._source;
         return `export const mapData = \`\n${[...this.tiles.values()].map(encodeTile).join('\n')}\n\`;\n`;

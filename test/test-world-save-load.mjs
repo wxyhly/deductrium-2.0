@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {test} from 'node:test';
+import {authorDebugSaveMode} from '../js/hy/author-debug.js';
 
 const source = fs.readFileSync(new URL('../js/saveload.js', import.meta.url), 'utf8')
     .replace('export class SaveLoad', 'class SaveLoad');
@@ -196,7 +197,7 @@ test('production Game deserialize rolls back earlier subsystems when a later Set
         progressLayer:{refreshAchievements(){},refreshSymbols(){},refreshKnowledge(){}},
     };
     Object.assign(e.context,{activeWorldSaveMode:e.save.saveMode,editorPreview:false,gameMode:'survival',
-        activeWorld:undefined,enabledMods:[],captureModWorlds:()=>[],createMapScriptState:data=>structuredClone(data),gameForTest:game});
+        activeWorld:undefined,enabledMods:[],captureModWorlds:()=>[],createMapScriptState:data=>structuredClone(data),authorDebugSaveMode,gameForTest:game});
     const save=vm.runInContext(`(function(){return ${expression};}).call(gameForTest)`,e.context);
     const before=structuredClone(save.serialize()), raw=e.entries.get(save.saveKey);
     const invalid={...before,hs:{value:'partial HS'},hy:{value:'partial HY'},ac:{}};

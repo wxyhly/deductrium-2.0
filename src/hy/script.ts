@@ -53,6 +53,10 @@ export type MapScriptNumberExpression =
 type NumberOperand = { value: number; expression?: MapScriptNumberExpression };
 
 export interface MapScriptEnvironment {
+    /** Debug-only observer. Records are detached; observer failures never affect execution. */
+    trace?: (entry: MapScriptTraceEntry) => void;
+    /** Per-attempt record budget including the final outcome; default 256, maximum 1024. */
+    traceLimit?: number;
     money: number;
     /** Independent ledger; old callers/saves default to zero. */
     typeMoney?: number;
@@ -79,6 +83,21 @@ export interface MapScriptEnvironment {
     ordinal?: MapScriptOrdinalState;
     compareOrdinals?: (a: readonly number[], b: readonly number[]) => number;
     nextOrdinal?: (max: readonly number[], base: number, stepw: boolean) => number[];
+}
+
+export interface MapScriptTraceEntry {
+    kind: 'condition' | 'action' | 'not-run' | 'outcome';
+    line?: number;
+    source?: string;
+    tileId?: string;
+    event?: MapScriptEventName;
+    op?: string;
+    result?: boolean;
+    reason?: string;
+    outcome?: 'pass' | 'blocked' | 'confirmation' | 'exception';
+    /** Planning actions are staged, not committed to the host. */
+    phase?: 'plan' | 'host';
+    truncated?: boolean;
 }
 
 export type MapScriptEffect =
@@ -946,6 +965,45 @@ function engineEdit(command: MapScriptCommand): MapScriptEngineEdit | undefined 
  * The caller owns once-only bookkeeping in state.done/eventDone and application of returned effects.
  */
 export function planMapScript(source: string, state: MapScriptState, env: MapScriptEnvironment, checksOnly = false): MapScriptPlan {
+    let observer: MapScriptEnvironment['trace'];
+    let limit = 256;
+    // Debug options are deliberately excluded from normal environment validation.
+    try {
+        if (typeof env?.trace === 'function') observer = env.trace;
+        if (Number.isFinite(env?.traceLimit)) limit = Math.max(1, Math.min(1024, Math.floor(env.traceLimit!)));
+    } catch { /* A broken observer must not become a script failure. */ }
+    let emitted = 0, truncated = false, blockedLine: number | undefined;
+    const lines = observer && typeof source === 'string' && source.length <= MAX_SOURCE ? source.split(/\r\n|\r|\n/) : [];
+    const trace = (entry: MapScriptTraceEntry): void => {
+        if (entry.kind === 'condition' && entry.result === false) blockedLine = entry.line;
+        if (entry.kind === 'action' && entry.op === 'block') blockedLine = entry.line;
+        if (!observer) return;
+        const final = entry.kind === 'outcome';
+        if (emitted >= limit - (final ? 0 : 1)) { truncated = true; return; }
+        emitted++;
+        try {
+            observer({...entry, phase: 'plan', tileId: env.selfId, event: env.event,
+                ...(entry.line === undefined ? {} : {source: lines[entry.line - 1]}),
+                ...(final && truncated ? {truncated: true} : {})});
+        } catch { /* Observability has no authority over the transaction. */ }
+    };
+    try {
+        const plan = planMapScriptCore(source, state, env, checksOnly, trace);
+        trace({kind:'outcome', outcome:plan.status === 'blocked' ? 'blocked' : plan.confirmation === undefined ? 'pass' : 'confirmation',
+            ...(plan.status === 'blocked' ? {line:blockedLine, reason:'条件未满足或执行了 block；事务未提交'} : {}),
+            ...(!plan.handled ? {reason:'当前事件没有处理器，未执行任何动作'} : {}),
+            ...(plan.confirmation === undefined ? {} : {reason:plan.confirmation})});
+        return plan;
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const match = /^Map script line (\d+):/.exec(reason);
+        trace({kind:'outcome', outcome:'exception', reason, ...(match ? {line:Number(match[1])} : {})});
+        throw error;
+    }
+}
+
+function planMapScriptCore(source: string, state: MapScriptState, env: MapScriptEnvironment, checksOnly: boolean,
+    trace: (entry: MapScriptTraceEntry) => void): MapScriptPlan {
     const commands = parseMapScript(source);
     const next = createMapScriptState(state);
     const incoming = createMapScriptState(next);
@@ -1139,7 +1197,7 @@ export function planMapScript(source: string, state: MapScriptState, env: MapScr
         value.next = economyAtLine(line, () => ordinalValue(env.nextOrdinal!([...value.max], value.base, ownsReward('stepw')), line));
         next.ordinal = ordinalState(value);
     };
-    const evaluatePredicate = (predicate: MapScriptPredicate): boolean => {
+    const predicateResult = (predicate: MapScriptPredicate): boolean => {
         const query = engineQuery(predicate);
         if (query) {
             const result = economyAtLine(predicate.line, () => env.engine!.query(query, createMapScriptState(next)));
@@ -1169,21 +1227,61 @@ export function planMapScript(source: string, state: MapScriptState, env: MapScr
         }
         return fail(predicate.line, 'Unsupported predicate');
     };
+    const evaluatePredicate = (predicate: MapScriptPredicate): boolean => {
+        const result = predicateResult(predicate);
+        trace({kind:'condition', line:predicate.line, op:predicate.kind, result,
+            ...(result ? {} : {reason:`不满足：${formatPredicate(predicate)}`})});
+        return result;
+    };
+    const skipCondition = (condition: MapScriptCondition, reason: string): void => {
+        trace({kind:'not-run', line:condition.line, op:condition.op === 'predicate' ? condition.predicate.kind : condition.op, reason});
+        if (condition.op === 'not') skipCondition(condition.condition, reason);
+        else if (condition.op === 'and' || condition.op === 'or') { skipCondition(condition.left, reason); skipCondition(condition.right, reason); }
+    };
+    const skip = (statements: readonly MapScriptStatement[], reason: string): void => {
+        for (const statement of statements) {
+            trace({kind:'not-run', line:statement.line, op:statement.op, reason});
+            if (statement.op === 'on') skip(statement.body, reason);
+            else if (statement.op === 'if') {
+                for (const branch of statement.branches) { skipCondition(branch.condition, reason); skip(branch.body, reason); }
+                if (statement.elseBody) {
+                    trace({kind:'not-run', line:statement.elseLine, op:'else', reason});
+                    skip(statement.elseBody, reason);
+                }
+            }
+        }
+    };
     const evaluateCondition = (condition: MapScriptCondition): boolean => {
         if (condition.op === 'predicate') return evaluatePredicate(condition.predicate);
-        if (condition.op === 'not') return !evaluateCondition(condition.condition);
-        if (condition.op === 'and') return evaluateCondition(condition.left) && evaluateCondition(condition.right);
-        return evaluateCondition(condition.left) || evaluateCondition(condition.right);
+        let result: boolean;
+        if (condition.op === 'not') result = !evaluateCondition(condition.condition);
+        else {
+            const left = evaluateCondition(condition.left);
+            if (condition.op === 'and' ? !left : left) { skipCondition(condition.right, 'short-circuit'); result = left; }
+            else result = evaluateCondition(condition.right);
+        }
+        trace({kind:'condition', line:condition.line, op:condition.op, result});
+        return result;
     };
     const execute = (statements: readonly MapScriptStatement[]): void => {
       for (const command of statements) {
-        if (stopped) return;
+        if (stopped) { skip([command], 'stopped'); continue; }
         if (command.op === 'on') continue; // Only the selected handler body is executable.
         const { line, op } = command;
         if (command.op === 'if') {
-            const branch = command.branches.find(branch => evaluateCondition(branch.condition));
-            if (branch) execute(branch.body);
-            else if (command.elseBody !== undefined) execute(command.elseBody);
+            let selected = false;
+            for (const branch of command.branches) {
+                if (selected) { skipCondition(branch.condition, 'unselected-branch'); skip(branch.body, 'unselected-branch'); }
+                else if (evaluateCondition(branch.condition)) { selected = true; execute(branch.body); }
+                else skip(branch.body, 'false-condition');
+            }
+            if (command.elseBody !== undefined) {
+                if (selected) {
+                    trace({kind:'not-run', line:command.elseLine, op:'else', reason:'unselected-branch'});
+                    skip(command.elseBody, 'unselected-branch');
+                }
+                else execute(command.elseBody);
+            }
             continue;
         }
         if (command.op === 'require') {
@@ -1191,12 +1289,15 @@ export function planMapScript(source: string, state: MapScriptState, env: MapScr
             continue;
         }
         if (command.op === 'allow' || command.op === 'block') {
+            trace({kind:'action', line, op, reason:'staged'});
             status = command.op === 'allow' ? 'pass' : 'blocked';
             stopped = true;
             continue;
         }
-        if (command.op === 'event') continue; // Static event policy is resolved during whole-tree preflight.
-        if (checksOnly) continue;
+        if (command.op === 'event') { trace({kind:'action', line, op, reason:command.mode}); continue; }
+        if (checksOnly) { trace({kind:'not-run', line, op, reason:'checks-only'}); continue; }
+        let actionFailed = false;
+        try {
         if (command.op === 'reward') { consumeReward = command.mode === 'consume'; continue; }
         if (command.op === 'confirm') {
             if (confirmation !== undefined && confirmation !== command.text) fail(line, 'Conflicting confirmation requests');
@@ -1327,8 +1428,11 @@ export function planMapScript(source: string, state: MapScriptState, env: MapScr
                 effects.push({ op: 'text', id: command.id, text: command.text });
                 break;
         }
+        } catch (error) { actionFailed = true; throw error; }
+        finally { trace({kind:'action', line, op, reason:actionFailed ? 'exception' : 'staged'}); }
       }
     };
+    if (explicit) for (const command of commands) if (command !== selected) skip([command], 'unselected-event');
     execute(selectedCommands);
     if (status as string === 'blocked') {
         return { ...selection, state: incoming, money, spent: 0, typeMoney, typeSpent: 0, balances: incomingBalances, effects: [], status: 'blocked',

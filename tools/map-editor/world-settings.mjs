@@ -80,7 +80,8 @@ export function installWorldSettings(api) {
     host.addEventListener('input',mark);host.addEventListener('change',mark);
     $('world-use-selection').onclick=()=>run(()=>{if(!api.selected)throw Error('请选择已有砖块作为入口');$('world-spawn').value=api.selected.id;pending.add('world');previewSettings();status('入口已选择，请应用设置');});
     $('world-apply').onclick=()=>run(()=>{
-        const settings={revision:Number($('world-revision').value),mode:$('world-mode').value,
+        const previous=api.project.world ?? {};
+        const settings={...(previous.content?{content:previous.content}:{}),...(previous.publication?{publication:previous.publication}:{}),revision:Number($('world-revision').value),mode:$('world-mode').value,
             ...($('world-mode').value==='extension'?{entry:{mainHash:$('world-main-hash').value.trim(),edge:Number($('world-entry-edge').value),tileId:$('world-entry-tile').value}}:{}),
             spawn:{tileId:$('world-spawn').value,rotation:Number($('world-rotation').value)},banks:JSON.parse($('world-banks').value),migrations:JSON.parse($('world-migrations').value),
             ...($('world-currency-enabled').checked?{currency:{id:'mod:'+api.project.id,name:$('world-currency-name').value,...($('world-currency-symbol').value?{symbol:$('world-currency-symbol').value}:{})}}:{})};
@@ -109,7 +110,7 @@ export function installWorldSettings(api) {
     const publish=()=>{if(pending.size)throw Error('请先应用尚未确认的世界、范围或模块更新设置');return buildWorld(api.project);};
     const download=(filename,data)=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
     $('export-world').onclick=()=>run(()=>{const world=publish();download(world.id+'.world.json',world);status('已发布世界 JSON；项目 JSON 另存编辑信息');});
-    $('play-world').onclick=()=>run(()=>{const world=publish();localStorage.setItem('deductrium2_world_manifest',JSON.stringify(world));window.open('../../index.html?mod-world','_blank','noopener');status('已打开世界；进度按世界 ID 隔离，版本更新须通过迁移校验');});
+    $('play-world').onclick=()=>run(()=>{const world=publish();localStorage.setItem('deductrium2_world_manifest',JSON.stringify(world));window.open('../../index.html?mod-world&author-debug','_blank','noopener');status('已打开作者调试试玩；使用独立调试存档，可查看脚本轨迹和恢复快照');});
     $('pick-region').onclick=()=>run(()=>{if(pendingPlacement)throw Error('请先应用或取消整体移动预览');picker.begin('region');});
     $('pick-entry').onclick=()=>run(()=>picker.begin('entry'));
     $('region-use-selection').onclick=()=>{$('region-hash').value=api.selectedHash;pending.add('region');previewSettings();status('边界已选择，请应用范围');};

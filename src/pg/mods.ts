@@ -2,10 +2,13 @@ import { LangMgr } from "../lang.js";
 import type { SaveLoad } from "../saveload.js";
 import { importMod, MOD_LIBRARY_KEY, readModLibrary, saveModLibrary, setModEnabled } from "../hy/mods.js";
 import type { ModEntry } from "../hy/mods.js";
-import { getModRuntimeError, validateModLibrary } from "../hy/mod-runtime.js";
+import { enabledMods, getModRuntimeError, validateModLibrary } from "../hy/mod-runtime.js";
 import { prepareModSave } from "../hy/mod-saves.js";
 import { activeWorld, WORLD_MANIFEST_KEY } from "../hy/world-runtime.js";
 import { builtinMods } from "../hy/builtin-mods.js";
+import { exportWorldBundle, importWorldBundle, readPendingWorldBundle, restoreWorldBundleSave,
+    snapshotWorldBundle, WORLD_BUNDLE_FORMAT, WORLD_BUNDLE_PENDING_KEY } from "../hy/world-bundle.js";
+import type { WorldBundle } from "../hy/world-bundle.js";
 
 /** Settings for installed files. Runtime changes take effect after a saved reload. */
 export class ModManager {
@@ -21,6 +24,7 @@ export class ModManager {
     constructor(saveload: SaveLoad, private readonly saveBeforeNavigation: () => void = () => saveload.save()) {
         this.saveload = saveload;
         if (!this.list || !this.upload || !this.file || !this.status) return;
+        this.upload.textContent = this.label('上传地图或便携包', 'Upload world or bundle');
         this.upload.addEventListener("click", () => {
             if (!this.busy) this.file.click();
         });
@@ -30,21 +34,98 @@ export class ModManager {
             if (file) void this.run(async () => {
                 if (file.size > 8 * 1024 * 1024) throw new Error(LangMgr.text.modsFileTooLarge);
                 const input: unknown = JSON.parse(await file.text());
-                const entries = importMod(readModLibrary(), input);
-                saveModLibrary(entries);
+                let entries: ModEntry[];
+                if (input && typeof input === 'object' && 'format' in input && input.format === WORLD_BUNDLE_FORMAT) {
+                    importWorldBundle(input);
+                    entries = readModLibrary();
+                } else {
+                    entries = importMod(readModLibrary(), input);
+                    saveModLibrary(entries);
+                }
                 this.render(entries);
                 this.say(LangMgr.text.modsImported);
             });
         });
         window.addEventListener("storage", event => {
             if (event.storageArea !== localStorage) return;
-            if (event.key !== null && event.key !== MOD_LIBRARY_KEY) return;
+            if (event.key !== null && event.key !== MOD_LIBRARY_KEY && event.key !== WORLD_BUNDLE_PENDING_KEY) return;
             if (this.busy) this.refreshPending = true;
             else this.refresh(true);
         });
         this.refresh();
         const error = getModRuntimeError();
         if (error) this.say(`${LangMgr.text.modsRuntimeError} ${error}`, true);
+    }
+
+    private label(zh: string, en: string): string { return LangMgr.lang === 'zh' ? zh : en; }
+
+    private download(contents: string, name: string): void {
+        const url = URL.createObjectURL(new Blob([contents], {type: 'application/json'}));
+        try {
+            const anchor = document.createElement('a');
+            anchor.href = url; anchor.download = name; anchor.click();
+        } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    }
+
+    private bundleControls(entries: readonly ModEntry[], content: DocumentFragment): void {
+        if (entries.length || activeWorld) {
+            const actions = document.createElement('div');
+            actions.className = 'pg-actions pg-mod-actions';
+            actions.dataset.worldBundle = 'export';
+            actions.append(this.button(this.label('导出地图包', 'Download world bundle'), () => {
+                const worlds = readModLibrary().map(entry => entry.world);
+                if (activeWorld) {
+                    const current = activeWorld;
+                    const at = worlds.findIndex(world => world.id === current.id);
+                    if (at < 0) worlds.push(current); else worlds[at] = current;
+                }
+                this.download(exportWorldBundle(worlds), 'deductrium-worlds.bundle.json');
+            }), this.button(this.label('导出地图与进度包', 'Download worlds and current save'), () => {
+                this.saveBeforeNavigation();
+                const bundle = snapshotWorldBundle(readModLibrary(), this.saveload, activeWorld);
+                this.download(exportWorldBundle(bundle.worlds, bundle.save), 'deductrium-progress.bundle.json');
+            }));
+            content.append(actions);
+        }
+        let pending: WorldBundle | undefined;
+        try { pending = readPendingWorldBundle(); }
+        catch (error) { this.report(error); }
+        if (!pending?.save) return;
+        const bundle = pending, save = bundle.save!;
+        const row = document.createElement('article');
+        row.className = 'pg-mod-entry'; row.dataset.worldBundle = 'restore';
+        const note = document.createElement('p');
+        note.textContent = this.label('包内含进度，恢复将替换对应模式的当前进度：',
+            'This bundle includes progress. Restoring replaces current progress in mode: ') + save.mode;
+        const matchingMode = save.mode === this.saveload.saveMode;
+        row.append(note, this.button(matchingMode ? this.label('恢复包内进度', 'Restore included save')
+            : this.label('进入对应世界以恢复', 'Enter destination to restore'), () => {
+                const latest = readPendingWorldBundle();
+                if (!latest?.save || JSON.stringify(latest) !== JSON.stringify(bundle))
+                    throw Error(this.label('待恢复的包已变化，请重新查看', 'Pending bundle changed; review it again'));
+                if (matchingMode) {
+                    restoreWorldBundleSave(bundle, this.saveload, activeWorld ? [activeWorld] : enabledMods.map(entry => entry.world));
+                    this.refresh();
+                    this.say(this.label('包内进度已恢复', 'Included save restored'));
+                    return;
+                }
+                this.saveBeforeNavigation();
+                if (save.worldId !== undefined) {
+                    const world = this.current(save.worldId).entry.world;
+                    localStorage.setItem(WORLD_MANIFEST_KEY, JSON.stringify(world));
+                }
+                this.saveload.cancelPendingSave();
+                location.assign(location.pathname + (save.worldId !== undefined ? '?mod-world' : save.mode === 'creative' ? '?creative' : ''));
+                this.leaving = true;
+            }), this.button(this.label('暂不恢复', 'Dismiss recovery offer'), () => {
+                localStorage.removeItem(WORLD_BUNDLE_PENDING_KEY);
+                this.refresh();
+            }));
+        const hint = document.createElement('p');
+        hint.className = 'pg-mod-note';
+        hint.textContent = this.label('扩展地图请先逐一启用所需依赖，再恢复进度。',
+            'Enable required extension dependencies before restoring progress.');
+        row.append(hint); content.append(row);
     }
 
     private say(message: string, error = false) {
@@ -111,6 +192,7 @@ export class ModManager {
 
     private render(entries: readonly ModEntry[]) {
         const content = document.createDocumentFragment();
+        this.bundleControls(entries, content);
         if (activeWorld) {
             const current = document.createElement("p");
             current.className = "pg-mod-current";
@@ -159,6 +241,8 @@ export class ModManager {
             const meta = document.createElement("p");
             meta.className = "pg-mod-meta";
             meta.textContent = `${world.id} · ${LangMgr.text.modsRevision} ${world.revision} · ${world.mode === "extension" ? LangMgr.text.modsExtension : LangMgr.text.modsStandalone}`;
+            if (world.publication?.author) meta.textContent += ` · ${world.publication.author}`;
+            if (world.publication?.engineVersion) meta.textContent += ` · Engine ${world.publication.engineVersion}`;
             const state = document.createElement("p");
             state.className = "pg-mod-state";
             state.textContent = world.mode === "extension"
@@ -209,6 +293,17 @@ export class ModManager {
             remove.title = enabled ? LangMgr.text.modsDisableFirst : LangMgr.text.modsKeepProgress;
             actions.append(remove);
             row.append(name, meta, state, actions);
+            if (world.publication?.description) {
+                const description = document.createElement('p');
+                description.textContent = world.publication.description;
+                row.append(description);
+            }
+            if (world.publication?.dependencies?.length) {
+                const dependencies = document.createElement('p');
+                dependencies.textContent = this.label('依赖：', 'Dependencies: ') + world.publication.dependencies.map(dependency =>
+                    `${dependency.id} >=${dependency.minRevision}${dependency.maxRevision === undefined ? '' : ` <=${dependency.maxRevision}`}`).join(', ');
+                row.append(dependencies);
+            }
             content.append(row);
         }
         this.list.replaceChildren(content);

@@ -45,6 +45,18 @@ test('multiple enabled mods are validated atomically for tile and stable-name co
     assert.throws(()=>installMods([first],tiles,names),/name is occupied/);
     assert.deepEqual(tiles,base);assert.deepEqual(names,before);
 });
+
+test('content rule names and symbols conflict at enable time, without changing the installed library',()=>{
+    const content={rules:[{id:'qShared',statement:'⊢$1→$1',proof:'d .i $1'}]};
+    const a={...manifest,id:'content-a',content},b={...manifest,id:'content-b',content};
+    const installed=importMod(importMod([],a),b),enabled=setModEnabled(installed,a.id,true),before=structuredClone(enabled);
+    assert.throws(()=>setModEnabled(enabled,b.id,true),/content rule|内容规则/);
+    assert.deepEqual(enabled,before);
+    assert.equal(installed.every(entry=>!entry.enabled),true,'inactive worlds may independently reuse names');
+    const definition=(id)=>({definitions:[{id,kind:'function',symbol:'sharedFn',parameters:['$x'],body:'$x'}]});
+    const defs=importMod(importMod([],{...a,content:definition('qA')}),{...b,content:definition('qB')});
+    assert.throws(()=>setModEnabled(setModEnabled(defs,a.id,true),b.id,true),/content symbol|内容符号/);
+});
 test('invalid files, duplicate IDs and unsupported library versions never replace the stored data',()=>{
     const store=storage(),entries=importMod([],manifest);saveModLibrary(entries,store);
     const original=store.getItem(MOD_LIBRARY_KEY);

@@ -1,24 +1,77 @@
 /** Installed data-only world files. Uploading never enables a mod. */
 import { parseWorld, WorldManifest, validateWorldBase, worldRuntimeTiles } from './world.js';
 import type { TileBlock } from './maploader.js';
+import { publicationJSON, validatePublication } from './publication.js';
 
 export const MOD_LIBRARY_KEY = 'deductrium2_mod_library';
 export interface ModEntry { world: WorldManifest; enabled: boolean }
 const LIMIT = 32;
 
-function checked(entries: unknown): ModEntry[] {
+function checked(entries: unknown, dependencies = true): ModEntry[] {
+    entries = publicationJSON(entries);
     if (!Array.isArray(entries) || entries.length > LIMIT) throw Error('Mod library must contain at most 32 worlds');
     const ids = new Set<string>();
-    return entries.map(entry => {
+    const result = entries.map(entry => {
         if (!entry || typeof entry !== 'object' || Array.isArray(entry)
             || Object.keys(entry).some(key => key !== 'world' && key !== 'enabled') || typeof entry.enabled !== 'boolean')
             throw Error('Invalid mod library entry');
         const world = parseWorld(entry.world);
+        validatePublication(world.publication, world.id);
         if (ids.has(world.id)) throw Error(`Duplicate mod ID: ${world.id}`);
         if (entry.enabled && world.mode !== 'extension') throw Error('Standalone worlds must be entered separately');
         ids.add(world.id);
         return {world, enabled: entry.enabled};
     });
+    if (dependencies) checkDependencies(result, 'enabled');
+    checkContentNames(result);
+    return result;
+}
+
+/** Rules are invoked by their visible kernel name. Reject collisions before activating any worlds. */
+function checkContentNames(entries: readonly ModEntry[]): void {
+    const names = new Map<string, string>(), symbols = new Map<string, string>();
+    for (const {world, enabled} of entries) {
+        if (!enabled || !world.content) continue;
+        for (const entry of [...world.content.rules, ...world.content.definitions]) {
+            const owner = names.get(entry.id);
+            if (owner) throw Error(`Mod content rule is occupied: ${entry.id} (${owner}, ${world.id})`);
+            names.set(entry.id, world.id);
+        }
+        for (const entry of world.content.definitions) {
+            const owner = symbols.get(entry.symbol);
+            if (owner) throw Error(`Mod content symbol is occupied: ${entry.symbol} (${owner}, ${world.id})`);
+            symbols.set(entry.symbol, world.id);
+        }
+    }
+}
+
+function checkDependencies(entries: readonly ModEntry[], scope: 'enabled' | 'all'): void {
+    const byId = new Map(entries.map(entry => [entry.world.id, entry]));
+    const visiting = new Set<string>(), visited = new Set<string>();
+    const visit = (entry: ModEntry, path: string[]): void => {
+        const world = entry.world;
+        if (visiting.has(world.id)) throw Error(`Mod dependency cycle: ${[...path, world.id].join(' -> ')}`);
+        if (visited.has(world.id)) return;
+        visiting.add(world.id);
+        for (const dependency of world.publication?.dependencies ?? []) {
+            const target = byId.get(dependency.id);
+            if (!target) throw Error(`Mod ${world.id} requires missing dependency ${dependency.id}`);
+            if (target.world.revision < dependency.minRevision)
+                throw Error(`Dependency ${dependency.id} is too old for ${world.id}: requires revision >= ${dependency.minRevision}, installed ${target.world.revision}`);
+            if (dependency.maxRevision !== undefined && target.world.revision > dependency.maxRevision)
+                throw Error(`Dependency ${dependency.id} is too new for ${world.id}: requires revision <= ${dependency.maxRevision}, installed ${target.world.revision}`);
+            visit(target, [...path, world.id]);
+            if (scope === 'enabled' && !target.enabled) throw Error(`Enable dependency ${dependency.id} before ${world.id}`);
+        }
+        visiting.delete(world.id);
+        visited.add(world.id);
+    };
+    for (const entry of entries) if (scope === 'all' || entry.enabled) visit(entry, []);
+}
+
+/** Installed files stay disabled; enabling validates the complete required enabled graph. */
+export function validateModDependencies(entries: readonly ModEntry[], scope: 'enabled' | 'all' = 'enabled'): void {
+    checkDependencies(checked(entries, false), scope);
 }
 
 export function readModLibrary(storage: Pick<Storage, 'getItem'> = localStorage): ModEntry[] {
@@ -56,6 +109,8 @@ export function setModEnabled(entries: readonly ModEntry[], id: string, enabled:
     if (!entry) throw Error(`Unknown mod: ${id}`);
     if (entry.world.mode !== 'extension') throw Error('Standalone worlds must be entered separately');
     entry.enabled = enabled;
+    checkDependencies(next, 'enabled');
+    checkContentNames(next);
     return next;
 }
 

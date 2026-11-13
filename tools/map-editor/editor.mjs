@@ -15,6 +15,7 @@ let pickerOfficialBase = false;
 let worldPreview = null;
 const officialTile = hash => project?.world?.mode === 'extension' ? officialTiles.get(hash) : undefined;
 const pendingGuards = new Set();
+const selectionGuards = new Set();
 const externalPending = () => [...pendingGuards].some(check => check());
 
 function say(message, error = false) {
@@ -173,6 +174,7 @@ function renderSelection() {
     $('coordinate').textContent = `当前格 ${hashLabel(selectedHash)}`;
     $('selection-count').textContent = `选区 ${group.size} 格`;
     $('selection-bar').hidden = group.size === 0;
+    window.dispatchEvent(new Event('map-editor-group-change'));
 }
 function renderTextMode() {
     const multilingual = $('text-mode').value === 'languages';
@@ -222,6 +224,10 @@ function fillForm() {
 function selectHash(hash, options = {}) {
     return guard(() => {
         const canonical = parseAt(String(hash)).join(',');
+        if ([...selectionGuards].some(check => check() === false)) {
+            say('结构化格子字段尚未写入。请先写入表单或还原，再切换格子。', true);
+            return false;
+        }
         if (!discardFields()) return false;
         selectedHash = canonical;
         if (options.toggle) { if (group.has(canonical)) group.delete(canonical); else group.add(canonical); }
@@ -580,12 +586,16 @@ try {
         showOfficialBase(visible) { pickerOfficialBase = !!visible; syncTiles(); draw(); },
         setWorldPreview(value) { worldPreview = value; syncTiles(); draw(); },
         registerPendingGuard(check) { pendingGuards.add(check); return () => pendingGuards.delete(check); },
+        registerSelectionGuard(check) { selectionGuards.add(check); return () => selectionGuards.delete(check); },
         applyProject(action, message = '项目已更新', options = {}) { requireApplied(options); return change(() => action(project), message); },
         mount(moduleId, placement) { return guard(() => { requireApplied(); return change(() => project.mount(moduleId, placement), '模块已挂载'); }); }
     })});
     try {
         await import('./world-settings.mjs').then(m => m.installWorldSettings(window.mapEditor));
     } catch (error) { console.warn('世界设置模块未加载', error); }
+    try {
+        await import('./author-ui.mjs').then(m => m.installAuthorUI(window.mapEditor));
+    } catch (error) { console.warn('作者工具模块未加载', error); }
 } catch (error) {
     $('fatal').hidden = false;
     $('fatal').textContent = `地图编辑器加载失败：${error.message}\n请从仓库根目录通过 HTTP 打开，确认 model.mjs 和已编译的 js/hy/appearance.js、js/hy/script.js 可用。`;

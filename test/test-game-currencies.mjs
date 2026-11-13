@@ -21,6 +21,9 @@ const {lobbyBank,redeemMapBankOffer} = await import('../js/hy/bank.js');
 const {createMapScriptState, parseMapScript, planMapScript} = await import('../js/hy/script.js');
 const {createMapScriptEngine} = await import('../js/hy/script-engine.js');
 const {captureModWorlds,prepareModSave} = await import('../js/hy/mod-saves.js');
+const {authorDebugSaveMode} = await import('../js/hy/author-debug.js');
+const {activeContentWorlds, contentAchievements} = await import('../js/hy/content-catalog.js');
+const {localizedContent} = await import('../js/hy/world-content.js');
 
 const quiet = fn => {
     const log = console.log;
@@ -100,14 +103,16 @@ function makeGame(data, mode = 'survival', tiles = []) {
         'tileColor', 'tileTextColor', 'tileDisplayText', 'stringifyDeductriumAmout',
         'editorPreview', 'editorPreviewSaveMode', 'createMapScriptState', 'parseMapScript', 'planMapScript', 'createMapScriptEngine',
         'activeWorld','activeWorldSaveMode','createCurrencyBalances','lobbyBank','redeemMapBankOffer',
-        'installedMods','enabledMods','captureModWorlds','prepareModSave',gameSource)(
+        'installedMods','enabledMods','captureModWorlds','prepareModSave',
+        'authorDebugSaveMode','mountAuthorDebug','activeContentWorlds','contentAchievements','localizedContent',gameSource)(
         { location: { search: mode === 'creative' ? '?creative' : '' } }, documentBoundary,
         () => { confirmations++; return confirmResult; }, initialCreativeRules, initialSurvivalRules,
         HSBoundary, TTBoundary, HyBoundary, blockMap, nameMap, Type, LangMgr,
         ProgressBoundary, id => id, SaveBoundary, HSParser, calcMaxReachOrd, cmp, printOrd,
         tileColor, tileTextColor, tileDisplayText, stringifyDeductriumAmout,
         false, ()=>'unused', createMapScriptState, parseMapScript, planMapScript, createMapScriptEngine, undefined,undefined,createCurrencyBalances,lobbyBank,redeemMapBankOffer,
-        [],[],captureModWorlds,prepareModSave);
+        [],[],captureModWorlds,prepareModSave,
+        authorDebugSaveMode,()=>undefined,activeContentWorlds,contentAchievements,localizedContent);
     // LangMgr only touches the DOM in its constructor.
     const previousDocument = globalThis.document;
     globalThis.document = documentBoundary;

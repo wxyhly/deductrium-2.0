@@ -17,7 +17,7 @@ export type TileBlock = {
 export const blockMap = new Map<string, TileBlock>();
 export const nameMap = new Map<string, string>();
 // Editor playtests consume JSON tiles, never JavaScript from imported map.ts.
-export const editorPreview = typeof window !== "undefined" && window.location?.search === "?map-editor-preview";
+export const editorPreview = typeof window !== "undefined" && new URLSearchParams(window.location?.search).has("map-editor-preview");
 export function editorPreviewTiles(): [string, TileBlock][] | undefined {
     if (!editorPreview) return;
     const data = JSON.parse(localStorage.getItem("deductrium2_map_preview") ?? "null");

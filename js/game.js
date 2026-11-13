@@ -19,6 +19,9 @@ import { tileColor, tileTextColor, tileDisplayText } from "./hy/appearance.js";
 import { stringifyDeductriumAmout } from "./format.js";
 import { createMapScriptState, parseMapScript, planMapScript } from "./hy/script.js";
 import { createMapScriptEngine } from "./hy/script-engine.js";
+import { activeContentWorlds, contentAchievements } from "./hy/content-catalog.js";
+import { localizedContent } from "./hy/world-content.js";
+import { authorDebugSaveMode, mountAuthorDebug } from "./hy/author-debug.js";
 const gameModeURL = window.location.search.substring(1);
 const gameMode = gameModeURL === "creative" ? gameModeURL : "survival";
 // 旧地图的 dstr 是展示文字；目标必须按稳定 ID 查找，不能解析本地化文案。
@@ -50,6 +53,7 @@ class Game {
     ordBase = 15;
     mapScript = createMapScriptState();
     lastScriptError = "";
+    authorDebug;
     langMgr = new LangMgr(SaveLoad.getSavedLang());
     hsLayer = new HSLayer;
     ttLayer = new TTLayer(gameMode === "creative");
@@ -57,7 +61,7 @@ class Game {
     // 同页切换存档时先还原地图初始状态，再重放当前存档，避免继承上个槽位的奖励/拆门。
     initialMapState = new Map(Array.from(blockMap, ([hash, block]) => [hash, { ...block, data: { ...block.data } }]));
     initialMapNames = new Map(nameMap);
-    saveload = new SaveLoad(activeWorldSaveMode ?? (editorPreview ? editorPreviewSaveMode() : gameMode), () => {
+    saveload = new SaveLoad(authorDebugSaveMode(activeWorldSaveMode ?? (editorPreview ? editorPreviewSaveMode() : gameMode), window.location.search), () => {
         // 创造模式目前只有推理层（hs）+ 类型层（tt）；几何层/奖励/成就/经济仅生存模式
         if (gameMode === "creative")
             return { hs: this.hsLayer.serialize(), tt: this.ttLayer.serialize(), ly: this.getCurrentLayer() };
@@ -203,6 +207,15 @@ class Game {
         this.hsLayer.onchange = () => this.saveload.notifySave();
         this.ttLayer.onchange = () => this.saveload.notifySave();
         this.hyLayer.onchange = () => this.saveload.notifySave();
+        // Content installation belongs before this hook; start events below are traced as well.
+        this.authorDebug = mountAuthorDebug({ save: this.saveload, readState: () => ({
+                keys: [...this.mapScript.keys], flags: [...this.mapScript.flags], counts: { ...this.mapScript.counts },
+                once: [...this.mapScript.done], eventDone: this.mapScript.eventDone ?? {},
+                rewards: [...this.gotRewards], scriptRewards: [...this.mapScript.rewards],
+                money: this.deductrium, balances: this.currencyBalances(),
+                position: this.hyLayer.world.currentTile.join(','),
+                proof: { hs: this.hsLayer.serialize(), tt: this.ttLayer.serialize() },
+            }) });
         if (gameMode === "survival") {
             this.restoreMapScript();
             if (firstLoad) {
@@ -277,7 +290,7 @@ class Game {
     restoreMapScript() {
         for (const reward of this.mapScript.removedRewards)
             this.gotRewards.delete(reward);
-        createMapScriptEngine(this.hsLayer, this.ttLayer).restore(this.mapScript);
+        createMapScriptEngine(this.hsLayer, this.ttLayer, activeContentWorlds().flatMap(w => w.content ? [w.content] : [])).restore(this.mapScript);
         this.hsLayer.setMapDisabledAxioms?.(this.mapScript.disabledAxioms);
         for (const reward of this.mapScript.rewards)
             this.hsLayer.applyReward(reward);
@@ -305,10 +318,11 @@ class Game {
             // Touch is opt-in; legacy scripts still run only at their original tile lifecycle boundary.
             if (event === "touch" && !explicit)
                 return;
-            const engine = createMapScriptEngine(this.hsLayer, this.ttLayer);
+            const engine = createMapScriptEngine(this.hsLayer, this.ttLayer, activeContentWorlds().flatMap(w => w.content ? [w.content] : []));
             const plan = planMapScript(block.data.script, this.mapScript, {
                 money, typeMoney: this.typeDeductrium, balances: { ...this.currencyBalances(), reasoning: money },
                 banks: this.mapBanks(), rewards: this.gotRewards, selfId: id,
+                trace: this.authorDebug?.trace,
                 hasTile: target => blockMap.has(nameMap.get(target) ?? target),
                 hasAxiom: name => this.hsLayer.hasMapAxiom(name),
                 getTileType: target => blockMap.get(nameMap.get(target) ?? target)?.type,
@@ -340,13 +354,23 @@ class Game {
                     this.hyLayer.needUpdate = true;
                 }
             }
-            if (plan.status === "blocked" || plan.confirmation && !confirm(plan.confirmation))
+            if (plan.status === "blocked")
                 return false;
+            if (plan.confirmation) {
+                const accepted = confirm(plan.confirmation);
+                this.authorDebug?.trace({ kind: 'outcome', phase: 'host', tileId: id, event,
+                    outcome: accepted ? 'confirmation' : 'blocked', reason: accepted ? '作者已确认，等待提交' : '作者取消确认，事务未提交' });
+                if (!accepted)
+                    return false;
+            }
             this.lastScriptError = "";
             return { plan, money, id, ...(plan.event ? { event: plan.event } : {}) };
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            const match = /^Map script line (\d+):/.exec(message);
+            this.authorDebug?.trace({ kind: 'outcome', phase: 'host', tileId: id, event, outcome: 'exception', reason: message,
+                ...(match ? { line: Number(match[1]), source: block.data.script.split(/\r\n|\r|\n/)[Number(match[1]) - 1] } : {}) });
             if (this.lastScriptError !== id + message)
                 this.showToast(message);
             this.lastScriptError = id + message;
@@ -357,92 +381,100 @@ class Game {
         if (!prepared)
             return;
         const { plan, money, id, event } = prepared;
-        if (!plan.repeat) {
-            if (event) {
-                const events = (plan.state.eventDone ??= {})[id] ??= [];
-                if (!events.includes(event))
-                    events.push(event);
-            }
-            else if (!plan.state.done.includes(id))
-                plan.state.done.push(id);
-        }
-        if (plan.consumeReward === false) {
-            plan.state.tileEdits[id] = { ...plan.state.tileEdits[id], type: TileBlockType.Reward };
-        }
-        else if (plan.consumeReward === true && plan.state.tileEdits[id]?.type === TileBlockType.Reward) {
-            delete plan.state.tileEdits[id].type;
-        }
-        this.mapScript = plan.state;
-        // Legacy ordinal rewards must see the ordinal staged by this same script.
-        this.restoreMapScriptOrdinal();
-        for (const reward of plan.state.removedRewards)
-            this.gotRewards.delete(reward);
-        this.deductriumConsumed += plan.spent;
-        this.typeDeductriumConsumed += plan.typeSpent;
-        this.typeDeductrium = plan.balances.type;
-        this.modBalances = Object.fromEntries(Object.entries(plan.balances).filter(([id]) => id !== "reasoning" && id !== "type"));
-        const delta = plan.money - money;
-        if (delta)
-            this.addDeductrium(delta);
-        for (const effect of plan.effects) {
-            if (effect.op === "reward") {
-                this.gotRewards.add(effect.id);
-                this.applyUnlockEffect({ type: TileBlockType.Road, name: effect.id, text: "", data: {} });
-            }
-            else if (effect.op === "message")
-                this.showToast(effect.text);
-            else if (effect.op === "achievement")
-                this.finishAchievement(effect.id);
-            else if (effect.op === "info")
-                this.unlockInfo(effect.id);
-            else if (effect.op === "clear-reward") {
-                const tile = blockMap.get(nameMap.get(effect.id) ?? effect.id);
-                if (tile?.data)
-                    tile.data.got = false;
-            }
-            else if (effect.op === "reset") {
-                const hash = nameMap.get(effect.id) ?? effect.id;
-                const tile = blockMap.get(hash);
-                this.gotRewards.delete(effect.id);
-                this.gotRewards.delete(hash);
-                if (tile.name)
-                    this.gotRewards.delete(tile.name);
-                tile.data ??= {};
-                tile.data.got = false;
-                tile.data.del = false;
-                tile.type = TileBlockType.Reward;
-                this.destructedGates.delete(effect.id);
-                this.destructedGates.delete(hash);
-            }
-            else if (effect.op === "demolish")
-                this.destructGate(effect.id);
-            else if (effect.op === "language") {
-                try {
-                    localStorage.setItem("lang", effect.value);
+        try {
+            if (!plan.repeat) {
+                if (event) {
+                    const events = (plan.state.eventDone ??= {})[id] ??= [];
+                    if (!events.includes(event))
+                        events.push(event);
                 }
-                catch { }
-                this.langMgr = new LangMgr(effect.value);
-                this.progressLayer.refreshAchievements();
-                this.progressLayer.refreshSymbols();
-                this.progressLayer.refreshKnowledge();
-                this.hyLayer.needUpdate = true;
+                else if (!plan.state.done.includes(id))
+                    plan.state.done.push(id);
             }
-            else if (effect.op === "open" || effect.op === "close" || effect.op === "tile" || effect.op === "text") {
-                const hash = nameMap.get(effect.id) ?? effect.id;
-                const tile = blockMap.get(hash);
-                Object.assign(tile, plan.state.tileEdits[effect.id]);
-                if (effect.op === "close" || effect.op === "tile" && effect.type !== TileBlockType.Road) {
+            if (plan.consumeReward === false) {
+                plan.state.tileEdits[id] = { ...plan.state.tileEdits[id], type: TileBlockType.Reward };
+            }
+            else if (plan.consumeReward === true && plan.state.tileEdits[id]?.type === TileBlockType.Reward) {
+                delete plan.state.tileEdits[id].type;
+            }
+            this.mapScript = plan.state;
+            // Legacy ordinal rewards must see the ordinal staged by this same script.
+            this.restoreMapScriptOrdinal();
+            for (const reward of plan.state.removedRewards)
+                this.gotRewards.delete(reward);
+            this.deductriumConsumed += plan.spent;
+            this.typeDeductriumConsumed += plan.typeSpent;
+            this.typeDeductrium = plan.balances.type;
+            this.modBalances = Object.fromEntries(Object.entries(plan.balances).filter(([id]) => id !== "reasoning" && id !== "type"));
+            const delta = plan.money - money;
+            if (delta)
+                this.addDeductrium(delta);
+            for (const effect of plan.effects) {
+                if (effect.op === "reward") {
+                    this.gotRewards.add(effect.id);
+                    this.applyUnlockEffect({ type: TileBlockType.Road, name: effect.id, text: "", data: {} });
+                }
+                else if (effect.op === "message")
+                    this.showToast(effect.text);
+                else if (effect.op === "achievement")
+                    this.finishAchievement(effect.id);
+                else if (effect.op === "info")
+                    this.unlockInfo(effect.id);
+                else if (effect.op === "clear-reward") {
+                    const tile = blockMap.get(nameMap.get(effect.id) ?? effect.id);
+                    if (tile?.data)
+                        tile.data.got = false;
+                }
+                else if (effect.op === "reset") {
+                    const hash = nameMap.get(effect.id) ?? effect.id;
+                    const tile = blockMap.get(hash);
+                    this.gotRewards.delete(effect.id);
+                    this.gotRewards.delete(hash);
+                    if (tile.name)
+                        this.gotRewards.delete(tile.name);
+                    tile.data ??= {};
+                    tile.data.got = false;
+                    tile.data.del = false;
+                    tile.type = TileBlockType.Reward;
                     this.destructedGates.delete(effect.id);
                     this.destructedGates.delete(hash);
-                    if (tile.data)
-                        tile.data.del = false;
+                }
+                else if (effect.op === "demolish")
+                    this.destructGate(effect.id);
+                else if (effect.op === "language") {
+                    try {
+                        localStorage.setItem("lang", effect.value);
+                    }
+                    catch { }
+                    this.langMgr = new LangMgr(effect.value);
+                    this.progressLayer.refreshAchievements();
+                    this.progressLayer.refreshSymbols();
+                    this.progressLayer.refreshKnowledge();
+                    this.hyLayer.needUpdate = true;
+                }
+                else if (effect.op === "open" || effect.op === "close" || effect.op === "tile" || effect.op === "text") {
+                    const hash = nameMap.get(effect.id) ?? effect.id;
+                    const tile = blockMap.get(hash);
+                    Object.assign(tile, plan.state.tileEdits[effect.id]);
+                    if (effect.op === "close" || effect.op === "tile" && effect.type !== TileBlockType.Road) {
+                        this.destructedGates.delete(effect.id);
+                        this.destructedGates.delete(hash);
+                        if (tile.data)
+                            tile.data.del = false;
+                    }
                 }
             }
+            this.restoreMapScript();
+            this.checkEconAchievements();
+            this.updateStats();
+            this.saveload.notifySave();
+            this.authorDebug?.trace({ kind: 'outcome', phase: 'host', tileId: id, event, outcome: 'pass', reason: '事务已提交' });
         }
-        this.restoreMapScript();
-        this.checkEconAchievements();
-        this.updateStats();
-        this.saveload.notifySave();
+        catch (error) {
+            this.authorDebug?.trace({ kind: 'outcome', phase: 'host', tileId: id, event, outcome: 'exception',
+                reason: error instanceof Error ? error.message : String(error) });
+            throw error;
+        }
     }
     runMapScript(block, hash, event) {
         const prepared = this.prepareMapScript(block, hash, event);
@@ -497,7 +529,8 @@ class Game {
         if (this.gotAchievements.has(id))
             return;
         this.gotAchievements.add(id);
-        this.showToast(LangMgr.formalize.achToast(LangMgr.achName(id)), "ach");
+        const custom = contentAchievements().find(entry => entry.id === id);
+        this.showToast(LangMgr.formalize.achToast(custom ? localizedContent(custom.title, LangMgr.lang) : LangMgr.achName(id)), "ach");
         this.progressLayer.refreshAchievements();
         this.saveload.notifySave();
     }
@@ -525,6 +558,13 @@ class Game {
     }
     // 解锁知识（通过带 data.info 的方块或获得同名 reward 时调用）
     unlockInfo(id) {
+        if (Array.isArray(id)) {
+            for (const entry of id)
+                this.unlockInfo(entry);
+            return;
+        }
+        if (typeof id !== 'string')
+            return;
         if (gameMode === "creative")
             return;
         const full = kbFullId(id);
@@ -856,7 +896,7 @@ class Game {
                 if (data.t) {
                     const text = typeof tile.text === "string" ? tile.text : tile.text[LangMgr.lang] ?? Object.values(tile.text)[0];
                     try {
-                        return createMapScriptEngine(this.hsLayer, this.ttLayer).query({ kind: "type", text }, this.mapScript);
+                        return createMapScriptEngine(this.hsLayer, this.ttLayer, activeContentWorlds().flatMap(w => w.content ? [w.content] : [])).query({ kind: "type", text }, this.mapScript);
                     }
                     catch {
                         return false;

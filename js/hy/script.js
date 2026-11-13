@@ -963,6 +963,54 @@ function engineEdit(command) {
  * The caller owns once-only bookkeeping in state.done/eventDone and application of returned effects.
  */
 export function planMapScript(source, state, env, checksOnly = false) {
+    let observer;
+    let limit = 256;
+    // Debug options are deliberately excluded from normal environment validation.
+    try {
+        if (typeof env?.trace === 'function')
+            observer = env.trace;
+        if (Number.isFinite(env?.traceLimit))
+            limit = Math.max(1, Math.min(1024, Math.floor(env.traceLimit)));
+    }
+    catch { /* A broken observer must not become a script failure. */ }
+    let emitted = 0, truncated = false, blockedLine;
+    const lines = observer && typeof source === 'string' && source.length <= MAX_SOURCE ? source.split(/\r\n|\r|\n/) : [];
+    const trace = (entry) => {
+        if (entry.kind === 'condition' && entry.result === false)
+            blockedLine = entry.line;
+        if (entry.kind === 'action' && entry.op === 'block')
+            blockedLine = entry.line;
+        if (!observer)
+            return;
+        const final = entry.kind === 'outcome';
+        if (emitted >= limit - (final ? 0 : 1)) {
+            truncated = true;
+            return;
+        }
+        emitted++;
+        try {
+            observer({ ...entry, phase: 'plan', tileId: env.selfId, event: env.event,
+                ...(entry.line === undefined ? {} : { source: lines[entry.line - 1] }),
+                ...(final && truncated ? { truncated: true } : {}) });
+        }
+        catch { /* Observability has no authority over the transaction. */ }
+    };
+    try {
+        const plan = planMapScriptCore(source, state, env, checksOnly, trace);
+        trace({ kind: 'outcome', outcome: plan.status === 'blocked' ? 'blocked' : plan.confirmation === undefined ? 'pass' : 'confirmation',
+            ...(plan.status === 'blocked' ? { line: blockedLine, reason: '条件未满足或执行了 block；事务未提交' } : {}),
+            ...(!plan.handled ? { reason: '当前事件没有处理器，未执行任何动作' } : {}),
+            ...(plan.confirmation === undefined ? {} : { reason: plan.confirmation }) });
+        return plan;
+    }
+    catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const match = /^Map script line (\d+):/.exec(reason);
+        trace({ kind: 'outcome', outcome: 'exception', reason, ...(match ? { line: Number(match[1]) } : {}) });
+        throw error;
+    }
+}
+function planMapScriptCore(source, state, env, checksOnly, trace) {
     const commands = parseMapScript(source);
     const next = createMapScriptState(state);
     const incoming = createMapScriptState(next);
@@ -1217,7 +1265,7 @@ export function planMapScript(source, state, env, checksOnly = false) {
         value.next = economyAtLine(line, () => ordinalValue(env.nextOrdinal([...value.max], value.base, ownsReward('stepw')), line));
         next.ordinal = ordinalState(value);
     };
-    const evaluatePredicate = (predicate) => {
+    const predicateResult = (predicate) => {
         const query = engineQuery(predicate);
         if (query) {
             const result = economyAtLine(predicate.line, () => env.engine.query(query, createMapScriptState(next)));
@@ -1248,28 +1296,87 @@ export function planMapScript(source, state, env, checksOnly = false) {
         }
         return fail(predicate.line, 'Unsupported predicate');
     };
+    const evaluatePredicate = (predicate) => {
+        const result = predicateResult(predicate);
+        trace({ kind: 'condition', line: predicate.line, op: predicate.kind, result,
+            ...(result ? {} : { reason: `不满足：${formatPredicate(predicate)}` }) });
+        return result;
+    };
+    const skipCondition = (condition, reason) => {
+        trace({ kind: 'not-run', line: condition.line, op: condition.op === 'predicate' ? condition.predicate.kind : condition.op, reason });
+        if (condition.op === 'not')
+            skipCondition(condition.condition, reason);
+        else if (condition.op === 'and' || condition.op === 'or') {
+            skipCondition(condition.left, reason);
+            skipCondition(condition.right, reason);
+        }
+    };
+    const skip = (statements, reason) => {
+        for (const statement of statements) {
+            trace({ kind: 'not-run', line: statement.line, op: statement.op, reason });
+            if (statement.op === 'on')
+                skip(statement.body, reason);
+            else if (statement.op === 'if') {
+                for (const branch of statement.branches) {
+                    skipCondition(branch.condition, reason);
+                    skip(branch.body, reason);
+                }
+                if (statement.elseBody) {
+                    trace({ kind: 'not-run', line: statement.elseLine, op: 'else', reason });
+                    skip(statement.elseBody, reason);
+                }
+            }
+        }
+    };
     const evaluateCondition = (condition) => {
         if (condition.op === 'predicate')
             return evaluatePredicate(condition.predicate);
+        let result;
         if (condition.op === 'not')
-            return !evaluateCondition(condition.condition);
-        if (condition.op === 'and')
-            return evaluateCondition(condition.left) && evaluateCondition(condition.right);
-        return evaluateCondition(condition.left) || evaluateCondition(condition.right);
+            result = !evaluateCondition(condition.condition);
+        else {
+            const left = evaluateCondition(condition.left);
+            if (condition.op === 'and' ? !left : left) {
+                skipCondition(condition.right, 'short-circuit');
+                result = left;
+            }
+            else
+                result = evaluateCondition(condition.right);
+        }
+        trace({ kind: 'condition', line: condition.line, op: condition.op, result });
+        return result;
     };
     const execute = (statements) => {
         for (const command of statements) {
-            if (stopped)
-                return;
+            if (stopped) {
+                skip([command], 'stopped');
+                continue;
+            }
             if (command.op === 'on')
                 continue; // Only the selected handler body is executable.
             const { line, op } = command;
             if (command.op === 'if') {
-                const branch = command.branches.find(branch => evaluateCondition(branch.condition));
-                if (branch)
-                    execute(branch.body);
-                else if (command.elseBody !== undefined)
-                    execute(command.elseBody);
+                let selected = false;
+                for (const branch of command.branches) {
+                    if (selected) {
+                        skipCondition(branch.condition, 'unselected-branch');
+                        skip(branch.body, 'unselected-branch');
+                    }
+                    else if (evaluateCondition(branch.condition)) {
+                        selected = true;
+                        execute(branch.body);
+                    }
+                    else
+                        skip(branch.body, 'false-condition');
+                }
+                if (command.elseBody !== undefined) {
+                    if (selected) {
+                        trace({ kind: 'not-run', line: command.elseLine, op: 'else', reason: 'unselected-branch' });
+                        skip(command.elseBody, 'unselected-branch');
+                    }
+                    else
+                        execute(command.elseBody);
+                }
                 continue;
             }
             if (command.op === 'require') {
@@ -1280,181 +1387,200 @@ export function planMapScript(source, state, env, checksOnly = false) {
                 continue;
             }
             if (command.op === 'allow' || command.op === 'block') {
+                trace({ kind: 'action', line, op, reason: 'staged' });
                 status = command.op === 'allow' ? 'pass' : 'blocked';
                 stopped = true;
                 continue;
             }
-            if (command.op === 'event')
-                continue; // Static event policy is resolved during whole-tree preflight.
-            if (checksOnly)
-                continue;
-            if (command.op === 'reward') {
-                consumeReward = command.mode === 'consume';
+            if (command.op === 'event') {
+                trace({ kind: 'action', line, op, reason: command.mode });
                 continue;
             }
-            if (command.op === 'confirm') {
-                if (confirmation !== undefined && confirmation !== command.text)
-                    fail(line, 'Conflicting confirmation requests');
-                confirmation = command.text;
+            if (checksOnly) {
+                trace({ kind: 'not-run', line, op, reason: 'checks-only' });
                 continue;
             }
-            if (command.op === 'remember') {
-                attemptEffects.push({ op: 'remember', kind: command.kind, text: command.text });
-                continue;
-            }
-            if (command.op === 'generate') {
-                attemptEffects.push({ op: 'generate-ordinal', value: [...command.value] });
-                continue;
-            }
-            const edit = engineEdit(command);
-            if (edit) {
-                if (edit.op === 'unlock-rule')
-                    changeMember(next.engine.rules, edit.id, true);
-                else if (edit.op === 'unlock-type')
-                    changeMember(next.engine.types, edit.id, true);
-                else if (edit.op === 'disable-type' || edit.op === 'enable-type')
-                    changeMember(next.engine.disabledTypes, edit.id, edit.op === 'disable-type');
-                else if (edit.op === 'add-axiom')
-                    put(next.engine.axioms, edit.id, edit.text);
-                else if (edit.op === 'remove-axiom')
-                    delete next.engine.axioms[edit.id];
-                effects.push({ op: 'engine', edit });
-                continue;
-            }
-            if (command.op === 'recompute') {
-                recomputeOrdinal(line);
-                continue;
-            }
-            if (command.op === 'raise') {
-                const value = currentOrdinal();
-                if (compareOrdinal(command.value, value.max, line) > 0) {
-                    value.max = [...command.value];
+            let actionFailed = false;
+            try {
+                if (command.op === 'reward') {
+                    consumeReward = command.mode === 'consume';
+                    continue;
+                }
+                if (command.op === 'confirm') {
+                    if (confirmation !== undefined && confirmation !== command.text)
+                        fail(line, 'Conflicting confirmation requests');
+                    confirmation = command.text;
+                    continue;
+                }
+                if (command.op === 'remember') {
+                    attemptEffects.push({ op: 'remember', kind: command.kind, text: command.text });
+                    continue;
+                }
+                if (command.op === 'generate') {
+                    attemptEffects.push({ op: 'generate-ordinal', value: [...command.value] });
+                    continue;
+                }
+                const edit = engineEdit(command);
+                if (edit) {
+                    if (edit.op === 'unlock-rule')
+                        changeMember(next.engine.rules, edit.id, true);
+                    else if (edit.op === 'unlock-type')
+                        changeMember(next.engine.types, edit.id, true);
+                    else if (edit.op === 'disable-type' || edit.op === 'enable-type')
+                        changeMember(next.engine.disabledTypes, edit.id, edit.op === 'disable-type');
+                    else if (edit.op === 'add-axiom')
+                        put(next.engine.axioms, edit.id, edit.text);
+                    else if (edit.op === 'remove-axiom')
+                        delete next.engine.axioms[edit.id];
+                    effects.push({ op: 'engine', edit });
+                    continue;
+                }
+                if (command.op === 'recompute') {
                     recomputeOrdinal(line);
+                    continue;
                 }
-                continue;
-            }
-            if (command.op === 'set' && command.kind === 'ordinal') {
-                currentOrdinal()[command.slot] = [...command.value];
-                next.ordinal = ordinalState(currentOrdinal());
-                continue;
-            }
-            if (command.op === 'set' && command.kind === 'ordinal-base') {
-                currentOrdinal().base = command.value;
-                next.ordinal = ordinalState(currentOrdinal());
-                continue;
-            }
-            if (command.op === 'set' && command.kind === 'language') {
-                effects.push({ op: 'language', value: command.language });
-                continue;
-            }
-            if (command.op === 'exchange') {
-                const value = validValue(operand(command), false, line);
-                const result = economyAtLine(line, () => exchange(balances, banks.get(command.bankId), command.currency, value, command.to));
-                balances = result.balances;
-                continue;
-            }
-            if (command.op === 'message') {
-                effects.push({ op: 'message', text: command.text });
-                continue;
-            }
-            if (!('kind' in command))
-                fail(line, 'Unsupported command');
-            switch (command.kind) {
-                case 'key':
-                    if (op === 'take' && !next.keys.includes(command.id))
-                        fail(line, `Missing key: ${command.id}`);
-                    changeMember(next.keys, command.id, op === 'give');
-                    break;
-                case 'flag':
-                    changeMember(next.flags, command.id, op === 'set');
-                    break;
-                case 'count':
-                    put(next.counts, command.id, validValue(op === 'add' ? count(command.id) + operand(command) : operand(command), true, line));
-                    break;
-                case 'money': {
+                if (command.op === 'raise') {
+                    const value = currentOrdinal();
+                    if (compareOrdinal(command.value, value.max, line) > 0) {
+                        value.max = [...command.value];
+                        recomputeOrdinal(line);
+                    }
+                    continue;
+                }
+                if (command.op === 'set' && command.kind === 'ordinal') {
+                    currentOrdinal()[command.slot] = [...command.value];
+                    next.ordinal = ordinalState(currentOrdinal());
+                    continue;
+                }
+                if (command.op === 'set' && command.kind === 'ordinal-base') {
+                    currentOrdinal().base = command.value;
+                    next.ordinal = ordinalState(currentOrdinal());
+                    continue;
+                }
+                if (command.op === 'set' && command.kind === 'language') {
+                    effects.push({ op: 'language', value: command.language });
+                    continue;
+                }
+                if (command.op === 'exchange') {
                     const value = validValue(operand(command), false, line);
-                    if (op === 'take' && balances.reasoning < value)
-                        fail(line, 'Insufficient money');
-                    balances.reasoning = validValue(balances.reasoning + (op === 'give' ? value : -value), false, line);
-                    if (op === 'take')
-                        spent = validValue(spent + value, false, line);
-                    break;
+                    const result = economyAtLine(line, () => exchange(balances, banks.get(command.bankId), command.currency, value, command.to));
+                    balances = result.balances;
+                    continue;
                 }
-                case 'currency': {
-                    const value = validValue(operand(command), false, line);
-                    const balance = balances[command.currency];
-                    if (op === 'take' && balance < value)
-                        fail(line, `Insufficient ${command.currency} currency`);
-                    const updated = validValue(balance + (op === 'give' ? value : -value), false, line);
-                    balances[command.currency] = updated;
-                    if (op === 'take' && command.currency === 'reasoning')
-                        spent = validValue(spent + value, false, line);
-                    if (op === 'take' && command.currency === 'type')
-                        typeSpent = validValue(typeSpent + value, false, line);
-                    break;
+                if (command.op === 'message') {
+                    effects.push({ op: 'message', text: command.text });
+                    continue;
                 }
-                case 'axiom':
-                    if (!hasAxiom(command.id))
-                        fail(line, `Unknown axiom: ${command.id}`);
-                    changeMember(next.disabledAxioms, command.id, op === 'disable');
-                    break;
-                case 'reward':
-                    if (command.op === 'clear' || command.op === 'reset') {
-                        changeMember(next.rewards, command.id, false);
-                        changeMember(next.removedRewards, command.id, true);
-                        if (command.op === 'reset') {
-                            changeMember(next.done, command.id, false);
-                            tileEdit(command.id).type = 3;
-                            effects.push({ op: 'reset', id: command.id });
-                        }
-                        else
-                            effects.push({ op: 'clear-reward', id: command.id });
+                if (!('kind' in command))
+                    fail(line, 'Unsupported command');
+                switch (command.kind) {
+                    case 'key':
+                        if (op === 'take' && !next.keys.includes(command.id))
+                            fail(line, `Missing key: ${command.id}`);
+                        changeMember(next.keys, command.id, op === 'give');
+                        break;
+                    case 'flag':
+                        changeMember(next.flags, command.id, op === 'set');
+                        break;
+                    case 'count':
+                        put(next.counts, command.id, validValue(op === 'add' ? count(command.id) + operand(command) : operand(command), true, line));
+                        break;
+                    case 'money': {
+                        const value = validValue(operand(command), false, line);
+                        if (op === 'take' && balances.reasoning < value)
+                            fail(line, 'Insufficient money');
+                        balances.reasoning = validValue(balances.reasoning + (op === 'give' ? value : -value), false, line);
+                        if (op === 'take')
+                            spent = validValue(spent + value, false, line);
                         break;
                     }
-                    {
-                        const owned = ownsReward(command.id);
-                        changeMember(next.removedRewards, command.id, false);
-                        if (!next.rewards.includes(command.id)) {
-                            next.rewards.push(command.id);
-                            if (!owned)
-                                effects.push({ op: 'reward', id: command.id });
-                        }
-                    }
-                    break;
-                case 'layer':
-                    if (!next.layers.includes(command.id)) {
-                        next.layers.push(command.id);
-                        effects.push({ op: 'layer', id: command.id });
-                    }
-                    break;
-                case 'achievement':
-                case 'info':
-                    if (!effects.some(effect => effect.op === command.kind && 'id' in effect && effect.id === command.id)) {
-                        effects.push({ op: command.kind, id: command.id });
-                    }
-                    break;
-                case 'gate':
-                    if (command.op === 'demolish') {
-                        tileEdit(command.id).type = 0;
-                        if (!effects.some(effect => effect.op === 'demolish' && effect.id === command.id))
-                            demolished++;
-                        effects.push({ op: 'demolish', id: command.id });
+                    case 'currency': {
+                        const value = validValue(operand(command), false, line);
+                        const balance = balances[command.currency];
+                        if (op === 'take' && balance < value)
+                            fail(line, `Insufficient ${command.currency} currency`);
+                        const updated = validValue(balance + (op === 'give' ? value : -value), false, line);
+                        balances[command.currency] = updated;
+                        if (op === 'take' && command.currency === 'reasoning')
+                            spent = validValue(spent + value, false, line);
+                        if (op === 'take' && command.currency === 'type')
+                            typeSpent = validValue(typeSpent + value, false, line);
                         break;
                     }
-                    tileEdit(command.id).type = command.op === 'open' ? 0 : 2;
-                    effects.push({ op: command.op, id: command.id });
-                    break;
-                case 'tile':
-                    tileEdit(command.id).type = command.type;
-                    effects.push({ op: 'tile', id: command.id, type: command.type });
-                    break;
-                case 'text':
-                    tileEdit(command.id).text = command.text;
-                    effects.push({ op: 'text', id: command.id, text: command.text });
-                    break;
+                    case 'axiom':
+                        if (!hasAxiom(command.id))
+                            fail(line, `Unknown axiom: ${command.id}`);
+                        changeMember(next.disabledAxioms, command.id, op === 'disable');
+                        break;
+                    case 'reward':
+                        if (command.op === 'clear' || command.op === 'reset') {
+                            changeMember(next.rewards, command.id, false);
+                            changeMember(next.removedRewards, command.id, true);
+                            if (command.op === 'reset') {
+                                changeMember(next.done, command.id, false);
+                                tileEdit(command.id).type = 3;
+                                effects.push({ op: 'reset', id: command.id });
+                            }
+                            else
+                                effects.push({ op: 'clear-reward', id: command.id });
+                            break;
+                        }
+                        {
+                            const owned = ownsReward(command.id);
+                            changeMember(next.removedRewards, command.id, false);
+                            if (!next.rewards.includes(command.id)) {
+                                next.rewards.push(command.id);
+                                if (!owned)
+                                    effects.push({ op: 'reward', id: command.id });
+                            }
+                        }
+                        break;
+                    case 'layer':
+                        if (!next.layers.includes(command.id)) {
+                            next.layers.push(command.id);
+                            effects.push({ op: 'layer', id: command.id });
+                        }
+                        break;
+                    case 'achievement':
+                    case 'info':
+                        if (!effects.some(effect => effect.op === command.kind && 'id' in effect && effect.id === command.id)) {
+                            effects.push({ op: command.kind, id: command.id });
+                        }
+                        break;
+                    case 'gate':
+                        if (command.op === 'demolish') {
+                            tileEdit(command.id).type = 0;
+                            if (!effects.some(effect => effect.op === 'demolish' && effect.id === command.id))
+                                demolished++;
+                            effects.push({ op: 'demolish', id: command.id });
+                            break;
+                        }
+                        tileEdit(command.id).type = command.op === 'open' ? 0 : 2;
+                        effects.push({ op: command.op, id: command.id });
+                        break;
+                    case 'tile':
+                        tileEdit(command.id).type = command.type;
+                        effects.push({ op: 'tile', id: command.id, type: command.type });
+                        break;
+                    case 'text':
+                        tileEdit(command.id).text = command.text;
+                        effects.push({ op: 'text', id: command.id, text: command.text });
+                        break;
+                }
+            }
+            catch (error) {
+                actionFailed = true;
+                throw error;
+            }
+            finally {
+                trace({ kind: 'action', line, op, reason: actionFailed ? 'exception' : 'staged' });
             }
         }
     };
+    if (explicit)
+        for (const command of commands)
+            if (command !== selected)
+                skip([command], 'unselected-event');
     execute(selectedCommands);
     if (status === 'blocked') {
         return { ...selection, state: incoming, money, spent: 0, typeMoney, typeSpent: 0, balances: incomingBalances, effects: [], status: 'blocked',

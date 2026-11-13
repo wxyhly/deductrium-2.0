@@ -1,4 +1,5 @@
-import type { HSLayer } from '../hs/main.js';
+import { HSLayer } from '../hs/main.js';
+import { HilbertSystem } from '../hs/core/core.js';
 import type { TTLayer } from '../tt/main.js';
 import type { MapScriptEngineEdit, MapScriptEngineQuery, MapScriptState } from './script.js';
 import { HSParser } from '../hs/core/parser.js';
@@ -12,8 +13,41 @@ import { validProofTags } from '../hs/proof-tags.js';
 import { MCPT } from '../hs/core/combine.js';
 import { getSurvivalRules } from '../hs/rewards.js';
 import { validateMapTypeId, validateMapTypeQuery } from '../tt/gui.js';
+import { definitionLine, worldContentLines, worldTheoremLine } from './world-content.js';
+import type { WorldContent, WorldTheorem } from './world-content.js';
 
 const parser = new HSParser();
+
+/** Authoring preflight uses the same checked loader as the live engine, without a live sheet. */
+export function checkWorldContent(content: WorldContent): void {
+    const view: HSLayer = Object.create(HSLayer.prototype);
+    const system = new HilbertSystem();
+    Object.assign(view, {hilbertSystem: system, ruleList: [], ruleListView: {refresh() {}, idCounter: 1}});
+    view.addRules(initialCreativeRules + '\n' + intuitionisticRules);
+    for (const definition of content.definitions) {
+        if (system.rules.has(definition.id)) throw Error('地图内容规则名冲突：' + definition.id);
+        view.addRules(definitionLine(definition, system.rules));
+        const rule = system.rules.get(definition.id);
+        if (!rule || rule.error) throw Error('地图定义无法校验：' + definition.id);
+    }
+    // Resolve declared theorem dependencies in order, with cycle detection; no axiom fallback.
+    const pending = new Map(content.rules.map(rule => [rule.id, rule]));
+    for (const id of pending.keys()) if (system.rules.has(id)) throw Error('地图内容规则名冲突：' + id);
+    const active = new Set<string>();
+    const visit = (id: string): void => {
+        const entry = pending.get(id);
+        if (!entry) return;
+        if (active.has(id)) throw Error('地图内容证明循环：' + id);
+        active.add(id);
+        const line = worldTheoremLine(entry);
+        dependencies(line).forEach(visit);
+        view.addRules(line);
+        const rule = system.rules.get(id);
+        if (!checkedTheorem(rule, entry)) throw Error('地图定理证明无效：' + id + (rule?.error ? ' ' + String(rule.error.cause) : ''));
+        active.delete(id); pending.delete(id);
+    };
+    for (const id of [...pending.keys()]) visit(id);
+}
 const catalog = new Map((initialCreativeRules + '\n' + intuitionisticRules).split('\n').map(s => s.trim())
     .filter(s => s && !s.startsWith('//') && !s.startsWith('{') && !s.startsWith('}'))
     .map(s => [s.slice(0, s.indexOf(':')), s]));
@@ -24,6 +58,10 @@ function parseHS(text: string, mode: 'wff' | 'rule' | 'dname'): AST {
     if (mode === 'wff') ast.checkWFF();
     if (mode === 'rule' && ast.type !== NodeType.RULE) throw new Error('需要完整规则');
     return ast;
+}
+function checkedTheorem(rule: Deduction | undefined, theorem: WorldTheorem): boolean {
+    return !!rule && !rule.error && !!rule.step?.length
+        && parseHS(rule.toString(), 'rule').equal(parseHS(theorem.statement, 'rule'));
 }
 function axiom(id: string, text: string): Deduction {
     const name = parseHS(id, 'dname');
@@ -80,7 +118,22 @@ function dependencies(line: string): Set<string> {
     return deps;
 }
 
-function stageHS(hs: HSLayer, state: MapScriptState): { view: HSLayer; rules: Map<string, Deduction> } {
+function contentCatalog(content: readonly WorldContent[]): Map<string, string | null> {
+    const result = new Map<string, string | null>(catalog);
+    for (const collection of content) for (const line of worldContentLines(collection)) {
+        const id = line.slice(0, line.indexOf(':'));
+        result.set(id, result.has(id) ? null : line);
+    }
+    return result;
+}
+function catalogLine(collection: ReadonlyMap<string, string | null>, id: string): string | undefined {
+    const line = collection.get(id);
+    if (line === null) throw Error('地图内容规则名冲突：' + id);
+    return line;
+}
+function stageHS(hs: HSLayer, state: MapScriptState, content: readonly WorldContent[] = []): { view: HSLayer; rules: Map<string, Deduction> } {
+    const localCatalog = contentCatalog(content);
+    const customNames = new Set(content.flatMap(c => [...c.rules.map(rule => rule.id), ...c.definitions.map(rule => rule.id)]));
     const view = hs.createMapScriptSnapshot();
     view.replaceMapScriptRules(new Map());
     const core = view.getMapScriptSystem();
@@ -107,11 +160,13 @@ function stageHS(hs: HSLayer, state: MapScriptState): { view: HSLayer; rules: Ma
         }).join(';');
     };
     const visit = (id: string) => {
-        const line = catalog.get(id);
+        const line = catalogLine(localCatalog, id);
         if (!line) throw new Error('未知内置规则：' + id);
         const actual = actualName(id);
         const existing = core.rules.get(actual);
         if (existing) {
+            if (rules.has(actual)) return;
+            if (customNames.has(id)) throw new Error('地图内容规则名称已被占用：' + actual);
             const header = line.slice(line.indexOf(':') + 1).split(';')[0].replace(/^ax:/, '');
             if (existing.error || !parseHS(existing.toString(), 'rule').equal(parseHS(header, 'rule'))) throw new Error('内置规则名称已被占用：' + actual);
             return;
@@ -119,10 +174,14 @@ function stageHS(hs: HSLayer, state: MapScriptState): { view: HSLayer; rules: Ma
         if (active.has(id)) throw new Error('内置规则依赖循环：' + id);
         if (line.startsWith(id + ':ax:') && !requested.has(id)) throw new Error('尚未获得必需公理：' + id);
         active.add(id);
+        const definition = content.flatMap(c => c.definitions).find(d => d.id === id);
+        if (definition) definitionLine(definition, core.rules);
         dependencies(line).forEach(visit);
         view.addRules(renamedLine(line, actual));
         const rule = core.rules.get(actual);
         if (!rule || rule.error) throw new Error('无法重放内置规则：' + id);
+        const theorem = content.flatMap(c => c.rules).find(r => r.id === id);
+        if (theorem && !checkedTheorem(rule, theorem)) throw new Error('地图定理证明无效：' + id);
         rules.set(actual, rule);
         active.delete(id);
     };
@@ -138,7 +197,7 @@ function stageHS(hs: HSLayer, state: MapScriptState): { view: HSLayer; rules: Ma
 }
 
 /** All layer access is deferred: Game construction and empty restore also work with stubs. */
-export function createMapScriptEngine(hs: HSLayer, tt: TTLayer): {
+export function createMapScriptEngine(hs: HSLayer, tt: TTLayer, content: readonly WorldContent[] = []): {
     validate(request: MapScriptEngineQuery | MapScriptEngineEdit): void;
     validateState(state: MapScriptState): void;
     query(request: MapScriptEngineQuery, state: MapScriptState): boolean;
@@ -152,10 +211,13 @@ export function createMapScriptEngine(hs: HSLayer, tt: TTLayer): {
             }
             else if (request.kind === 'type') validateMapTypeQuery(request.text);
             else if (request.kind === 'rule-name') glob(request.pattern);
-            else if (request.kind === 'rule-present') parseHS(request.id, 'dname');
+            else if (request.kind === 'rule-present') {
+                parseHS(request.id, 'dname');
+                catalogLine(contentCatalog(content), request.id);
+            }
             else if ('id' in request) validateMapTypeId(request.id);
         } else if (request.op === 'unlock-rule') {
-            if (!catalog.has(request.id)) throw new Error('未知内置规则：' + request.id);
+            if (!catalogLine(contentCatalog(content), request.id)) throw new Error('未知地图或内置规则：' + request.id);
         } else if (request.op === 'add-axiom') axiom(request.id, request.text);
         else if (request.op === 'remove-axiom') parseHS(request.id, 'dname');
         else validateMapTypeId(request.id);
@@ -164,7 +226,7 @@ export function createMapScriptEngine(hs: HSLayer, tt: TTLayer): {
         const hsChanged = !!(state.engine.rules.length || Object.keys(state.engine.axioms).length || hs.getMapScriptRuleNames?.().length);
         const ttChanged = !!(state.engine.types.length || state.engine.disabledTypes.length || ttApplied.has(tt));
         return {
-            hs: hsChanged ? stageHS(hs, state) : undefined,
+            hs: hsChanged ? stageHS(hs, state, content) : undefined,
             tt: ttChanged ? tt.getGui().createMapScriptSnapshot(state.engine.types, state.engine.disabledTypes) : undefined,
         };
     };
@@ -177,7 +239,7 @@ export function createMapScriptEngine(hs: HSLayer, tt: TTLayer): {
                 const view = tt.getGui().createMapScriptSnapshot(state.engine.types, state.engine.disabledTypes);
                 return 'text' in request ? view.checkMapScriptType(request.text) : view.hasMapScriptType(request.id);
             }
-            const { view } = stageHS(hs, state);
+            const { view } = stageHS(hs, state, content);
             if (request.kind === 'proof') return view.checkPropGate(parseHS(request.text, 'wff'), request.allowedTags);
             if (request.kind === 'rule') return view.checkRuleGate(parseHS(request.text, 'rule'), request.allowedTags);
             const rules = view.getMapScriptSystem().rules;

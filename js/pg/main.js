@@ -3,6 +3,8 @@ import { knowledgeBase } from "./kb.js";
 import { HSParser } from "../hs/core/parser.js";
 import { SyntaxViewer } from "../astrender.js";
 import { ModManager } from "./mods.js";
+import { contentAchievements, contentNotes } from '../hy/content-catalog.js';
+import { localizedContent } from '../hy/world-content.js';
 // ==================== 成就列表 ====================
 // identifier 二维数组：每行 6 个（GUI 中一行；窄屏自动换列，逻辑不变）
 // identifier 与 tile.data.ac 对应；方块成就通过"通过该方块"触发；
@@ -31,6 +33,8 @@ const achievementFlat = new Set(achievementRows.flat());
 // 知识库条目统一 identifier：符号 → "sym:xxx"，机制 → "mec:xxx"
 // 也接受裸 identifier（如 "#p"、"→"、"dG"），自动映射到对应前缀
 export function kbFullId(id) {
+    if (contentNotes().some(note => note.id === id))
+        return id;
     if (id.startsWith("sym:") || id.startsWith("mec:"))
         return id;
     if (id in knowledgeBase.syms)
@@ -382,6 +386,22 @@ export class ProgressLayer {
             });
             container.appendChild(rowEl);
         });
+        for (const entry of contentAchievements()) {
+            const row = document.createElement('div');
+            row.className = 'achievement';
+            const cell = document.createElement('div');
+            cell.className = 'pg-ach-cell';
+            cell.dataset.ach = entry.id;
+            const got = this.isAchievementGot(entry.id);
+            if (got)
+                cell.classList.add('achieved');
+            else
+                row.classList.add('locked');
+            cell.textContent = localizedContent(entry.title, LangMgr.lang);
+            cell.title = localizedContent(entry.description, LangMgr.lang);
+            row.append(cell);
+            container.append(row);
+        }
     }
     // 重新渲染成就区（获得新成就后由 game.ts 调用，保持 GUI 同步）
     refreshAchievements() {
@@ -486,6 +506,21 @@ export class ProgressLayer {
             note.append(head, body);
             container.appendChild(note);
             this.enhanceKbHtml(body);
+        }
+        for (const entry of contentNotes()) {
+            if (!this.isInfoGot(entry.id))
+                continue;
+            const note = document.createElement('div');
+            note.className = 'pg-kb-note';
+            note.dataset.contentId = entry.id;
+            const title = document.createElement('div');
+            title.className = 'pg-kb-note-head';
+            title.textContent = localizedContent(entry.title, LangMgr.lang);
+            const body = document.createElement('div');
+            body.className = 'pg-kb-note-body';
+            body.textContent = localizedContent(entry.body, LangMgr.lang);
+            note.append(title, body);
+            container.append(note);
         }
         // 空提示（一条都没解锁时）
         if (!container.children.length) {
