@@ -67,7 +67,7 @@ const commandDefs: Record<string, CommandDef> = {
     entr: { params: [] },
     rename: { params: [] },
     dir: { params: [{ type: 'ast', astType: 'item' }] },
-    m: { params: [{ type: 'rulename' }] },
+    m: { params: [] },
     mcpt: { params: [{ type: 'ast', astType: 'wff' }] },
     mcnt: { params: [{ type: 'ast', astType: 'wff' }, { type: 'ast', astType: 'item' }] },
     // axiom: { params: [{ type: 'atom_token' }, { type: 'ast', astType: 'wff' }] },
@@ -185,12 +185,12 @@ export class HSParser implements IParser {
                 this.cursor++;
             }
             const word = text.slice(start, this.cursor);
-            if (["del", "inln", "entr", "rename"].includes(word)) {
+            if (["del", "inln", "entr", "rename", "m"].includes(word)) {
                 this.tokens.push({ type: "cmd", text: word, displayText: word, start, end: this.cursor });
                 const end = text.slice(this.cursor).search(/[;\n]/);
                 const limit = end < 0 ? text.length : this.cursor + end;
                 const rest = text.slice(this.cursor, limit);
-                // Editing targets are names, not formulas. Keep punctuation and quoted folder names literal.
+                // Targets and new macro names are literal input, not compound rule expressions.
                 const parts = word === "rename" ? [...rest.matchAll(/"((?:\\.|[^"\\\n])*)"|'([^'\n]*)'|[^\s]+/g)] : rest.trim() ? [{ 0: rest.trim(), index: rest.search(/\S/) }] : [];
                 let gapStart = this.cursor;
                 for (const part of parts) {
@@ -361,7 +361,7 @@ export class HSParser implements IParser {
         const cmdToken = this.token;
         let args: AST[] = [];
         this.nextSym();
-        if (["del", "inln", "entr", "rename"].includes(cmd) && cmdToken.type === "cmd") {
+        if (["del", "inln", "entr", "rename", "m"].includes(cmd) && cmdToken.type === "cmd") {
             while (this.token?.type === "cmd-atom-param") {
                 const arg = new AST(NodeType.ATOM_ITEM, this.token.text);
                 arg.start = this.token.start; arg.end = this.token.end;

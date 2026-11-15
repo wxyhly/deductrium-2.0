@@ -234,9 +234,16 @@ export class HilbertSystem {
     getSysRuleName(name: string): string {
         return this.renamedSysRule.get(name) ?? name;
     }
-    renameD(oldName: string, newName: string) {
+    checkDname(name: string): void {
+        const ast = new HSParser().parse(name, "dname");
+        if (!name || /[\s{}"']/.test(name) || ast?.type !== NodeType.ATOM_DNAME || ast.name !== name) {
+            throw HSError.invalidRuleName;
+        }
+        if (RuleNameNotAllowedStartsWith.includes(name[0])) throw HSError.invalidRuleNameStartsWith(RuleNameNotAllowedStartsWith);
+    }
+    renameD(oldName: string, newName: string, options: { restoreLegacyName?: boolean } = {}) {
+        if (!options.restoreLegacyName) this.checkDname(newName);
         if (newName === oldName) return;
-        if (RuleNameNotAllowedStartsWith.includes(newName[0])) throw HSError.invalidRuleNameStartsWith(RuleNameNotAllowedStartsWith);
         if (this.rules.get(newName)) throw HSError.nameAlreadyExist(newName);
         const D = this.rules.get(oldName);
         if (!D) throw HSError.dname404(oldName);
@@ -1392,7 +1399,7 @@ export class HilbertSystem {
         return { asserts, conditions, conclusion: k.clone() };
     }
     m(name: string) {
-        if (RuleNameNotAllowedStartsWith.includes(name[0])) throw HSError.invalidRuleNameStartsWith(RuleNameNotAllowedStartsWith);
+        this.checkDname(name);
         if (this.rules.get(name)) throw HSError.nameAlreadyExist(name);
         const { asserts, conditions, conclusion } = this.checkConclusionInPropList();
         this.clearActiveDir();

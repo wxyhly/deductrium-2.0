@@ -19,7 +19,9 @@ export function findTargets(system: HilbertSystem, tree: ListNode[], name: strin
             if (found) return found;
         }
     };
-    const p = namedStep(system.props) ?? system.getP(name);
+    // An explicitly quoted empty name addresses a legacy nameless macro,
+    // never the first proof step whose optional display name is also empty.
+    const p = name ? namedStep(system.props) ?? system.getP(name) : undefined;
     if (p) result.push({ kind: "step", name, step: p });
     const walk = (nodes: ListNode[]) => {
         for (const node of nodes) {
@@ -41,9 +43,18 @@ export function findTargets(system: HilbertSystem, tree: ListNode[], name: strin
 }
 
 export function targetList(text: string): string[] {
-    const names = text.split(",").map(s => s.trim());
+    const names: string[] = [];
+    let start = 0, quoted = false, escaped = false;
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (escaped) { escaped = false; continue; }
+        if (quoted && char === "\\") { escaped = true; continue; }
+        if (char === '"') quoted = !quoted;
+        if (char === "," && !quoted) { names.push(text.slice(start, i).trim()); start = i + 1; }
+    }
+    names.push(text.slice(start).trim());
     if (names.some(n => !n || /[;\n]/.test(n))) throw new Error("Invalid target list");
-    return names;
+    return names.map(name => targetAtom(name).name);
 }
 
 export function targetAtom(text: string): AST {
