@@ -7,7 +7,7 @@ import { createRulePreview } from "./gui/rule-preview.js";
 import { AST } from "./core/ast.js";
 import { Deduction } from "./core/deduction.js";
 import { HilbertSystem } from "./core/core.js";
-import { HSError } from "./core/error.js";
+import { HSError, isHSErrorInfo } from "./core/error.js";
 import { AtomSolver } from "./core/assert.js";
 import { MSBT, MCNT } from "./core/combine.js";
 import { NodeType } from "../asttype.js";
@@ -1411,114 +1411,108 @@ export class HSLayer {
         this.hilbertSystem.msbt(args);
     }
     addRules(data, options = {}) {
-        const context = this.hilbertSystem.saveContext();
-        this.hilbertSystem.loadContext(this.hilbertSystem.createEmptyContext());
-        // a/d 公理占位符恢复：存档行 (uuid)name:ax:. → 替换为 init 定义行（保留 uuid 与文件夹位置）
-        const expanded = [];
-        for (const raw of data.split("\n")) {
-            const t = raw.trim();
-            const um = t.match(/^\((\d+)\)(.*)$/);
-            const content = (um ? um[2] : t).trim();
-            const ci = content.indexOf(":");
-            const name = ci > 0 ? content.slice(0, ci).trim() : "";
-            const rest = ci > 0 ? content.slice(ci + 1).trim() : "";
-            if (rest === "ax:." && initRuleDefs.has(name)) {
-                expanded.push(um ? `(${um[1]})${initRuleDefs.get(name)}` : initRuleDefs.get(name));
-            }
-            else {
-                expanded.push(raw);
-            }
-        }
-        data = expanded.join("\n");
-        const lines = data.split("\n").filter(e => e && e.trim() && !e.trim().startsWith("//"));
-        // 文件夹栈：栈顶为当前容器（ListNode[]）；根为 this.ruleList
+        const hs = this.hilbertSystem;
         const stack = [this.ruleList];
-        // 逐条解析：单条规则出错只标记该规则（占位规则 error），不中断整体加载
-        for (const raw of lines) {
+        const pending = new Map();
+        const invalidHeaders = new Map();
+        for (const raw of data.split("\n")) {
             const trimmed = raw.trim();
-            // 行首可选 (uuid) 前缀（存档格式用；规则名不含括号所以无歧义）
-            let uuid = 0;
-            let content = trimmed;
+            if (!trimmed || trimmed.startsWith("//"))
+                continue;
             const um = trimmed.match(/^\((\d+)\)(.*)$/);
-            if (um) {
-                uuid = parseInt(um[1], 10);
-                content = um[2].trim();
-            }
-            // 文件夹开始：{ 后跟文件夹名（支持 [zh]...[en]... 语言选择）
+            const uuid = um ? parseInt(um[1], 10) : 0;
+            const content = um ? um[2].trim() : trimmed;
+            const container = stack[stack.length - 1];
             if (content.startsWith("{")) {
-                const folder = { name: this.resolveFolderName(content), uuid, children: [] };
-                stack[stack.length - 1].push(folder);
-                stack.push(folder.children);
+                const children = [];
+                container.push({ name: this.resolveFolderName(content), uuid, children });
+                stack.push(children);
                 continue;
             }
-            // 文件夹结束
             if (content.startsWith("}")) {
                 if (stack.length > 1)
                     stack.pop();
                 continue;
             }
-            const name = content.slice(0, content.indexOf(":")).trim();
-            const container = stack[stack.length - 1];
-            // Creative refresh already loaded these rules from the current library.
-            // Keep the saved tree position/UUID without replaying an obsolete body.
-            if (options.keepRules?.has(name)) {
-                container.push({ name, uuid });
+            const colon = content.indexOf(":");
+            const name = content.slice(0, colon).trim();
+            container.push({ name, uuid });
+            // Creative refresh already registered these rules; only restore their tree position/UUID.
+            if (options.keepRules?.has(name))
                 continue;
-            }
+            pending.delete(name);
+            invalidHeaders.delete(name);
+            hs.rules.delete(name);
             try {
-                let rest = content.slice(content.indexOf(":") + 1).trim();
-                let ax = false;
-                let steps = "";
-                if (rest.startsWith("ax:")) {
-                    ax = true;
-                    rest = rest.slice(3);
-                }
-                else {
-                    steps = rest.slice(rest.indexOf(";") + 1);
-                    rest = rest.slice(0, rest.indexOf(";"));
-                }
-                const ast = new HSParser().parse(rest, 'rule');
-                // 分离assertion和condition
+                let rest = content.slice(colon + 1).trim();
+                // Restore only the axiom placeholders actually present in the save.
+                const definition = rest === "ax:." ? initRuleDefs.get(name) : undefined;
+                if (definition)
+                    rest = definition.slice(definition.indexOf(":") + 1).trim();
+                const ax = rest.startsWith("ax:");
+                const end = rest.indexOf(";");
+                const ast = new HSParser().parse(ax ? rest.slice(3) : rest.slice(0, end), "rule");
                 const assertions = ast.nodes.filter(e => e.type === NodeType.ASSERT).map(e => AtomSolver.fromAST(e));
-                ast.nodes = ast.nodes.filter(e => e.type !== NodeType.ASSERT);
-                const rule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), assertions, ast.nodes, ast.nodes.pop());
-                this.hilbertSystem.rules.set(name, rule);
-                container.push({ name, uuid });
-                if (!ax) {
-                    // 步骤重放失败只标记 error（保留原始cmd供调试），不中断
-                    try {
-                        // 自动补 hyp：从断言和条件推导（与serde存档逻辑一致，step中无需写hyp）
-                        const hyps = [];
-                        for (const n of rule.assertions)
-                            hyps.push(new HSParser().parse("hyp " + AtomSolver.print(n), "cmd"));
-                        for (const n of rule.conditions)
-                            hyps.push(new HSParser().parse("hyp " + n, "cmd"));
-                        this.hilbertSystem.fromCmd(hyps);
-                        this.hilbertSystem.fromCmd(steps.split(";").filter(e => e).map(e => new HSParser().parse(e, "cmd")));
-                        if (!this.hilbertSystem.checkConclusionInPropList().conclusion.equal(rule.conclusion)) {
-                            rule.error = { cause: HSError.replayConclusionMismatch, cmds: steps };
-                        }
-                        else {
-                            rule.step = this.hilbertSystem.props.slice(0);
-                        }
-                    }
-                    catch (e) {
-                        rule.error = { cause: e, cmds: steps };
-                    }
-                    finally {
-                        this.hilbertSystem.clear();
-                    }
-                }
+                const conditions = ast.nodes.filter(e => e.type !== NodeType.ASSERT);
+                const rule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), assertions, conditions, conditions.pop());
+                if (ax)
+                    hs.rules.set(name, rule);
+                else
+                    pending.set(name, { rule, steps: rest.slice(end + 1) });
             }
             catch (e) {
-                // 规则头解析失败：注册占位规则，仅保留 error 供调试
-                const errRule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), [], [], new AST(NodeType.ATOM_WFF, "?"));
-                errRule.error = { cause: e, cmds: raw };
-                this.hilbertSystem.rules.set(name, errRule);
-                container.push({ name, uuid });
+                const rule = new Deduction(new Set, new AST(NodeType.ATOM_DNAME, name), [], [], new AST(NodeType.ATOM_WFF, "?"));
+                rule.error = { cause: e, cmds: raw };
+                invalidHeaders.set(name, rule);
             }
         }
-        this.hilbertSystem.loadContext(context);
+        // The saved tree follows display order, not proof dependency order. All saved
+        // axioms are available now; publish each macro only after checking its proof.
+        const ready = [...pending.keys()];
+        const waiting = new Map();
+        const context = hs.saveContext();
+        try {
+            for (let i = 0; i < ready.length; i++) {
+                const name = ready[i];
+                const { rule, steps } = pending.get(name);
+                hs.loadContext(hs.createEmptyContext());
+                try {
+                    const parseCmd = (cmd) => new HSParser().parse(cmd, "cmd");
+                    // Saved macro bodies omit the hypotheses encoded in the rule header.
+                    hs.fromCmd(rule.assertions.map(assertion => parseCmd("hyp " + AtomSolver.print(assertion))));
+                    hs.fromCmd(rule.conditions.map(condition => parseCmd("hyp " + condition)));
+                    hs.fromCmd(steps.split(";").filter(e => e).map(parseCmd));
+                    if (!hs.checkConclusionInPropList().conclusion.equal(rule.conclusion))
+                        throw HSError.replayConclusionMismatch;
+                    rule.step = hs.props.slice();
+                    rule.error = undefined;
+                    hs.rules.set(name, rule);
+                    pending.delete(name);
+                    for (const dependent of waiting.get(name) ?? [])
+                        ready.push(dependent);
+                    waiting.delete(name);
+                }
+                catch (e) {
+                    rule.error = { cause: e, cmds: steps };
+                    let cause = e;
+                    while (isHSErrorInfo(cause) && "cause" in cause)
+                        cause = cause.cause;
+                    if (isHSErrorInfo(cause) && cause.type === "dname404" && pending.has(cause.ruleName)) {
+                        const dependents = waiting.get(cause.ruleName) ?? [];
+                        dependents.push(name);
+                        waiting.set(cause.ruleName, dependents);
+                    }
+                }
+            }
+        }
+        finally {
+            hs.loadContext(context);
+        }
+        // Unresolved (including cyclic) proofs keep their original steps/diagnostic.
+        for (const [name, { rule }] of pending)
+            hs.rules.set(name, rule);
+        for (const [name, rule] of invalidHeaders)
+            hs.rules.set(name, rule);
         if (options.builtin)
             this.serde.captureBuiltins();
         if (options.refresh !== false)
