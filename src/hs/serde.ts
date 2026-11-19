@@ -171,7 +171,9 @@ export class Serde {
             }
             if (name === original) aliases.delete(original);
             else {
-                this.hs.renameD(original, name);
+                // Existing aliases can predate name validation. Preserve them
+                // when restoring a save; newly entered names still validate.
+                this.hs.renameD(original, name, { restoreLegacyName: true });
                 aliases.set(original, name);
             }
         }

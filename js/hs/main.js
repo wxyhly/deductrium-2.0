@@ -259,7 +259,7 @@ export class HSLayer {
                     } };
                     collect(r.children);
                     if (names.length)
-                        this.cmdEngine.run("del " + names.join(","));
+                        this.cmdEngine.run("del " + names.map(name => JSON.stringify(name)).join(","));
                     else {
                         this.ruleListView.deleteNode(r.uuid);
                         if (r === this.activeRuleFolder)
@@ -268,7 +268,7 @@ export class HSLayer {
                     }
                 }
                 else
-                    this.cmdEngine.run("del " + r.name);
+                    this.cmdEngine.run("del " + JSON.stringify(r.name));
             }
             else if (action === "load") {
                 this.cmdEngine.run("inln " + r.name);
@@ -816,7 +816,7 @@ export class HSLayer {
     unlockEditingCommands() {
         defineCommand("del", args => {
             if (!args.length)
-                return this.editRequest(LangMgr.text.editTargets);
+                return this.editRequest(LangMgr.text.editTargets, text => new AST(NodeType.ATOM_ITEM, text));
             const selected = this.editSelection(args, "del", 1);
             if (selected.next)
                 return selected.next;
@@ -1037,7 +1037,7 @@ export class HSLayer {
             defineCommand('m', (args) => {
                 if (args.length === 0) {
                     this.hilbertSystem.checkConclusionInPropList();
-                    this.cmdInput.setParserArgs("dname");
+                    this.cmdInput.setParserArgs("name");
                     let i = 1;
                     while (true) {
                         if (!this.hilbertSystem.rules.get("s" + i))
@@ -1048,7 +1048,9 @@ export class HSLayer {
                         prompt: LangMgr.text.plsEnterNewRule, default: "s" + i, parse: e => {
                             let ast;
                             try {
-                                ast = new HSParser().parse(e, "dname");
+                                const name = e.trim();
+                                this.hilbertSystem.checkDname(name);
+                                ast = new AST(NodeType.ATOM_DNAME, name);
                                 return { success: true, value: ast };
                             }
                             catch (e) {

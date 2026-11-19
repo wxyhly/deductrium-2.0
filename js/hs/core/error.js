@@ -21,6 +21,7 @@ export const HSError = {
     cmdIsRunning: { type: "cmdIsRunning" },
     pListIsntEmpty: { type: "pListIsntEmpty" },
     invalidPropName: { type: "invalidPropName" },
+    invalidRuleName: { type: "invalidRuleName" },
     nameAlreadyExist(name) { return { type: "nameAlreadyExist", name }; },
     invalidRuleNameStartsWith(invalidChars) { return { type: "invalidRuleNameStartsWith", invalidChars }; },
     localVarInConclusion: { type: "localVarInConclusion" },

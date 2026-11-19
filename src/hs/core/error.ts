@@ -17,6 +17,7 @@ export type HSErrorInfo =
     | { type: "emptyValue" }
     | { type: "noConclusion" }
     | { type: "nameAlreadyExist"; name: string }
+    | { type: "invalidRuleName" }
     | { type: "invalidRuleNameStartsWith"; invalidChars: string }
     | { type: "localVarInConclusion" }
     | { type: "sbInHyp" }
@@ -95,6 +96,7 @@ export const HSError: {
     cmdIsRunning: HSErrorInfo;
     pListIsntEmpty: HSErrorInfo;
     invalidPropName: HSErrorInfo;
+    invalidRuleName: HSErrorInfo;
     nameAlreadyExist(name: string): HSErrorInfo;
     invalidRuleNameStartsWith(invalidChars: string): HSErrorInfo;
     localVarInConclusion: HSErrorInfo;
@@ -166,6 +168,7 @@ export const HSError: {
     cmdIsRunning: { type: "cmdIsRunning" },
     pListIsntEmpty: { type: "pListIsntEmpty" },
     invalidPropName: { type: "invalidPropName" },
+    invalidRuleName: { type: "invalidRuleName" },
     nameAlreadyExist(name: string): HSErrorInfo { return { type: "nameAlreadyExist", name }; },
     invalidRuleNameStartsWith(invalidChars: string): HSErrorInfo { return { type: "invalidRuleNameStartsWith", invalidChars }; },
     localVarInConclusion: { type: "localVarInConclusion" },
