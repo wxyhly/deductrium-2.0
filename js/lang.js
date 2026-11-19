@@ -401,6 +401,8 @@ export class LangMgr {
                 const list = Array.from(info.invalidChars).map(e => `'${e}'`).join(zh ? "、" : ", ");
                 return zh ? `规则名不能以${list}开头` : `rule name can't start with ${list}`;
             }
+            case "invalidRuleName":
+                return zh ? "规则名必须是单个非空名称，不能使用空白、引号、花括号或元规则、组合规则表达式" : "rule name must be a single nonempty name without whitespace, quotes, braces, or a meta-rule or composition expression";
             case "invalidPropName": {
                 return zh ? "推理步骤只能以小写字母开头，且只包含字母、下划线或数字" : "name of deduction step can only start with a lowercase letter and contain only letters, underscore or digits";
             }
